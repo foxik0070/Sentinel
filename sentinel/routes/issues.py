@@ -1493,13 +1493,29 @@ def create_blueprint(service):
 
         _SKIP_PLUGINS = {'detector_who', 'agent_security_vulnerability_scan', 'agent_security_root_monitor'}
 
+        # načti naposledy použité hosty z DB (posledních 5 vtipů)
+        try:
+            with state.db_lock:
+                _conn = state._get_conn()
+                _rows = _conn.execute("SELECT joke FROM infra_jokes ORDER BY id DESC LIMIT 5").fetchall()
+                _conn.close()
+            _recent_hosts = set()
+            for (_j,) in _rows:
+                for _w in str(_j).split():
+                    if '.' in _w or _w.isupper():
+                        _recent_hosts.add(_w.strip('.,—'))
+        except Exception:
+            _recent_hosts = set()
+
         active = state.get_active_issues()
         if active:
             from datetime import datetime, timezone
             candidates = [i for i in active if i.get('plugin_name') not in _SKIP_PLUGINS]
             if not candidates:
                 candidates = active
-            pool = candidates[:50]
+            # preferuj hosty co nebyly v posledních vtipcích
+            fresh = [i for i in candidates if i.get('host') not in _recent_hosts]
+            pool = fresh[:50] if fresh else candidates[:50]
             _r.shuffle(pool)
             issue = pool[0]
             host = issue.get('host') or 'server'
