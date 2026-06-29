@@ -1491,10 +1491,17 @@ def create_blueprint(service):
         tpl_issue = TEMPLATES_ISSUE_EN if lang == 'en' else TEMPLATES_ISSUE
         tpl_ok = TEMPLATES_OK_EN if lang == 'en' else TEMPLATES_OK
 
+        _SKIP_PLUGINS = {'detector_who', 'agent_security_vulnerability_scan', 'agent_security_root_monitor'}
+
         active = state.get_active_issues()
         if active:
             from datetime import datetime, timezone
-            issue = _r.choice(active[:15])
+            candidates = [i for i in active if i.get('plugin_name') not in _SKIP_PLUGINS]
+            if not candidates:
+                candidates = active
+            pool = candidates[:50]
+            _r.shuffle(pool)
+            issue = pool[0]
             host = issue.get('host') or 'server'
             plugin = issue.get('plugin_name') or 'monitoring'
             try:
