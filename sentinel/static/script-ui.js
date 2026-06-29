@@ -3152,11 +3152,13 @@ async function _sentinelLogoJoke() {
     ch.scrollTop = ch.scrollHeight;
     try {
         const r = await fetch('/api/analyze/infra_joke', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({lang: _jokeLang})});
+        if (!r.ok) { const t = await r.text(); console.error('joke API error', r.status, t.slice(0,200)); throw new Error(r.status); }
         const d = await r.json();
         bubble.style.color = 'var(--text-main)';
         bubble.textContent = d.joke || '...';
         ch.scrollTop = ch.scrollHeight;
     } catch(e) {
+        console.error('joke fetch failed:', e);
         const fallbacks = _jokeLang === 'en' ? [
             'Infrastructure is fine. Probably.',
             'Restart fixes 90% of problems. The other 10% need a second restart.',

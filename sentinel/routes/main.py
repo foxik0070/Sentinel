@@ -2,7 +2,7 @@ import time
 import logging
 import secrets
 from flask import Blueprint, request, jsonify, render_template, g, session, redirect, url_for
-from ..auth import requires_auth, check_auth, get_real_ip, _REVOKED_SESSIONS, global_active_clients, global_active_clients_lock
+from ..auth import requires_auth, check_auth, get_real_ip, _REVOKED_SESSIONS, global_active_clients, global_active_clients_lock, _ensure_csrf_token
 from .. import state, config, utils
 
 # 346: 2FA pending — session klíč pro stav "přihlášen lokálně, čeká na TOTP"
@@ -18,6 +18,7 @@ def create_blueprint(service, socketio):
     @requires_auth
     def index():
         if g.username: service.metrics["active_users"].add(g.username)
+        _ensure_csrf_token()
         return render_template(
             'index.html',
             log_groups=config.LOG_GROUPS,
