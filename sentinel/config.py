@@ -16,7 +16,8 @@ def get_git_commit():
         ).decode('ascii').strip()
         return commit
     except Exception:
-        return "unknown"
+        import time
+        return hex(int(time.time()))[2:]
 
 SUBVERSION = get_git_commit()
 SCRIPT_DIR = Path(__file__).resolve().parent
