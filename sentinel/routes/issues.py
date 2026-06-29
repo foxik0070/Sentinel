@@ -1406,22 +1406,47 @@ def create_blueprint(service):
     @bp.route('/api/analyze/infra_joke', methods=['POST'])
     @requires_auth
     def api_infra_joke():
-        """Sarkastický klep-klep vtip o aktuálním problému ze šablon."""
+        """Sarkastický vtip o aktuálním stavu infrastruktury ze šablon."""
         import random as _r
 
         TEMPLATES_ISSUE = [
+            # klep-klep
             "Klep klep.\n— Kdo je?\n— {host}.\n— {host} kdo?\n— {host}, ten co má {plugin} v prdeli už {age}.",
             "Klep klep.\n— Kdo je?\n— {plugin}.\n— {plugin} kdo?\n— {plugin} na {host}. Pořád. Furt. Dokola.",
             "Klep klep.\n— Kdo je?\n— Monitoring.\n— Monitoring kdo?\n— Monitoring, co ti hlásí že {host} má problém s {plugin}. Překvapení.",
             "Klep klep.\n— Kdo je?\n— Alert.\n— Alert kdo?\n— Alert číslo {count} dnes. {host}. {plugin}. Zvykej si.",
             "Klep klep.\n— Kdo je?\n— On-call.\n— On-call kdo?\n— On-call, co kvůli {host} a {plugin} dnes zas nespí.",
             "Klep klep.\n— Kdo je?\n— {host}.\n— {host} kdo?\n— {host}, tvůj oblíbený server. Ten s {plugin}. Zase.",
+            # jednořádkový sarkazmus
+            "Dnešní předpověď počasí: {host} — zataženo, {plugin} mimo provoz, šance na opravu 20 %.",
+            "Motivační citát dne: Nevzdávej se. {host} to taky neudělal, a podívej kde je teď.",
+            "{host} má {plugin} rozbité už {age}. Grafana to ví. Ty to víš. Všichni to ví. Nikdo nic nedělá.",
+            "Funguje to? Ne. Opraví se to? Možná. Kdy? {host} odpoví jakmile bude mít chuť.",
+            "Stav infrastruktury: {count} alertů. Nálada týmu: nekomentujeme.",
+            "Dobrá zpráva: monitoring funguje. Špatná zpráva: {host} s {plugin} rozhodně ne.",
+            "{host} slaví {age} bez {plugin}. Pošleme dort?",
+            # horoskop styl
+            "Horoskop pro {host}: Dnes není vhodný den pro {plugin}. Vlastně žádný den není.",
+            "Horoskop pro správce: Hvězdy říkají, že {host} tě dnes zklamal. Hvězdy mají pravdu.",
+            # podpora / ticket styl
+            "TICKET #∞ — {host}: {plugin} nefunguje {age}. Priorita: kritická. Status: neřeší se.",
+            "Vážený zákazníku, váš server {host} eviduje problém s {plugin} od {age}. Omlováme se za komplikace. Váš tým ops.",
+            # filozofický
+            "Pokud {host} spadne do lesa a nikdo ho nevidí, pád stejně zaloguje. A {plugin} to hlásí {age}.",
+            "Co dřív? {host} nebo {plugin}? Dnes ani jedno nefunguje, takže to je jedno.",
         ]
 
         TEMPLATES_OK = [
+            # klep-klep ok
             "Klep klep.\n— Kdo je?\n— Infrastruktura.\n— Infrastruktura kdo?\n— Infrastruktura, co dnes nic nehlásí. Pravděpodobně rozbitý monitoring.",
             "Klep klep.\n— Kdo je?\n— Silence.\n— Silence kdo?\n— Silence v alertech. Buď vše funguje, nebo je monitoring taky offline.",
             "Klep klep.\n— Kdo je?\n— Klid.\n— Klid kdo?\n— Klid před bouří. Všechny servery zelené. Zálohuji teď.",
+            # jednořádkový ok
+            "Všechny servery jsou zelené. Tato zpráva se automaticky smaže, až to přestane platit.",
+            "Žádné aktivní alerty. Buď je vše v pořádku, nebo je monitoring konečně taky rozbité.",
+            "Infrastruktura funguje. Zapište si datum — tohle se nestává často.",
+            "Dnes žádné problémy. Zítra bude hůř, ale to řešíme zítra.",
+            "Nula alertů. Tým ops si dává kafe. Vychutnávejte tento vzácný okamžik.",
         ]
 
         active = state.get_active_issues()
