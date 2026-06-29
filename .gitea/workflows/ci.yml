@@ -1,0 +1,44 @@
+name: Sentinel CI
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Python deps
+        run: |
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: JS syntax check
+        run: |
+          for f in sentinel/static/script-core.js sentinel/static/script-ui.js sentinel/static/script-agents.js sentinel/static/script-modals.js; do
+            node --check "$f" || exit 1
+            echo "✓ $f"
+          done
+
+      - name: Ruff lint (warn only)
+        run: |
+          pip install ruff
+          ruff check sentinel/ --quiet || echo "⚠ Lint warnings (non-blocking)"
+
+      - name: Dependency security audit (360)
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt --desc || echo "⚠ Dependency audit warnings (non-blocking)"
+
+      - name: Python tests
+        run: python -m pytest tests/ -q --tb=short
+
+      - name: Build minified assets
+        run: |
+          npm install -g terser uglifycss
+          make build

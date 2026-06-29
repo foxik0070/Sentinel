@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sentinel Login</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background-color: #0f0f0f;
+            color: #e0e0e0;
+            font-family: 'Segoe UI', 'Roboto', monospace;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .login-box {
+            background: #1a1a1a;
+            border: 1px solid #333;
+            padding: 40px;
+            border-radius: 8px;
+            width: 350px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            text-align: center;
+        }
+        .logo {
+            font-size: 3em;
+            color: #0078d4;
+            margin-bottom: 20px;
+        }
+        input {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 15px;
+            background: #252526;
+            border: 1px solid #333;
+            color: white;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        input:focus {
+            border-color: #0078d4;
+            outline: none;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background: #0078d4;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        button:hover { opacity: 0.9; }
+        .error {
+            color: #c50f1f;
+            margin-bottom: 15px;
+            font-size: 0.9em;
+        }
+        .footer {
+            margin-top: 20px;
+            font-size: 0.7em;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-box">
+        <div class="logo"><i class="fa-solid fa-shield-halved"></i></div>
+        <h2 style="margin-bottom:20px;">Sentinel Commander</h2>
+        
+        {% if error %}
+        <div class="error"><i class="fa-solid fa-circle-exclamation"></i> {{ error }}</div>
+        {% endif %}
+
+        {% if totp_required %}
+        <!-- 346: Druhý krok — TOTP kód -->
+        <div style="margin-bottom:16px; color:#aaa; font-size:.88em;">
+            <i class="fa-solid fa-mobile-screen-button" style="color:#0078d4; margin-right:6px;"></i>
+            Zadej kód z autentizační aplikace
+        </div>
+        <form method="POST" action="/login/totp">
+            <input type="text" name="totp_code" placeholder="6místný kód (napr. 123456)"
+                   inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autofocus
+                   autocomplete="one-time-code" style="letter-spacing:.3em; text-align:center; font-size:1.2em;">
+            <button type="submit"><i class="fa-solid fa-key"></i> Ověřit</button>
+        </form>
+        {% else %}
+        <form method="POST">
+            <input type="text" name="username" placeholder="Uživatel" required autofocus>
+            <input type="password" name="password" placeholder="Heslo" required>
+            <button type="submit">Přihlásit se</button>
+        </form>
+        {% endif %}
+        
+        <div style="margin-top:14px;">
+            <a href="/status" style="color:#0078d4; font-size:0.82em; text-decoration:none; opacity:0.7;"
+               onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'">
+                <i class="fa-solid fa-signal"></i> Zobrazit veřejný dashboard
+            </a>
+        </div>
+        <div class="footer">FoxiK &copy; 2026</div>
+    </div>
+</body>
+</html>

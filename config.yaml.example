@@ -1,0 +1,327 @@
+## Sentinel Commander — example configuration
+## Copy to /etc/sentinel/config.yaml and adjust before first run.
+## Sensitive values (passwords, tokens) must NOT be committed to git.
+
+instance_name: HOME          # Label shown in the UI header
+version: 2026.05.022
+
+# ── Web UI ────────────────────────────────────────────────────────────────────
+web:
+  host: 0.0.0.0
+  port: 5050
+  username: admin
+  password: CHANGE_ME
+  secret_key: GENERATE_WITH__python3_-c__import_secrets;print(secrets.token_hex(32))__
+  viewer_username: viewer
+  viewer_password: viewer
+
+# ── LDAP (optional) ──────────────────────────────────────────────────────────
+ldap:
+  enabled: false
+  host: 192.168.1.10
+  port: 389
+  use_ssl: false
+  base_dn: dc=example,dc=com
+  search_user_dn: ou=people
+  user_login_attr: uid
+  bind_dn: uid=sentinel,ou=people,dc=example,dc=com
+  bind_password: CHANGE_ME
+  superadmin_users:
+  - admin
+  admin_users: []
+  operator_users: []
+  viewer_users: []
+
+# ── Paths ─────────────────────────────────────────────────────────────────────
+log_dir: /var/log/sentinel/logs
+plugin_dir: /opt/Sentinel/sentinel/plugins
+data_dir: /opt/Sentinel/data
+knowledge_base_file: /opt/Sentinel/knowledge_base.txt
+
+# ── Log groups ────────────────────────────────────────────────────────────────
+log_groups:
+  System & Infra:
+  - system.log
+  - services.log
+  - storage.log
+  - capacity.log
+  Security & Network:
+  - secure.log
+  - ports.log
+  - audit.log
+  Hardware:
+  - temperature.log
+  - availability.log
+  IoT:
+  - homeassistant.log
+
+# ── AI Engine — primary LLM ───────────────────────────────────────────────────
+# CPU ollama (always active for embeddings)
+ollama_model: llama3.2
+ollama_url: http://localhost:11434/v1/chat/completions
+ollama_num_ctx: 2048
+
+# ── AI Engine — Hailo AI HAT 2+ (hailo-ollama 5.3.0) ─────────────────────────
+# Enables NPU-accelerated LLM inference. Install hailo-ollama first.
+# When enabled, all chat/analysis requests go to hailo-ollama; CPU ollama
+# is used only for embeddings (nomic-embed-text).
+hailo_ollama:
+  enabled: false              # Set true when hailo-ollama is running on port 8000
+  url: http://localhost:8000/v1/chat/completions
+  model: qwen2.5-coder:1.5b  # Available: qwen2.5-coder:1.5b, qwen3:1.7b, llama3.2:1b, deepseek_r1:1.5b
+
+# ── AI Engine — Embedding URL ─────────────────────────────────────────────────
+# Separate URL for nomic-embed-text (always CPU ollama, hailo-ollama has no embedding support).
+# Leave empty to derive from ollama_url automatically.
+embedding_ollama_url: http://localhost:11434
+
+# ── AI Engine — Hailo-8/8L AI HAT+ (embedding-only, older card) ──────────────
+ai_hat:
+  enabled: false
+  device: ''
+  tops: 0
+  hef_model_path: ''
+  use_for_embeddings: false
+
+# ── Worker pool ───────────────────────────────────────────────────────────────
+worker_threads: 2
+
+# ── Detectors ─────────────────────────────────────────────────────────────────
+detectors:
+- plugin: port_detector
+  match_pattern: ports.log
+  enabled: true
+- plugin: audit_detector
+  match_pattern: audit.log
+  enabled: true
+- plugin: availability_detector
+  match_pattern: availability.log
+  enabled: true
+- plugin: services_detector
+  match_pattern: services.log
+  enabled: true
+- plugin: ha_detector
+  match_pattern: homeassistant.log
+  enabled: true
+- plugin: security_detector
+  match_pattern: secure.log
+  enabled: true
+- plugin: system_detector
+  match_pattern: system.log
+  enabled: true
+- plugin: temperature_detector
+  match_pattern: temperature.log
+  enabled: true
+- plugin: storage_detector
+  match_pattern: storage.log
+  enabled: true
+- plugin: capacity_detector
+  match_pattern: capacity.log
+  enabled: true
+
+# ── Integrations ──────────────────────────────────────────────────────────────
+teams_channels:
+  enabled: false
+
+homeassistant:
+  enabled: false
+  url: http://192.168.1.1:8123
+  token: HA_LONG_LIVED_TOKEN
+  notify_service: mobile_app_device
+
+mqtt:
+  enabled: false
+  host: 192.168.1.1
+  port: 1883
+  user: sentinel
+  pass: CHANGE_ME
+  topic_prefix: sentinel
+
+# ── Slack webhook notifications (079) ────────────────────────────────────────
+slack:
+  enabled: false
+  webhook_url: ""           # Slack Incoming Webhook URL from api.slack.com/apps
+  channel: ""               # optional: override channel e.g. "#sentinel-alerts"
+
+# ── Webhook notifications (generic HTTP POST) ─────────────────────────────────
+webhook:
+  enabled: false
+  url: "https://hooks.example.com/sentinel"
+  secret: ""             # optional HMAC-SHA256 signing key; header X-Sentinel-Signature
+
+# ── Prometheus metrics scraping ───────────────────────────────────────────────
+# GET /metrics — Prometheus text format. Auth via ?token=scrape_token or session.
+prometheus:
+  enabled: false
+  scrape_token: ""       # generate: python3 -c "import secrets; print(secrets.token_hex(24))"
+  pushgateway_url: ""    # 148: URL Prometheus pushgateway, např. http://localhost:9091
+
+# ── File Integrity Monitoring ─────────────────────────────────────────────────
+fim:
+  enabled: false         # 176: Sledování změn kritických souborů
+  paths:                 # výchozí: /etc/passwd, /etc/shadow, /etc/sudoers, /etc/ssh/sshd_config
+    - /etc/passwd
+    - /etc/shadow
+    - /etc/sudoers
+    - /etc/ssh/sshd_config
+    - /etc/crontab
+
+# ── Analytics thresholds ──────────────────────────────────────────────────────
+analytics:
+  critical_ttc_hours: 24   # Disk TTC below this → CRITICAL alert
+  warning_ttc_hours: 72    # Disk TTC below this → WARNING alert
+  daily_report_hour: 8     # Hour (0-23) for daily summary report
+
+# ── HomeAssistant sensor thresholds ───────────────────────────────────────────
+ha_thresholds:
+  battery_low_pct: 30       # Battery below this % → WARNING
+  disk_temp_critical_c: 70  # HDD/SSD/NVMe temperature → CRITICAL
+  server_temp_critical_c: 60 # Proxmox/NAS temperature → CRITICAL
+  rpi_temp_warning_c: 60    # RPi board temperature → WARNING
+  voltage_min_v: 220        # Mains voltage below this → CRITICAL
+  current_max_a: 8          # Current draw above this → WARNING
+  print_failure_pct: 60     # Obico 3D print failure confidence → CRITICAL
+
+# ── Auto-tagging rules ────────────────────────────────────────────────────────
+# Automaticky přiřadí tag k novým issues dle plugin/host/channel (fnmatch glob)
+auto_tags:
+  - plugin: "fail2ban*"
+    tag: "brute-force"
+  - plugin: "services_detector"
+    tag: "service-fail"
+  - host: "node*"
+    tag: "compute"
+  - channel: "security"
+    tag: "sec"
+
+# ── SSH execution settings ────────────────────────────────────────────────────
+ssh_execution:
+  key_path: "/opt/Sentinel/conf/.id_ed25519"   # Private key for remote actions
+  user: "root"                                  # SSH user for remote commands
+  jump_host: ""                                 # Volitelný jump/bastion host (ProxyJump): "user@bastion.example.com"
+
+# ── Telemetry alerting rules ─────────────────────────────────────────────────
+# Pevné thresholdy pro telemetrické metriky (doplňuje anomaly detection)
+telemetry_alerts:
+  - metric: "cpu_*"
+    above: 95
+    channel: infra
+  - metric: "disk_*"
+    above: 90
+    channel: infra
+  - metric: "ram_*"
+    above: 95
+    channel: infra
+  - metric: "temperature_*"
+    above: 80
+    channel: agent
+
+# ── InfluxDB export ───────────────────────────────────────────────────────────
+# Volitelné — každý telemetrický záznam se zapíše do InfluxDB line protocol
+influxdb:
+  url: ""          # např. http://localhost:8086
+  token: ""        # InfluxDB API token
+  org: "sentinel"
+  bucket: "sentinel"
+
+# ── SLA pravidla ─────────────────────────────────────────────────────────────
+# Issue aktivní déle než hours → červený badge "SLA +Nh" nebo oranžový (<=25% zbývá)
+sla_rules:
+  - channel: security
+    hours: 2
+  - channel: root
+    hours: 1
+  - channel: infra
+    hours: 8
+  - channel: agent
+    hours: 24
+
+# ── Agent auto-registration ───────────────────────────────────────────────────
+# Agenti s tímto tokenem se automaticky zaregistrují při prvním ingestu
+# Prázdné = vypnuto; token musí být jiný než běžné agent tokeny
+auto_register_token: ""   # generate: python3 -c "import secrets; print(secrets.token_hex(16))"
+
+# ── Inbound webhook ───────────────────────────────────────────────────────────
+# Příjem alertů z Grafana, Alertmanager, Zabbix atd.
+# POST /api/inbound/webhook?token=<token>
+inbound_webhook:
+  token: ""   # generate: python3 -c "import secrets; print(secrets.token_hex(24))"
+
+# ── Self-monitoring webhook ───────────────────────────────────────────────────
+# Sentinel posílá vlastní health status na externí URL (pro monitoring of the monitor)
+self_monitor:
+  webhook_url: ""   # POST target, prázdné = vypnuto
+  interval_seconds: 300
+
+# ── Weekly digest report ──────────────────────────────────────────────────────
+weekly_report:
+  day: 0    # 0=Pondělí … 6=Neděle
+  hour: 8   # Hodina (0-23)
+
+# ── Escalation rules ──────────────────────────────────────────────────────────
+# Automaticky zvýší severity issue aktivní déle než N hodin (bez Teams notifikace)
+escalation_rules:
+  - after_hours: 4
+    severity: high
+    channels: "security,root"
+  - after_hours: 12
+    severity: critical
+    channels: "*"
+
+# ── Database retention ────────────────────────────────────────────────────────
+db_retention_days: 30   # Telemetry pruned daily at 03:00; problems kept forever
+
+auto_resolve_hours: 4            # Auto-resolve active issues from ONLINE agents not updated in N hours
+auto_resolve_missing_count: 3    # Auto-resolve after N consecutive missed agent reports
+auto_remediation_enabled: true   # Automatically propose fix actions for detected issues
+
+# Per-channel issue expiry (025): auto-resolve active issues after N days even without agent
+# issue_expiry_days:
+#   infra: 30
+#   agent: 14
+#   security: 90    # keep security issues longer
+
+# Telemetry aggregation (066): compress raw telemetry older than N hours into hourly averages
+# telemetry_aggregate_after_hours: 24  # 0 = disabled
+
+# Services that fail harmlessly on every Ubuntu LXC — suppress alerts and auto-remediation
+ignored_failed_services:
+  - motd-news.service
+  - apt-news.service
+
+# ── Security ──────────────────────────────────────────────────────────────────
+security:
+  login_max_attempts: 5
+  login_ban_time: 300
+  rate_limit_chat: 60
+  rate_limit_upload: 10
+  whitelist:
+  - 127.0.0.1
+
+# ── AI Prompts ────────────────────────────────────────────────────────────────
+prompts:
+  default: 'You are a concise log monitoring assistant.
+
+    Analyze the entire current content of the monitoring log. Determine only actual
+    problems, not normal states.
+
+    For each detected problem, include what it is, where it is, affected systems,
+    and severity.
+
+    Only one issue per message. Max 8 sentences. Use HTML output. Do not introduce
+    yourself. No questions.
+
+    Log: {line}
+
+    '
+  security: 'Jsi expert na kybernetickou bezpečnost. Analyzuj následující záznam z
+    logu.
+
+    Identifikuj pokusy o Brute-force, zneužití sudo nebo neoprávněné přístupy.
+
+    Výstup v ČEŠTINĚ, formát HTML. ZAMĚŘ SE NA IP a USERNAME.
+
+    Log: {line}
+
+    '
+  remediation: 'SysAdmin. Node: {node} Error: {raw_line} Output ONLY JSON: {"description":"one sentence fix","command":"exact bash command or N/A"}'

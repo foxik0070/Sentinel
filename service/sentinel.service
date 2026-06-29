@@ -1,0 +1,21 @@
+[Unit]
+Description=Sentinel Commander - System Monitor
+After=network.target network-online.target syslog.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+User=foxik
+Group=foxik
+WorkingDirectory=/opt/Sentinel
+ExecStart=/usr/bin/python3 -m sentinel
+Environment="PYTHONUNBUFFERED=1"
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+WatchdogSec=60
+Restart=always
+RestartSec=10
+NoNewPrivileges=yes
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
