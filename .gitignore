@@ -1,0 +1,90 @@
+# --- SENTINEL CORE ---
+# SSH klíče pro vzdálené akce — NESMÍ BÝT V GITU
+conf/
+config.yaml
+config.yaml.bak
+config.yaml.*.bak
+config.yaml.hpc
+config.yaml.local
+*.credentials
+# Debug / session / deploy soubory
+chyba_*
+debug.md
+deploy-*.sh
+resume.sh
+hailort.log
+# Ignorovat lokální znalostní bázi a dokumentaci
+learning_knowledge_base/
+admindocs/
+knowledge_base.txt
+# Ignorovat dist a egg-info
+dist/
+*.egg-info/
+
+# --- PLUGINS ---
+sentinel/plugins/*
+!sentinel/plugins/__init__.py
+!sentinel/plugins/base.py
+!sentinel/plugins/detector_universal_security.py
+!sentinel/plugins/port_detector.py
+!sentinel/plugins/services_detector.py
+!sentinel/plugins/storage_detector.py
+!sentinel/plugins/audit_detector.py
+!sentinel/plugins/availability_detector.py
+!sentinel/plugins/capacity_detector.py
+!sentinel/plugins/ha_detector.py
+!sentinel/plugins/security_detector.py
+!sentinel/plugins/system_detector.py
+!sentinel/plugins/temperature_detector.py
+
+# --- PYTHON ---
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv
+venv/
+ENV/
+
+# --- BUILD & DISTRIBUTION ---
+build/
+MANIFEST.in
+# Minifikované JS/CSS — buildí se přes `make build`, ne v gitu
+sentinel/static/*.min.js
+sentinel/static/style.min2.css
+# Ponechat vendor min soubory:
+!sentinel/static/chart.min.js
+!sentinel/static/sortable.min.js
+!sentinel/static/qrcode.min.js
+
+# --- DATA & LOGS ---
+data/
+*.sqlite
+*.db
+*.log
+hailort.log
+sentinel.db
+# Pokud máš logy uvnitř složky sentinel/
+sentinel/logs/
+
+# --- OLLAMA & MODELS ---
+# Ignorovat vše kolem modelů a lokální binárky
+ollama/
+.ollama/
+models/
+
+# --- OS & EDITORS ---
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
+.claude/
+
+# Internal dev files
+CLAUDE.md
+todo.md
+chyby.md
+analyse-todo.md
+.claude/

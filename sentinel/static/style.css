@@ -1,0 +1,800 @@
+/* ==========================================================================
+   SENTINEL DASHBOARD - HLAVNI STYLOVY SOUBOR
+   ========================================================================== */
+
+/* --- 1. BAREVNE PALETY A PROMENNE --- */
+:root {
+    /* Dark Mode (Vychozi) */
+    --bg: #0f0f0f; 
+    --panel: #1a1a1a; 
+    --accent: #0078d4; 
+    --text: #e0e0e0;
+    --border: #333; 
+    --input-bg: #252526; 
+    --msg-user: #004578; 
+    --msg-bot: #1a1a1a;
+    --msg-user-text: #ffffff;
+    --success: #107c10; 
+    --error: #c50f1f; 
+    --warning: #d83b01; 
+    --offline: #666;
+    --prediction: #17a2b8;
+    
+    /* Karty a UI prvky */
+    --card-bg: #2a2a2a;            
+    --card-border: #444;          
+    --text-main: #ffffff;         
+    --text-muted: #888888;        
+    --code-bg: #111111;           
+    --code-text: #50fa7b;         
+    --btn-grey-bg: #444444;       
+    --btn-grey-text: #ffffff;
+    
+    --font: 'Segoe UI', 'Roboto', monospace;
+}
+
+body.light-mode {
+    /* Light Mode (Prepis promennych) */
+    --bg: #f3f2f1; 
+    --panel: #ffffff; 
+    --accent: #0078d4; 
+    --text: #201f1e;
+    --border: #edebe9; 
+    --input-bg: #ffffff; 
+    --msg-user: #cce4f7; 
+    --msg-bot: #f3f2f1;
+    --msg-user-text: #000000;
+
+    --card-bg: #ffffff;            
+    --card-border: #d2d0ce;        
+    --text-main: #201f1e;          
+    --text-muted: #605e5c;        
+    --code-bg: #f3f2f1;           
+    --code-text: #d63384;         
+    --btn-grey-bg: #e1dfdd;       
+    --btn-grey-text: #201f1e;
+}
+
+/* --- 2. ZAKLADNI RESET A LAYOUT --- */
+* { 
+    box-sizing: border-box; 
+    margin: 0; 
+    padding: 0; 
+    font-family: var(--font); 
+}
+
+body { 
+    background-color: var(--bg); 
+    color: var(--text); 
+    height: 100vh; 
+    height: 100dvh; /* Ochrana pro mobilni prohlizece */
+    display: flex; 
+    flex-direction: column; 
+    overflow: hidden; 
+    transition: background 0.3s ease; 
+}
+
+header {
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 15px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    height: 55px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    position: relative;
+    z-index: 200;
+}
+
+.header-left, .header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.header-right {
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex-shrink: 1;
+    min-width: 0;
+    scrollbar-width: none;
+}
+.header-right::-webkit-scrollbar { display: none; }
+
+/* Hlavni rozlozeni rozhrani */
+#main-container { flex: 1; display: flex; overflow: hidden; position: relative; }
+#chat-panel { flex: 1; display: flex; flex-direction: column; position: relative; }
+
+/* --- 3. TLACITKA A VSTUPNI POLE --- */
+input[type="text"],
+input[type="search"] {
+    flex: 1;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 12px;
+    border-radius: 4px;
+    outline: none;
+    transition: border 0.2s ease;
+}
+
+input[type="search"]::-webkit-search-decoration,
+input[type="search"]::-webkit-search-cancel-button { display: none; }
+
+input[type="text"]:focus,
+input[type="search"]:focus {
+    border-color: var(--accent);
+}
+
+/* Potlačit browser autofill styly (bílé pozadí + bílý text) */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+    -webkit-text-fill-color: var(--text-main, #e8e8e8) !important;
+    -webkit-box-shadow: 0 0 0 60px var(--input-bg, #1e1e1e) inset !important;
+    caret-color: var(--text-main, #e8e8e8);
+    transition: background-color 99999s ease-in-out 0s;
+}
+
+button { 
+    background: var(--accent); 
+    color: white; 
+    border: none; 
+    padding: 12px 20px; 
+    border-radius: 4px; 
+    cursor: pointer; 
+    font-weight: 600; 
+    transition: opacity 0.2s ease; 
+    display: flex; 
+    align-items: center; 
+    gap: 5px; 
+}
+
+button:hover { opacity: 0.9; }
+button:disabled { background: var(--border); cursor: not-allowed; }
+
+.icon-btn { background: transparent; color: #888; padding: 10px; font-size: 1.2rem; }
+.icon-btn:hover { color: var(--text); background: rgba(255,255,255,0.1); }
+.icon-btn-header { cursor: pointer; color: #888; transition: color 0.2s ease; font-size: 1.1em; padding: 5px; }
+.icon-btn-header:hover { color: var(--text); }
+#lang-btn { transition: color 0.2s, border-color 0.2s; }
+#lang-btn:hover { color: var(--text-main); border-color: var(--accent); }
+.sys-btn { background: #333; border: 1px solid #555; color: #ddd; padding: 2px 8px; border-radius: 3px; cursor: pointer; font-size: 0.8em; margin-left: 5px; transition: all 0.2s ease; }
+.sys-btn:hover { background: #555; border-color: #777; }
+
+/* --- 4. BADGES (STITKY) A IKONY --- */
+.badge {
+    font-size: 0.75rem;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    line-height: 1;
+    gap: 6px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    height: 22px;
+    box-sizing: border-box;
+}
+
+.badge-status { background: var(--border); color: #aaa; border: 1px solid #444; transition: all 0.3s ease; }
+.badge-status.active { background: var(--error); color: white; border-color: transparent; animation: pulse 2s infinite; }
+.badge-status.ok { background: rgba(16, 124, 16, 0.1); color: var(--success); border: 1px solid var(--success); }
+
+.badge-online { background: rgba(16, 124, 16, 0.1); color: var(--success); border: 1px solid var(--success); }
+.badge-online.offline { background: rgba(197, 15, 31, 0.1); color: var(--error); border: 1px solid var(--error); }
+
+.badge-client { background: rgba(255, 255, 255, 0.05); color: #aaa; border: 1px solid #444; transition: all 0.3s ease; }
+.badge-client.active { background: rgba(16, 124, 16, 0.1); color: var(--success); border: 1px solid var(--success); }
+
+.badge-agents { background: rgba(255, 255, 255, 0.05); color: #aaa; border: 1px solid #444; transition: all 0.3s ease; }
+.badge-agents.online { background: rgba(16, 124, 16, 0.1); color: var(--success); border: 1px solid var(--success); }
+.badge-agents.partial { background: rgba(255, 165, 0, 0.15); color: #ffa500; border: 1px solid #ffa500; }
+.badge-agents.offline { background: rgba(197, 15, 31, 0.1); color: var(--error); border: 1px solid var(--error); }
+
+.badge-service { background: rgba(255, 255, 255, 0.05); color: #aaa; border: 1px solid #444; transition: all 0.3s ease; cursor: default; }
+.badge-service.active { background: rgba(16, 124, 16, 0.1); color: var(--success); border: 1px solid var(--success); }
+.badge-service.inactive { color: #555; border-color: #333; opacity: 0.55; }
+.badge-service.error { background: rgba(197, 15, 31, 0.1); color: var(--error); border: 1px solid var(--error); }
+
+.badge-user { background: rgba(0, 120, 212, 0.15); color: var(--accent); border: 1px solid rgba(0, 120, 212, 0.3); }
+.badge-user.superadmin { background: rgba(255, 165, 0, 0.15); color: #ffca28; border-color: rgba(255, 165, 0, 0.4); box-shadow: 0 0 10px rgba(255, 165, 0, 0.1); }
+
+.badge-rag { background: rgba(255, 255, 255, 0.05); color: #888; border: 1px solid #444; transition: all 0.3s ease; }
+.badge-rag.ready { background: rgba(23, 162, 184, 0.15); color: var(--prediction); border-color: var(--prediction); }
+.badge-rag.text-only { background: rgba(255, 193, 7, 0.1); color: #ffc107; border-color: #ffc107; }
+
+.badge-queue { background: rgba(255, 193, 7, 0.15); color: #ffc107; border: 1px solid #ffc107; display: none; animation: pulse-queue 2s infinite; }
+.timer-badge { font-family: 'Consolas', monospace; font-size: 0.85rem; background: rgba(255, 193, 7, 0.1); padding: 4px 10px; border-radius: 4px; margin-left: 10px; color: #ffc107; display: none; border: 1px solid rgba(255, 193, 7, 0.2); vertical-align: middle; }
+
+.instance-feature-badge { 
+    display: inline-flex; 
+    align-items: center; 
+    background-color: rgba(99, 179, 237, 0.1); 
+    color: #63b3ed; 
+    padding: 3px 10px; 
+    border-radius: 8px; 
+    font-weight: 600; 
+    font-size: 0.85em; 
+    border: 1px solid rgba(99, 179, 237, 0.3); 
+    margin-left: 15px; 
+    text-transform: uppercase; 
+    letter-spacing: 0.5px; 
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2); 
+    transition: all 0.2s ease-in-out; 
+}
+.instance-feature-badge:hover { background-color: rgba(99, 179, 237, 0.2); border-color: rgba(99, 179, 237, 0.5); transform: translateY(-1px); }
+.instance-feature-badge i { margin-right: 6px; font-size: 1.1em; }
+
+
+/* --- 5. CHAT A KONVERZACE --- */
+#chat-history { 
+    flex: 1; 
+    overflow-y: auto; 
+    padding: 20px; 
+    display: flex; 
+    flex-direction: column; 
+    gap: 15px; 
+    min-height: 0;
+}
+
+#input-area { flex-shrink: 0; background: var(--panel); padding: 15px; border-top: 1px solid var(--border); display: flex; gap: 10px; align-items: center; }
+#file-name-display { flex-shrink: 0; font-size: 0.8rem; color: var(--accent); padding: 5px 20px; background: rgba(0,120,212,0.05); border-top: 1px solid var(--border); display: none; }
+
+.message { max-width: 85%; padding: 12px 16px; border-radius: 8px; line-height: 1.5; font-size: 0.95rem; animation: fadeIn 0.3s ease; word-break: break-word; overflow-wrap: anywhere; }
+.message.user { align-self: flex-end; background: var(--msg-user); color: var(--msg-user-text); border-bottom-right-radius: 2px; }
+.message.bot { align-self: flex-start; background: var(--msg-bot); border: 1px solid var(--border); border-bottom-left-radius: 2px; }
+.message pre { background: rgba(0,0,0,0.3); padding: 8px; border-radius: 4px; overflow-x: auto; margin-top: 5px; font-size: 0.85rem; }
+
+/* --- 6. LEVY PANEL NASTROJU (TOOLS PANEL) --- */
+#tools-panel { width: 260px; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+.tool-header { padding: 8px 12px; font-weight: bold; border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.02); margin-top: 8px; font-size:0.78em; text-transform: uppercase; letter-spacing: 1px; color:#555; flex-shrink: 0; }
+.tool-header:first-child { margin-top: 0; }
+#quick-actions-list { overflow-y: auto; flex: 0 0 auto; max-height: 42%; padding: 6px 7px; min-height: 0; }
+.tool-list { overflow-y: auto; flex: 1; padding: 6px 7px; min-height: 0; }
+.tool-btn { width: 100%; text-align: left; background: transparent; color: var(--text); padding: 6px 8px; margin-bottom: 1px; border-radius: 4px; font-size: 0.82rem; transition: background 0.15s ease; }
+.tool-btn:hover { background: var(--border); }
+.tool-btn i { width: 18px; text-align: center; margin-right: 7px; color: var(--accent); font-size: 0.88em; }
+
+/* Global thin scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #4a4a4a; }
+* { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+
+/* Skupiny Logu */
+.group-details { margin-bottom: 5px; }
+.group-summary { padding: 8px; cursor: pointer; list-style: none; font-size: 0.9rem; font-weight: bold; border-radius: 4px; transition: background 0.2s ease; }
+.group-summary:hover { background: var(--border); }
+.group-summary i { width: 20px; text-align: center; color: #888; margin-right: 5px; }
+.group-actions { padding: 5px 10px; border-bottom: 1px solid var(--border); margin-bottom: 5px; }
+.group-action-btn { width: 100%; background: #333; border: 1px solid #444; color: #ccc; font-size: 0.75rem; padding: 5px; border-radius: 3px; cursor: pointer; margin-bottom: 4px; transition: all 0.2s ease; }
+.group-action-btn:hover { background: var(--accent); color: white; border-color: var(--accent); }
+
+.file-item { padding: 6px 10px; font-size: 0.85rem; color: #aaa; border-left: 1px solid var(--border); margin-left: 8px; display: flex; justify-content: space-between; align-items: center; transition: all 0.2s ease; }
+.file-item:hover { color: var(--accent); border-left-color: var(--accent); background: rgba(255,255,255,0.03); }
+.file-actions i { margin-left: 10px; cursor: pointer; color: #555; font-size: 0.95em; transition: color 0.2s ease; }
+.file-actions i:hover { color: var(--accent); }
+
+.spacer-div { height: 100vh; display: flex; flex-direction: column; justify-content: flex-end; width: 100%; border-bottom: 2px dashed var(--border); margin-bottom: 20px; }
+
+/* --- 7. SYSTEM MONITOR A PREDIKCE --- */
+.sys-monitor-container { 
+    background: var(--card-bg); 
+    border: 1px solid var(--card-border); 
+    border-radius: 6px; 
+    margin: 10px 0; 
+    overflow: hidden; 
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2); 
+}
+
+.sys-header { 
+    background: #202020; 
+    padding: 10px 15px; 
+    cursor: pointer; 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; 
+    border-bottom: 1px solid var(--border); 
+    user-select: none; 
+}
+.sys-header:hover { background: #2a2a2a; }
+.sys-body { padding: 15px; display: block; }
+.sys-body.minimized { display: none; }
+
+.sys-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 15px;
+    align-items: start;
+}
+
+.sys-section {
+    background: rgba(0,0,0,0.1);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 10px;
+    min-width: 0;
+}
+
+.sys-section-title { 
+    color: var(--accent); 
+    font-size: 0.8em; 
+    text-transform: uppercase; 
+    letter-spacing: 1px; 
+    margin-bottom: 5px; 
+    border-bottom: 1px solid #333; 
+    padding-bottom: 2px; 
+}
+
+.sys-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    gap: 15px; 
+}
+
+.sys-label { 
+    color: var(--text-muted); 
+    flex: 0 0 auto;
+    line-height: 1.4; 
+    font-size: clamp(0.75em, 1.5vw, 0.9em); 
+}
+
+.sys-val { 
+    font-family: monospace; 
+    font-weight: bold; 
+    color: var(--text-main); 
+    text-align: right; 
+    flex: 1 1 0px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    line-height: 1.4;
+    font-size: clamp(0.7em, 1.6vw, 0.95em); 
+}
+
+.val-ok { color: #107c10; }
+.val-warn { color: #d83b01; }
+.val-crit { color: #c50f1f; }
+.val-info { color: var(--accent); }
+
+#graph-container { position: relative; height: 350px; width: 100%; margin-top: 10px; }
+.metric-card { background: rgba(255, 255, 255, 0.05); padding: 12px; margin-bottom: 8px; border-radius: 4px; border-left: 3px solid #555; display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: all 0.2s ease; }
+.metric-card:hover { transform: translateX(5px); background: rgba(255, 255, 255, 0.08); }
+.metric-card.WARNING { border-left-color: var(--warning); background: rgba(216, 59, 1, 0.05); }
+.metric-card.PREDICTION { border-left-color: var(--prediction); background: rgba(23, 162, 184, 0.05); }
+.metric-card.CRITICAL { border-left-color: var(--error); background: rgba(197, 15, 31, 0.1); box-shadow: 0 0 10px rgba(197, 15, 31, 0.2); animation: pulse-red 2s infinite; }
+.metric-card.OK { border-left-color: var(--success); }
+
+.metric-name { font-weight: bold; font-size: 0.95em; color: #eee; }
+.metric-val { font-family: monospace; font-size: 1.1em; font-weight: bold; }
+.metric-msg { font-size: 0.85em; color: #aaa; margin-top: 4px; }
+.trend-arrow { margin-left: 5px; font-size: 0.9em; }
+.metric-cat-header { margin-top: 15px; border-bottom: 1px solid #333; color: #888; font-size: 0.8em; text-transform: uppercase; letter-spacing: 1px; padding-bottom: 4px; }
+
+details.ok-metrics > summary { list-style: none; cursor: pointer; padding: 8px; background: rgba(255,255,255,0.02); color: #666; font-size: 0.85em; border-radius: 4px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+details.ok-metrics > summary::-webkit-details-marker { display: none; }
+details.ok-metrics > summary:hover { background: rgba(255,255,255,0.05); color: #aaa; }
+details.ok-metrics > summary::after { content: '▼'; font-size: 0.8em; }
+details.ok-metrics[open] > summary::after { content: '▲'; }
+
+/* --- 8. DETEKOVANE PROBLEMY A STATUS --- */
+.status-wrapper { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; transition: all 0.3s ease; }
+.status-header { background: rgba(255,255,255,0.05); padding: 10px; border-bottom: 1px solid transparent; transition: background 0.2s ease; }
+.status-header:hover { background: rgba(255,255,255,0.1); }
+.status-body { padding: 10px; transition: max-height 0.3s ease, opacity 0.3s ease; opacity: 1; }
+.status-wrapper.minimized .status-body { display: none; }
+.status-wrapper.minimized .status-header { border-bottom: none; opacity: 0.7; }
+.status-wrapper.minimized .status-header span { transform: rotate(-90deg); display:inline-block; }
+
+/* Issue card layout — třídy */
+.issue-row-inner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+.issue-content-area {
+    flex: 1 1 0;
+    min-width: 0;
+    word-break: break-word;
+    overflow: hidden;
+}
+.issue-actions {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    margin-left: 8px;
+    gap: 2px;
+    flex-wrap: nowrap;
+}
+
+/* 009: collapsed issue card */
+[data-issue-card].collapsed .issue-drag-handle { display:none; }
+[data-issue-card].collapsed .issue-actions { display:none !important; }
+[data-issue-card].collapsed { cursor:pointer; opacity:.85; }
+[data-issue-card].collapsed:hover { opacity:1; }
+[data-issue-card] { cursor:default; }
+.validating-card { animation: pulse-blue 2s infinite; border-left-color: #0078d4 !important; }
+.validating-badge { background: #0078d4; color: white; font-size: 0.75em; padding: 2px 8px; border-radius: 12px; margin-left: 10px; font-weight: bold; display: inline-flex; align-items: center; gap: 5px; text-transform: uppercase; letter-spacing: 0.5px; vertical-align: middle; }
+.pending-blink { animation: blink-animation 1.5s infinite; color: #ffc107 !important; border: 1px solid #ffc107 !important; background: rgba(255, 193, 7, 0.1) !important; }
+
+/* --- 9. MODALY A OKNA --- */
+.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 100; display: none; align-items: center; justify-content: center; backdrop-filter: blur(2px); }
+.modal { background: var(--panel); width: 550px; max-width: 90%; border-radius: 8px; border: 1px solid var(--border); box-shadow: 0 10px 25px rgba(0,0,0,0.5); overflow: hidden; display: flex; flex-direction: column; }
+.modal-header { padding: 15px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); }
+.modal-body {
+    max-height: 70vh;    /* Okno nikdy neuteče z obrazovky */
+    overflow-y: auto;    /* Pokud je obsahu moc, vytvoří scrollbar */
+    padding: 15px;
+    box-sizing: border-box;
+}
+.modal-footer { padding: 15px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; background: rgba(0,0,0,0.2); }
+.modal-code { background: #111; padding: 10px; border-radius: 4px; font-family: monospace; color: #00ff00; margin: 10px 0; max-height: 200px; overflow: auto; border: 1px solid #333; }
+
+/* modal scrollbar handled by global ::-webkit-scrollbar rules */
+
+.log-modal { width: 90%; height: 90%; }
+.log-list { display: flex; flex-direction: column; gap: 5px; max-height: 100%; overflow-y: auto; width: 300px; border-right: 1px solid var(--border); padding: 10px; background: rgba(0,0,0,0.1); }
+.log-content { flex: 1; background: #050505; color: #bbb; font-family: 'Consolas', monospace; padding: 15px; overflow: auto; white-space: pre-wrap; font-size: 0.85rem; line-height: 1.4; }
+.log-container { display: flex; height: 100%; }
+.log-item { padding: 12px; cursor: pointer; border-radius: 4px; font-size: 0.85rem; border-bottom: 1px solid rgba(255,255,255,0.05); }
+.log-item:hover { background: rgba(255,255,255,0.05); }
+.log-item.active { background: var(--accent); color: white; }
+.log-meta { font-size: 0.7rem; color: #666; margin-top: 4px; }
+
+/* --- 10. TOAST NOTIFIKACE --- */
+.sentinel-toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: var(--card-bg);
+    border-left: 5px solid #ff4444; 
+    color: var(--text-main);
+    padding: 15px 20px;
+    border-radius: 4px;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.6);
+    z-index: 10000;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    animation: slideInRight 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    max-width: 350px;
+    border: 1px solid var(--card-border);
+}
+.sentinel-toast i { font-size: 1.5rem; color: #ff4444; }
+
+/* --- 387: Chat suggested queries chips --- */
+.chat-chip {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 0.78em;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    user-select: none;
+    white-space: nowrap;
+}
+.chat-chip:hover {
+    background: var(--accent, #0078d4);
+    color: #fff;
+    border-color: var(--accent, #0078d4);
+}
+
+/* --- 11. KLICOVE ANIMACE --- */
+@keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.8; transform: scale(1.05); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes pulse-queue { 0% { opacity: 0.7; } 50% { opacity: 1; } 100% { opacity: 0.7; } }
+@keyframes pulse-blue { 0% { box-shadow: 0 0 0 0 rgba(0, 120, 212, 0.6); border-color: #0078d4; } 70% { box-shadow: 0 0 0 8px rgba(0, 120, 212, 0); border-color: #0078d4; } 100% { box-shadow: 0 0 0 0 rgba(0, 120, 212, 0); border-color: #0078d4; } }
+@keyframes pulse-red { 0% { box-shadow: 0 0 0 0 rgba(197, 15, 31, 0.4); } 70% { box-shadow: 0 0 0 6px rgba(197, 15, 31, 0); } 100% { box-shadow: 0 0 0 0 rgba(197, 15, 31, 0); } }
+@keyframes blink-animation { 0% { opacity: 1; border-color: #ffc107; } 50% { opacity: 0.6; border-color: transparent; } 100% { opacity: 1; border-color: #ffc107; } }
+.cfg-label { font-size: 0.78em; color: var(--text-muted); display: block; margin-bottom: 3px; }
+.cfg-input { width: 100%; padding: 6px 9px; background: var(--input-bg); color: var(--text-main); border: 1px solid var(--border); border-radius: 4px; box-sizing: border-box; font-size: 0.87em; }
+@keyframes blinker { 50% { opacity: 0.3; } }
+@keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes loadbar { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+@keyframes bell-shake { 0% { transform: rotate(0); } 15% { transform: rotate(15deg); } 30% { transform: rotate(-15deg); } 45% { transform: rotate(10deg); } 60% { transform: rotate(-10deg); } 75% { transform: rotate(5deg); } 85% { transform: rotate(-5deg); } 100% { transform: rotate(0); } }
+
+.notification-active { color: #ff4444 !important; animation: bell-shake 0.8s cubic-bezier(.36,.07,.19,.97) both infinite; text-shadow: 0 0 10px rgba(255, 68, 68, 0.6); }
+
+/* ==========================================================================
+   MODIFIKACE PRO MOBILNI ZARIZENI (VYSTAVENO NA ORIGINALU)
+   Tento blok se spusti pouze na mensich obrazovkach
+   ========================================================================== */
+
+#mobile-menu-btn { display: none; }
+#mobile-backdrop { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 850; }
+
+@media (max-width: 850px) {
+    /* Issue karty — kompaktní layout, akce vedle obsahu */
+    .issue-row-inner {
+        flex-wrap: nowrap;
+        align-items: center;
+    }
+    .issue-content-area {
+        flex: 1 1 0;
+        min-width: 0;
+    }
+    .issue-actions {
+        flex-wrap: nowrap;
+        margin-left: 4px;
+        gap: 2px;
+        flex-shrink: 0;
+    }
+    /* Na úzkých mobilech schovat méně důležité akce */
+    @media (max-width: 480px) {
+        .issue-actions .issue-action-secondary { display: none !important; }
+    }
+
+    /* Hlavicka - zalomeni do dvou radku a optimalizace mista */
+    header { 
+        height: auto; 
+        min-height: 55px; 
+        flex-direction: column; 
+        align-items: stretch; 
+        padding: 10px; 
+        gap: 10px; 
+    }
+    
+    .header-left { width: 100%; justify-content: flex-start; }
+    .header-left .badge-user { margin-left: auto; }
+    
+    #mobile-menu-btn { display: inline-block; margin-right: 15px; font-size: 1.3em; cursor: pointer; color: #888; }
+    .instance-feature-badge { display: none; }
+    
+    .header-right { 
+        width: 100%; 
+        justify-content: center; 
+        flex-wrap: wrap; 
+        gap: 8px; 
+        padding-top: 8px; 
+        border-top: 1px solid var(--border); 
+    }
+    
+    .header-right .badge span { display: none; }
+    .header-right .badge { padding: 6px 10px; }
+
+    /* Levy nastrojovy panel (Off-canvas s animaci) */
+    #tools-panel { 
+        position: absolute; 
+        top: 0; 
+        left: -320px; 
+        height: 100%; 
+        width: 280px; 
+        z-index: 900;
+        transition: left 0.3s ease-in-out;
+        box-shadow: 5px 0 25px rgba(0,0,0,0.7);
+    }
+    #tools-panel.open { left: 0; }
+    
+    /* Zmenseni odsazeni pro mobil */
+    #chat-history { padding: 10px; }
+    .message { max-width: 95%; }
+    #input-area { padding: 10px; }
+    
+    /* Vsechny dashboard/system gridy na 1 sloupec */
+    .sys-grid { grid-template-columns: 1fr; }
+    
+    /* Modaly pres celou obrazovku */
+    .modal {
+        width: 95% !important;
+        max-width: 95% !important;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+
+    /* Tools modal — obsah panes nezpůsobuje overflow */
+    #tools-modal .modal { width: 98% !important; max-width: 98% !important; height: 90vh; }
+    #tools-modal [id^="tools-pane-"] { overflow-x: auto; }
+    #tools-modal table { min-width: unset; width: 100%; }
+    /* SAT panel — tabs neschovávat text */
+    #sat-tab-bar { overflow-x: auto; }
+}
+
+/* Třída pro tělo modálního okna */
+.modal-content-scroll {
+    max-height: 70vh;
+    overflow-y: auto;
+    padding: 15px;
+    box-sizing: border-box;
+    scrollbar-width: thin;
+}
+.modal-content-scroll::-webkit-scrollbar { width: 6px; }
+.modal-content-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* Horizontální scroll pro tabulky v modalech na úzkých obrazovkách */
+.modal-body table, .modal-body > div > table {
+    min-width: 480px;
+}
+
+/* --- STŘEDNÍ OBRAZOVKY (850–1200px) --- */
+@media (max-width: 1200px) and (min-width: 851px) {
+    .header-right .badge span { display: none; }
+    .header-right { gap: 6px; }
+    .header-right .badge { padding: 5px 8px; }
+}
+
+/* --- Report filter checkboxes --- */
+.report-cb-label {
+    display: flex; align-items: center; gap: 5px;
+    padding: 4px 10px; border: 1px solid var(--border); border-radius: 4px;
+    cursor: pointer; font-size: 0.83em; color: var(--text-muted);
+    background: var(--card-bg); user-select: none; transition: border-color .15s, color .15s;
+}
+.report-cb-label:hover { border-color: var(--accent); color: var(--text-main); }
+.report-cb-label:has(input:checked) { border-color: var(--accent); color: var(--text-main); background: rgba(0, 120, 212, 0.1); }
+.report-cb-label input[type=checkbox] { accent-color: var(--accent); cursor: pointer; }
+.report-section-label {
+    font-size: 0.78em; color: var(--text-muted); margin-bottom: 8px;
+    font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+    display: flex; align-items: center; gap: 6px;
+}
+.report-section-label i { color: var(--accent); }
+
+/* --- Log Viewer toolbar & detector --- */
+.log-toolbar {
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 8px; border-bottom: 1px solid var(--border);
+    background: var(--panel); flex-shrink: 0;
+}
+.log-tool-btn {
+    background: transparent; border: 1px solid var(--border); color: var(--text-muted);
+    border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: .82em; flex-shrink: 0;
+    transition: color .15s, border-color .15s;
+}
+.log-tool-btn:hover { color: var(--text-main); border-color: var(--accent); }
+.log-line { padding: 1px 0; line-height: 1.5; white-space: pre-wrap; word-break: break-all; font-size: .82em; }
+.log-line mark { background: rgba(255, 193, 7, 0.35); color: inherit; border-radius: 2px; }
+
+/* --- VELMI MALE OBRAZOVKY (<480px) --- */
+@media (max-width: 480px) {
+    header { padding: 8px; }
+    /* 272: Topbar badge — jen ikona, bez textu na <480px */
+    .header-right { gap: 4px; flex-wrap: nowrap; overflow-x: auto; }
+    .header-right .badge span { display: none; }
+    .header-right .badge { padding: 5px 8px; font-size: 0.75em; min-width: 28px; justify-content: center; }
+    .badge { padding: 5px 7px; font-size: 0.7em; }
+    #input-area { gap: 6px; padding: 8px; }
+    .message { font-size: 0.9rem; }
+    .modal-footer { flex-direction: column; gap: 8px; align-items: stretch; }
+    .modal-footer button { width: 100%; justify-content: center; }
+
+    /* Dashboard stat cards — 2 per row on mobile */
+    #dashboard-body > div:first-child { grid-template-columns: 1fr 1fr !important; gap: 6px !important; }
+
+    /* Agent health cards — hide less important columns on mobile */
+    .agent-health-col-7d,
+    .agent-health-col-total { display: none; }
+
+    /* Chat input — larger touch target */
+    #chat-input { font-size: 16px; } /* prevents iOS zoom */
+    #send-btn { min-width: 44px; min-height: 44px; }
+
+    /* Sparklines row — 2 columns */
+    #dashboard-body .sparkline-row { grid-template-columns: 1fr 1fr !important; }
+
+    /* Tools modal tabs — smaller text */
+    .tools-tab { padding: 6px 10px; font-size: 0.76em; }
+
+    /* Issues table — klíčové sloupce, zbytek schovat */
+    .issue-table th:nth-child(n+5),
+    .issue-table td:nth-child(n+5) { display: none; }
+
+    /* Log viewer — file list jako sliding overlay na mobilech */
+    .log-list {
+        position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+        z-index: 10; width: 100% !important; max-height: 100%; border-right: none;
+        background: var(--bg); display: none;
+    }
+    .log-list.mobile-open { display: flex; }
+    .log-container { position: relative; }
+    #log-files-btn { display: inline-flex !important; }
+    .log-modal .modal { width: 100% !important; height: 100% !important; border-radius: 0; }
+
+    /* Header badges — oříznout na minimum */
+    .header-right .badge span { display: none; }
+    .header-right .badge { padding: 5px 8px; }
+
+    /* Modal footer — vždy sloupcový layout */
+    .modal-footer > div { flex-direction: column !important; width: 100%; }
+}
+
+/* Touch-friendly — larger click targets for icon buttons */
+@media (pointer: coarse) {
+    .fa-trash, .fa-eye-slash, .fa-bell, .fa-bell-slash, .fa-share-nodes {
+        padding: 6px;
+    }
+    .modal-header i.fa-times { padding: 8px; font-size: 1.1em; }
+    #send-btn { min-height: 44px; }
+}
+
+/* --- Tools Modal Tabs --- */
+.tools-tab {
+    background: transparent; border: none; border-bottom: 2px solid transparent;
+    color: var(--text-muted); padding: 8px 14px; cursor: pointer; font-size: 0.83em;
+    font-weight: 500; white-space: nowrap; transition: color .15s, border-color .15s;
+    border-radius: 0;
+}
+.tools-tab:hover { color: var(--text-main); }
+.tools-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* --- Chat thinking bubble --- */
+.thinking-bubble {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 16px; background: var(--card-bg);
+    border: 1px solid var(--card-border); border-radius: 8px;
+    margin-bottom: 8px;
+}
+.thinking-dots span {
+    display: inline-block; width: 6px; height: 6px; margin: 0 2px;
+    background: var(--accent); border-radius: 50%;
+    animation: thinking-bounce 1.2s infinite ease-in-out;
+}
+.thinking-dots span:nth-child(2) { animation-delay: .2s; }
+.thinking-dots span:nth-child(3) { animation-delay: .4s; }
+@keyframes thinking-bounce {
+    0%, 80%, 100% { transform: scale(.6); opacity: .4; }
+    40% { transform: scale(1); opacity: 1; }
+}
+
+/* --- Responsivita issues modal toolbar (#5) --- */
+@media (max-width: 850px) {
+    /* Issues toolbar — skrýt méně důležitá tlačítka */
+    #correlate-ai-btn span, #batch-ai-btn span, #auto-cluster-btn span { display: none; }
+    #dedicated-modal-body { max-height: calc(100vh - 280px) !important; }
+    /* Modal s overflow-x auto */
+    #dedicated-issues-modal .modal { max-height: 95vh; overflow: hidden; display: flex; flex-direction: column; }
+    #dedicated-modal-body { overflow-y: auto; flex: 1; }
+}
+
+@media (max-width: 480px) {
+    /* Na malých obrazovkách — schovat Triage, TagCloud tlačítka v issues */
+    #dedicated-issues-modal .modal-header { flex-wrap: wrap; }
+    /* Issues toolbar — wrap tlačítka */
+    #dedicated-issues-modal > div > div[style*="padding:8px"] { max-height: 80px; overflow-y: auto; }
+    /* Zkrátit text v kartách issue na mobilu */
+    [data-issue-card] span[title] { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; }
+}
+
+/* --- PC: modal-body maximální výška dle viewport (#5) --- */
+@media (min-width: 851px) {
+    #dedicated-modal-body { max-height: calc(80vh - 160px) !important; }
+    .modal { max-height: 92vh; }
+}
+
+/* --- 225: Responsivní charts v Tools modalu --- */
+#tools-modal canvas { max-width: 100%; }
+#tools-modal .chart-container { position: relative; width: 100%; }
+@media (max-width: 850px) {
+    #tools-modal [style*="grid-template-columns:2fr 1fr"] {
+        grid-template-columns: 1fr !important;
+    }
+    #tools-modal [style*="height:140px"] { height: 120px !important; }
+    #tools-modal [style*="height:160px"] { height: 120px !important; }
+    #tools-modal [style*="height:260px"] { height: 180px !important; }
+}
+
+/* --- 389: PRINT STYLESHEET --- */
+@media print {
+    body { background: white !important; color: black !important; }
+    header, #tools-panel, #input-area, #chat-panel, .modal-overlay,
+    .header-right, #mobile-menu-btn, .icon-btn-header { display: none !important; }
+    #main-container { display: block !important; }
+    .modal { box-shadow: none !important; border: 1px solid #ccc !important; }
+    [data-issue-card] { border: 1px solid #ccc !important; break-inside: avoid; margin-bottom: 8px; }
+    a { color: black !important; text-decoration: none !important; }
+}

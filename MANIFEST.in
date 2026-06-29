@@ -1,0 +1,17 @@
+include README.md
+include check.sh
+include sentinel_init.py
+include ollama_local.sh
+
+# graft vezme celou složku včetně všech podadresářů a souborů
+graft docs
+graft sentinel/templates
+graft sentinel/static
+
+# Pro jistotu zahrneme i py soubory, pokud by nebyly v balíčcích
+recursive-include sentinel *.py
+
+# Vyhodíme smetí, které v balíčku nechceš
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude .DS_Store

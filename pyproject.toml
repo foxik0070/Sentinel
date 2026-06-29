@@ -1,0 +1,28 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+# Aktivní pravidla — jen nejdůležitější, bez formátování
+select = ["E", "F", "W"]
+ignore = [
+    "E501",   # line too long — vyřešíme postupně
+    "E402",   # module level import not at top — nutné kvůli arch
+    "E701",   # multiple statements on one line — legacy styl
+    "E711",   # comparison to None — někdy záměrné
+    "E712",   # comparison to True/False
+    "F401",   # unused import — re-exporty přes __init__
+    "F811",   # redefinition — blueprint patterns
+    "W291",   # trailing whitespace
+    "W293",   # whitespace before colon
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E", "F", "W"]  # testy mají volnější pravidla
+"sentinel/__main__.py" = ["E722"]  # bare except je záměrné pro RAM check
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
