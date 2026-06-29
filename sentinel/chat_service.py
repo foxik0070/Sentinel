@@ -877,7 +877,7 @@ class ChatService(threading.Thread):
                 "Nula alertů. Tým ops si dává kafe. Vychutnávejte tento vzácný okamžik.",
             ]
 
-            _SKIP_PLUGINS = {'detector_who', 'agent_security_vulnerability_scan', 'agent_security_root_monitor'}
+            _SKIP_PLUGINS = {'detector_who', 'detector_icinga', 'agent_security_vulnerability_scan', 'agent_security_root_monitor'}
 
             active = state.get_active_issues()
             if active:

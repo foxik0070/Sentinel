@@ -7,10 +7,12 @@ import time
 import sqlite3
 from datetime import datetime, timezone, timedelta
 from flask import Blueprint, request, jsonify, g, Response
+from collections import deque
 from ..auth import requires_auth, int_param
 from .. import state, config
 
 logger = logging.getLogger("sentinel.chat")
+_joke_recent_hosts: deque = deque(maxlen=5)
 
 
 def create_blueprint(service):
@@ -1491,21 +1493,7 @@ def create_blueprint(service):
         tpl_issue = TEMPLATES_ISSUE_EN if lang == 'en' else TEMPLATES_ISSUE
         tpl_ok = TEMPLATES_OK_EN if lang == 'en' else TEMPLATES_OK
 
-        _SKIP_PLUGINS = {'detector_who', 'agent_security_vulnerability_scan', 'agent_security_root_monitor'}
-
-        # načti naposledy použité hosty z DB (posledních 5 vtipů)
-        try:
-            with state.db_lock:
-                _conn = state._get_conn()
-                _rows = _conn.execute("SELECT joke FROM infra_jokes ORDER BY id DESC LIMIT 5").fetchall()
-                _conn.close()
-            _recent_hosts = set()
-            for (_j,) in _rows:
-                for _w in str(_j).split():
-                    if '.' in _w or _w.isupper():
-                        _recent_hosts.add(_w.strip('.,—'))
-        except Exception:
-            _recent_hosts = set()
+        _SKIP_PLUGINS = {'detector_who', 'detector_icinga', 'agent_security_vulnerability_scan', 'agent_security_root_monitor'}
 
         active = state.get_active_issues()
         if active:
@@ -1513,11 +1501,12 @@ def create_blueprint(service):
             candidates = [i for i in active if i.get('plugin_name') not in _SKIP_PLUGINS]
             if not candidates:
                 candidates = active
-            # preferuj hosty co nebyly v posledních vtipcích
-            fresh = [i for i in candidates if i.get('host') not in _recent_hosts]
-            pool = fresh[:50] if fresh else candidates[:50]
+            # vynechej hosty co byli v posledních 5 vtipcích (in-memory)
+            fresh = [i for i in candidates if i.get('host') not in _joke_recent_hosts]
+            pool = (fresh if fresh else candidates)[:50]
             _r.shuffle(pool)
             issue = pool[0]
+            _joke_recent_hosts.append(issue.get('host', ''))
             host = issue.get('host') or 'server'
             plugin = issue.get('plugin_name') or 'monitoring'
             try:
