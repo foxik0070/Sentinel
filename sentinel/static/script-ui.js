@@ -3146,17 +3146,25 @@ async function _sentinelLogoJoke() {
     if (!ch) return;
     const bubble = document.createElement('div');
     bubble.style.cssText = 'align-self:center;max-width:85%;background:rgba(0,120,212,0.07);border:1px solid rgba(0,120,212,0.25);border-radius:12px;padding:14px 18px;font-size:.9em;color:var(--text-muted);font-style:italic;line-height:1.6;text-align:center;margin:4px 0;animation:fadeIn .4s ease;';
-    bubble.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="margin-right:6px;font-size:.85em;"></i>generuji vtip…';
+    const _jokeLang = localStorage.getItem('sentinel_lang') || 'cs';
+    bubble.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="margin-right:6px;font-size:.85em;"></i>' + (_jokeLang === 'en' ? 'generating joke…' : 'generuji vtip…');
     ch.appendChild(bubble);
     ch.scrollTop = ch.scrollHeight;
     try {
-        const r = await fetch('/api/analyze/infra_joke', {method:'POST', headers:{'Content-Type':'application/json'}});
+        const r = await fetch('/api/analyze/infra_joke', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({lang: _jokeLang})});
         const d = await r.json();
         bubble.style.color = 'var(--text-main)';
         bubble.textContent = d.joke || '...';
         ch.scrollTop = ch.scrollHeight;
     } catch(e) {
-        const fallbacks = [
+        const fallbacks = _jokeLang === 'en' ? [
+            'Infrastructure is fine. Probably.',
+            'Restart fixes 90% of problems. The other 10% need a second restart.',
+            'Monitoring reports everything OK. Monitoring lies.',
+            'Backup exists. Nobody has tested restore yet.',
+            'Uptime 99.9% — that 0.1% was always Friday afternoon.',
+            'Have you tried turning it off and on again? No? Why not.',
+        ] : [
             'Infrastruktura funguje. Nejspíš.',
             'Restart vyřeší 90 % problémů. Zbylých 10 % vyřeší druhý restart.',
             'Server je jako manžel — nejlépe funguje, když ho ignoruješ.',

@@ -1408,6 +1408,45 @@ def create_blueprint(service):
     def api_infra_joke():
         """Sarkastický vtip o aktuálním stavu infrastruktury ze šablon."""
         import random as _r
+        lang = (request.get_json(silent=True) or {}).get('lang', 'cs')
+
+        TEMPLATES_ISSUE_EN = [
+            # knock-knock
+            "Knock knock.\n— Who's there?\n— {host}.\n— {host} who?\n— {host}, the one with {plugin} broken for {age} now.",
+            "Knock knock.\n— Who's there?\n— {plugin}.\n— {plugin} who?\n— {plugin} on {host}. Still. Always. Forever.",
+            "Knock knock.\n— Who's there?\n— Monitoring.\n— Monitoring who?\n— Monitoring, telling you {host} has a problem with {plugin}. Surprise.",
+            "Knock knock.\n— Who's there?\n— Alert.\n— Alert who?\n— Alert #{count} today. {host}. {plugin}. Get used to it.",
+            "Knock knock.\n— Who's there?\n— On-call.\n— On-call who?\n— On-call, who can't sleep tonight because of {host} and {plugin}.",
+            "Knock knock.\n— Who's there?\n— {host}.\n— {host} who?\n— {host}, your favorite server. The one with {plugin}. Again.",
+            # one-liners
+            "Today's weather forecast: {host} — overcast, {plugin} offline, 20% chance of fix.",
+            "Motivational quote of the day: Never give up. {host} didn't either, and look where that got it.",
+            "{host} has had {plugin} broken for {age}. Grafana knows. You know. Everyone knows. Nobody does anything.",
+            "Is it working? No. Will it be fixed? Maybe. When? {host} will reply when it feels like it.",
+            "Infrastructure status: {count} alerts. Team morale: no comment.",
+            "Good news: monitoring works. Bad news: {host} with {plugin} definitely doesn't.",
+            "{host} celebrates {age} without {plugin}. Should we send a cake?",
+            # horoscope
+            "Horoscope for {host}: Today is not a good day for {plugin}. Actually, no day is.",
+            "Horoscope for the sysadmin: The stars say {host} disappointed you today. The stars are right.",
+            # ticket style
+            "TICKET #∞ — {host}: {plugin} down for {age}. Priority: critical. Status: unresolved.",
+            "Dear customer, your server {host} has been experiencing issues with {plugin} for {age}. We apologize for the inconvenience. Your ops team.",
+            # philosophical
+            "If {host} crashes in the forest and no one sees it, the crash still gets logged. And {plugin} reports it for {age}.",
+            "Which came first: {host} or {plugin}? Neither works today, so it doesn't matter.",
+        ]
+
+        TEMPLATES_OK_EN = [
+            "Knock knock.\n— Who's there?\n— Infrastructure.\n— Infrastructure who?\n— Infrastructure that has nothing to report today. Probably broken monitoring.",
+            "Knock knock.\n— Who's there?\n— Silence.\n— Silence who?\n— Silence in the alerts. Either everything works, or monitoring is offline too.",
+            "Knock knock.\n— Who's there?\n— Calm.\n— Calm who?\n— The calm before the storm. All servers green. Backing up now.",
+            "All servers are green. This message will self-destruct once that changes.",
+            "Zero active alerts. Either everything is fine, or monitoring finally broke too.",
+            "Infrastructure is working. Write down the date — this doesn't happen often.",
+            "No issues today. Tomorrow will be worse, but we'll deal with that tomorrow.",
+            "Zero alerts. Ops team is having coffee. Enjoy this rare moment.",
+        ]
 
         TEMPLATES_ISSUE = [
             # klep-klep
@@ -1449,6 +1488,9 @@ def create_blueprint(service):
             "Nula alertů. Tým ops si dává kafe. Vychutnávejte tento vzácný okamžik.",
         ]
 
+        tpl_issue = TEMPLATES_ISSUE_EN if lang == 'en' else TEMPLATES_ISSUE
+        tpl_ok = TEMPLATES_OK_EN if lang == 'en' else TEMPLATES_OK
+
         active = state.get_active_issues()
         if active:
             from datetime import datetime, timezone
@@ -1466,9 +1508,9 @@ def create_blueprint(service):
                 age_sec = 0
             age = f"{age_sec // 3600}h" if age_sec >= 3600 else f"{max(1, age_sec // 60)}min"
             count = len(active)
-            joke = _r.choice(TEMPLATES_ISSUE).format(host=host, plugin=plugin, age=age, count=count)
+            joke = _r.choice(tpl_issue).format(host=host, plugin=plugin, age=age, count=count)
         else:
-            joke = _r.choice(TEMPLATES_OK)
+            joke = _r.choice(tpl_ok)
 
         joke = html.escape(joke)
         if joke:
