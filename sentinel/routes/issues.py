@@ -1426,11 +1426,20 @@ def create_blueprint(service):
 
         active = state.get_active_issues()
         if active:
+            from datetime import datetime, timezone
             issue = _r.choice(active[:15])
-            host = issue.get('hostname') or issue.get('host') or 'server'
-            plugin = issue.get('plugin_name') or 'něco'
-            age_sec = int(issue.get('age_seconds') or 0)
-            age = f"{age_sec // 3600}h" if age_sec >= 3600 else f"{age_sec // 60}min"
+            host = issue.get('host') or 'server'
+            plugin = issue.get('plugin_name') or 'monitoring'
+            try:
+                fs = issue.get('first_seen') or ''
+                if fs:
+                    dt = datetime.fromisoformat(fs.replace('Z', '+00:00'))
+                    age_sec = int((datetime.now(timezone.utc) - dt).total_seconds())
+                else:
+                    age_sec = 0
+            except Exception:
+                age_sec = 0
+            age = f"{age_sec // 3600}h" if age_sec >= 3600 else f"{max(1, age_sec // 60)}min"
             count = len(active)
             joke = _r.choice(TEMPLATES_ISSUE).format(host=host, plugin=plugin, age=age, count=count)
         else:

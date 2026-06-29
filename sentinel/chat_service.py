@@ -833,22 +833,41 @@ class ChatService(threading.Thread):
             logger.debug(f"_save_health_snapshot: {e}")
 
     def _generate_hourly_joke(self):
-        """Generuje sarkastický IT vtip každou hodinu a ukládá do infra_jokes."""
+        """Hodinový klep-klep vtip o aktuálním problému ze šablon."""
         try:
+            import random as _r
+            from datetime import datetime, timezone
+
+            TEMPLATES_ISSUE = [
+                "Klep klep.\n— Kdo je?\n— {host}.\n— {host} kdo?\n— {host}, ten co má {plugin} v prdeli už {age}.",
+                "Klep klep.\n— Kdo je?\n— {plugin}.\n— {plugin} kdo?\n— {plugin} na {host}. Pořád. Furt. Dokola.",
+                "Klep klep.\n— Kdo je?\n— Monitoring.\n— Monitoring kdo?\n— Monitoring, co ti hlásí že {host} má problém s {plugin}. Překvapení.",
+                "Klep klep.\n— Kdo je?\n— Alert.\n— Alert kdo?\n— Alert číslo {count} dnes. {host}. {plugin}. Zvykej si.",
+                "Klep klep.\n— Kdo je?\n— On-call.\n— On-call kdo?\n— On-call, co kvůli {host} a {plugin} dnes zas nespí.",
+                "Klep klep.\n— Kdo je?\n— {host}.\n— {host} kdo?\n— {host}, tvůj oblíbený server. Ten s {plugin}. Zase.",
+            ]
+            TEMPLATES_OK = [
+                "Klep klep.\n— Kdo je?\n— Infrastruktura.\n— Infrastruktura kdo?\n— Infrastruktura, co dnes nic nehlásí. Pravděpodobně rozbitý monitoring.",
+                "Klep klep.\n— Kdo je?\n— Silence.\n— Silence kdo?\n— Silence v alertech. Buď vše funguje, nebo je monitoring taky offline.",
+                "Klep klep.\n— Kdo je?\n— Klid.\n— Klid kdo?\n— Klid před bouří. Všechny servery zelené. Zálohuji teď.",
+            ]
+
             active = state.get_active_issues()
-            context = ""
             if active:
-                sample = active[:3]
-                context = " Aktuální problémy: " + ", ".join(
-                    f"{i.get('plugin_name','?')} na {i.get('hostname','?')}" for i in sample
-                ) + "."
-            prompt = (
-                "Jsi sarkastický DevOps inženýr. Vygeneruj JEDEN krátký vtip (max 2 věty) "
-                "o infrastruktuře, serverech nebo IT obecně. Buď ironický a vtipný.%s "
-                "Odpověz pouze samotným vtipem, bez uvozovek a bez komentáře." % context
-            )
-            result = self.execute_ollama(prompt, num_ctx=512, max_tokens=120, temperature=0.9)
-            joke = (result or "").strip()
+                issue = _r.choice(active[:15])
+                host = issue.get('host') or 'server'
+                plugin = issue.get('plugin_name') or 'monitoring'
+                try:
+                    fs = issue.get('first_seen') or ''
+                    dt = datetime.fromisoformat(fs.replace('Z', '+00:00'))
+                    age_sec = int((datetime.now(timezone.utc) - dt).total_seconds())
+                except Exception:
+                    age_sec = 0
+                age = f"{age_sec // 3600}h" if age_sec >= 3600 else f"{max(1, age_sec // 60)}min"
+                joke = _r.choice(TEMPLATES_ISSUE).format(host=host, plugin=plugin, age=age, count=len(active))
+            else:
+                joke = _r.choice(TEMPLATES_OK)
+
             if not joke:
                 return
             with state.db_lock:
