@@ -66,6 +66,7 @@ def _make_watchdog_socket():
         addr = '\0' + addr[1:]
     try:
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        sock.setblocking(False)  # non-blocking: sendall nikdy nezablokuje hlavní vlákno
         sock.connect(addr)
         return sock, addr
     except Exception as e:
@@ -226,7 +227,9 @@ def main():
     # --- INTERNAL WATCHDOG CONFIG ---
     web_failures = 0
     loop_counter = 0
-    WEB_CHECK_INTERVAL = 30  
+    stale_counter = 0
+    WEB_CHECK_INTERVAL = 30
+    STALE_CHECK_INTERVAL = 3600  # resolve stale problems once per hour
     WEB_URL = f"http://127.0.0.1:{config.WEB_PORT}/api/status_check"
 
     # --- Main Loop ---
@@ -258,6 +261,8 @@ def main():
                 if fail_count > 0:
                     utils.log_message(f"[WATCHDOG] ping obnoven po {fail_count} selháních")
                     fail_count = 0
+            except BlockingIOError:
+                pass  # socket buffer plný — systemd dostane příští ping, nevyžaduje obnovu
             except Exception as e:
                 fail_count += 1
                 utils.log_message(f"[WATCHDOG] ping selhal ({fail_count}): {e} — obnova socketu")
@@ -274,7 +279,8 @@ def main():
     try:
         while running:
             time.sleep(1)
-            loop_counter += 1
+            loop_counter  += 1
+            stale_counter += 1
 
             if not ollama_thread.is_alive():
                 utils.log_message("CRITICAL: Ollama worker died!")
@@ -290,6 +296,15 @@ def main():
                 utils.log_message("CRITICAL: Watcher (Log Monitor) thread died!")
                 utils.send_to_teams("⚠️ <b>CRITICAL:</b> Watcher thread died!", "tests")
                 running = False
+
+            if stale_counter >= STALE_CHECK_INTERVAL:
+                stale_counter = 0
+                try:
+                    n = state.resolve_stale_problems(ttl_hours=24)
+                    if n:
+                        utils.log_message(f"Stale cleanup: resolved {n} inactive problems (TTL=24h)")
+                except Exception as _e:
+                    utils.log_message(f"[!] Stale cleanup failed: {_e}")
 
             if loop_counter >= WEB_CHECK_INTERVAL:
                 loop_counter = 0

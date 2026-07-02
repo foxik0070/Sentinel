@@ -18,8 +18,8 @@ def get_infrastructure_label(path: str) -> str:
     for mapping in config.INFRASTRUCTURE_MAPPING:
         pattern = mapping.get("pattern", "").upper()
         if fnmatch.fnmatch(fname, pattern):
-            return mapping.get("name", "UNKNOWN")
-    return "UNKNOWN"
+            return mapping.get("name", "OTHER")
+    return "OTHER"
 
 def _is_false_positive(data: dict) -> bool:
     """Returns True if the problem matches a stored false-positive pattern."""

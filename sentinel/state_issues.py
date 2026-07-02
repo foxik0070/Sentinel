@@ -358,6 +358,56 @@ def prune_expired_actions():
         except Exception as e:
             logger.debug(f"prune_expired_actions requeue failed: {e}")
 
+
+def resolve_stale_problems(ttl_hours: int = 24) -> int:
+    """Resolve active problems not updated in ttl_hours hours. Returns count of resolved."""
+    limit = (datetime.now(timezone.utc) - timedelta(hours=ttl_hours)).isoformat()
+    with db_lock:
+        try:
+            conn = _get_conn()
+            n = conn.execute(
+                "UPDATE problems SET status='resolved', resolved_at=? "
+                "WHERE status='active' AND last_seen < ?",
+                (datetime.now(timezone.utc).isoformat(), limit)
+            ).rowcount
+            conn.commit()
+            conn.close()
+            if n:
+                logger.info(f"resolve_stale_problems: resolved {n} stale records (TTL={ttl_hours}h)")
+            return n
+        except Exception as e:
+            logger.error(f"resolve_stale_problems failed: {e}")
+            return 0
+
+
+def resolve_stale_problems_by_pattern(key_prefix: str, ttl_hours: int = 0) -> int:
+    """Resolve active problems matching key prefix. ttl_hours=0 means all matching."""
+    with db_lock:
+        try:
+            conn = _get_conn()
+            if ttl_hours > 0:
+                limit = (datetime.now(timezone.utc) - timedelta(hours=ttl_hours)).isoformat()
+                n = conn.execute(
+                    "UPDATE problems SET status='resolved', resolved_at=? "
+                    "WHERE status='active' AND key LIKE ? AND last_seen < ?",
+                    (datetime.now(timezone.utc).isoformat(), key_prefix + '%', limit)
+                ).rowcount
+            else:
+                n = conn.execute(
+                    "UPDATE problems SET status='resolved', resolved_at=? "
+                    "WHERE status='active' AND key LIKE ?",
+                    (datetime.now(timezone.utc).isoformat(), key_prefix + '%')
+                ).rowcount
+            conn.commit()
+            conn.close()
+            if n:
+                logger.info(f"resolve_stale_by_pattern '{key_prefix}*': resolved {n}")
+            return n
+        except Exception as e:
+            logger.error(f"resolve_stale_by_pattern failed: {e}")
+            return 0
+
+
 def create_pending_action(problem_key, cluster, node, command, reason,
                           mode="dry_run", risk_score=0, risk_reasons=None, raw_line=None):
     new_id = None

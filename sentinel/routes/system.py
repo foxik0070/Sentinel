@@ -872,18 +872,37 @@ def create_blueprint(service):
             return jsonify({"status": "error", "message": "Unauthorized"}), 403
         import time as _time
         import threading as _threading
-        from .. import ollama_service as _ollama
+        import requests as _req
 
         data = request.json or {}
         model_override = data.get('model', '').strip()
-        prompt_text    = data.get('prompt', '').strip() or (
-            "You are a log analysis assistant. Analyze the following log entry and reply in 2-3 sentences:\n"
+        auto_all    = bool(data.get('auto_all', False))   # test all available models
+        prompt_text = data.get('prompt', '').strip() or (
+            "You are a concise log analysis assistant. Analyze this log entry in exactly 3 sentences:\n"
             "Jul 03 00:00:01 node01 kernel: Out of memory: Kill process 12345 (java) score 900 or sacrifice child\n"
-            "Identify the event, severity, and immediate action."
+            "Include: what event occurred, severity level, recommended immediate action."
         )
         sweep_mode  = bool(data.get('sweep', False))
-        iterations  = max(1, min(int(data.get('iterations', 3)), 10))
-        max_para    = max(1, min(int(data.get('max_parallel', 4)), 16))
+        iterations  = max(1, min(int(data.get('iterations', 2)), 10))
+        max_para    = max(1, min(int(data.get('max_parallel', 2)), 16))
+
+        if auto_all:
+            # Fetch available models first
+            base = config.OLLAMA_URL.replace('/v1/chat/completions','').replace('/chat/completions','')
+            models_url = base.rstrip('/') + '/v1/models'
+            bm_hdrs = {"Content-Type": "application/json"}
+            if config.OLLAMA_API_KEY:
+                bm_hdrs["Authorization"] = f"Bearer {config.OLLAMA_API_KEY}"
+            try:
+                r_m = _req.get(models_url, timeout=10, headers=bm_hdrs)
+                avail = [m.get('id') or m.get('name','') for m in r_m.json().get('data',[])]
+                avail = sorted(set(m for m in avail if m))
+            except Exception:
+                avail = [config.OLLAMA_MODEL]
+            if not avail:
+                avail = [config.OLLAMA_MODEL]
+        else:
+            avail = None  # single model mode
 
         # sweep: test concurrency levels 1,2,4,8,... up to max_para
         if sweep_mode:
@@ -901,22 +920,40 @@ def create_blueprint(service):
         if model_override:
             config.OLLAMA_MODEL = model_override
 
-        def _run_batch(parallel_count, iter_count):
+        _bm_headers = {"Content-Type": "application/json"}
+        if config.OLLAMA_API_KEY:
+            _bm_headers["Authorization"] = f"Bearer {config.OLLAMA_API_KEY}"
+
+        def _run_batch(model_name, parallel_count, iter_count):
             batch_results = []
             lock = _threading.Lock()
+
             def _run_one(idx):
                 t0 = _time.time()
                 try:
-                    _ollama.process_single_task({
-                        "text": prompt_text, "channel": "general", "type": "ai_request"
-                    })
+                    payload = {
+                        "model": model_name,
+                        "messages": [
+                            {"role": "system", "content": "You are a concise log analysis assistant."},
+                            {"role": "user", "content": prompt_text}
+                        ],
+                        "stream": False, "temperature": 0.2
+                    }
+                    resp = _req.post(config.OLLAMA_URL, json=payload, headers=_bm_headers, timeout=180)
+                    resp.raise_for_status()
+                    d = resp.json()
+                    resp_text = (d.get("choices",[{}])[0].get("message",{}).get("content","") or
+                                 d.get("message",{}).get("content",""))
                     elapsed = round(_time.time() - t0, 3)
                     with lock:
-                        batch_results.append({"idx": idx, "elapsed": elapsed, "ok": True})
+                        batch_results.append({
+                            "idx": idx, "elapsed": elapsed, "ok": True,
+                            "resp_len": len(resp_text),
+                        })
                 except Exception as ex:
                     elapsed = round(_time.time() - t0, 3)
                     with lock:
-                        batch_results.append({"idx": idx, "elapsed": elapsed, "ok": False, "error": str(ex)})
+                        batch_results.append({"idx": idx, "elapsed": elapsed, "ok": False, "error": str(ex)[:120]})
 
             total_t0 = _time.time()
             for i in range(iter_count):
@@ -931,6 +968,7 @@ def create_blueprint(service):
             mn  = round(min(r["elapsed"] for r in ok), 3) if ok else None
             mx  = round(max(r["elapsed"] for r in ok), 3) if ok else None
             tp  = round(len(ok) / total_elapsed, 3) if total_elapsed > 0 else 0
+            avg_len = round(sum(r.get("resp_len",0) for r in ok) / len(ok)) if ok else 0
             return {
                 "parallel": parallel_count,
                 "results": batch_results,
@@ -940,15 +978,79 @@ def create_blueprint(service):
                     "errors": len(batch_results) - len(ok),
                     "avg_s": avg, "min_s": mn, "max_s": mx,
                     "throughput_rps": tp,
+                    "avg_resp_len": avg_len,
                 },
             }
 
-        sweep_results = []
-        for lvl in levels:
-            sweep_results.append(_run_batch(lvl, iterations))
+        def _test_model(model_name):
+            """Test a single model with sweep or fixed parallelism."""
+            if sweep_mode:
+                lvls = []
+                p = 1
+                while p <= max_para:
+                    lvls.append(p)
+                    p *= 2
+                if max_para not in lvls:
+                    lvls.append(max_para)
+            else:
+                lvls = [max_para]
+            sweep_res = [_run_batch(model_name, lvl, iterations) for lvl in lvls]
+            best = max(sweep_res, key=lambda x: x["summary"]["throughput_rps"])
+            return {"model": model_name, "levels": sweep_res, "best": best}
 
-        if model_override:
-            config.OLLAMA_MODEL = original_model
+        if auto_all:
+            all_model_results = []
+            for mdl in avail:
+                try:
+                    r = _test_model(mdl)
+                    all_model_results.append(r)
+                except Exception as ex:
+                    all_model_results.append({"model": mdl, "levels": [], "best": {}, "error": str(ex)[:120]})
+
+            # Recommendation: model with best (throughput balanced with quality)
+            scored = []
+            for mr in all_model_results:
+                s = mr.get("best", {}).get("summary", {})
+                tp = s.get("throughput_rps", 0) or 0
+                avg = s.get("avg_s") or 9999
+                ql = s.get("avg_resp_len", 0) or 0
+                # Score = throughput * quality_factor / latency
+                score = tp * min(ql / 100, 3) / max(avg, 0.1) if tp > 0 else 0
+                scored.append((score, mr["model"], tp, avg, ql))
+            scored.sort(reverse=True)
+            if scored:
+                best_score, best_model, best_tp, best_avg, best_ql = scored[0]
+                recommendation = (
+                    f"Doporučený model: <b>{best_model}</b> — "
+                    f"avg {best_avg}s/req, {best_tp} r/s, ~{best_ql} znaků/odpověď. "
+                    f"Skóre (výkon×kvalita): {round(best_score,3)}."
+                )
+            else:
+                recommendation = "Žádné výsledky."
+
+            return jsonify({
+                "status": "ok",
+                "auto_all": True,
+                "models": [r["model"] for r in all_model_results],
+                "model_results": all_model_results,
+                "recommendation": recommendation,
+            })
+
+        # --- Single model mode ---
+        sweep_results = []
+        act_model = model_override or config.OLLAMA_MODEL
+        if sweep_mode:
+            lvls = []
+            p = 1
+            while p <= max_para:
+                lvls.append(p)
+                p *= 2
+            if max_para not in lvls:
+                lvls.append(max_para)
+        else:
+            lvls = [max_para]
+        for lvl in lvls:
+            sweep_results.append(_run_batch(act_model, lvl, iterations))
 
         # Overall recommendation based on best throughput level
         best = max(sweep_results, key=lambda x: x["summary"]["throughput_rps"])
