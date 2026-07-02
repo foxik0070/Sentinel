@@ -541,14 +541,15 @@ class DBQueueAdapter:
                             conn.close()
                             return
 
-                    # 3. Rate limit: max 5 pending per channel
-                    if ch and ch not in ("security", "racks"):  # high-priority kanály bez limitu
+                    # 3. Rate limit per channel (security/racks max 10, ostatní max 5)
+                    if ch:
+                        limit = 10 if ch in ("security", "racks") else 5
                         ch_count = conn.execute(
                             "SELECT COUNT(*) FROM task_queue WHERE status='pending' "
                             "AND json_extract(payload,'$.channel')=?",
                             (ch,)
                         ).fetchone()[0]
-                        if ch_count >= 5:
+                        if ch_count >= limit:
                             conn.close()
                             return
 
