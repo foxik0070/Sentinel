@@ -3354,109 +3354,343 @@ function _createBenchmarkModal() {
     m.className = 'modal-overlay';
     m.style.cssText = 'display:none;z-index:1200;';
     m.innerHTML = `
-    <div class="modal" style="width:min(720px,96vw); max-height:90vh; display:flex; flex-direction:column;">
-        <div class="modal-header">
-            <span><i class="fa-solid fa-gauge-high" style="color:#c084fc;margin-right:6px;"></i> AI Benchmark</span>
-            <i class="fa-solid fa-times" style="cursor:pointer" onclick="closeBenchmarkModal()"></i>
+    <div class="modal" style="width:min(860px,97vw); max-height:93vh; display:flex; flex-direction:column;">
+        <div class="modal-header" style="background:linear-gradient(135deg,rgba(168,85,247,.15),rgba(99,102,241,.1)); border-bottom:1px solid rgba(168,85,247,.3);">
+            <span style="display:flex;align-items:center;gap:8px;">
+                <i class="fa-solid fa-gauge-high" style="color:#c084fc;font-size:1.1em;"></i>
+                <span style="font-weight:700;">AI Model Benchmark</span>
+            </span>
+            <i class="fa-solid fa-times" style="cursor:pointer;opacity:.6;" onclick="closeBenchmarkModal()"></i>
         </div>
-        <div class="modal-body" style="background:var(--bg); overflow-y:auto; flex:1; padding:16px;">
-            <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:14px;">
-                <div>
-                    <label style="font-size:.8em; color:var(--text-muted); display:block; margin-bottom:4px;">Model <span style="opacity:.6;">(prázdné = aktuální)</span></label>
-                    <input id="bm-model" placeholder="llama3.2:1b" style="width:100%; background:var(--code-bg,#111); color:var(--text-main); border:1px solid var(--border); border-radius:4px; padding:6px 8px; font-family:monospace; font-size:.85em; box-sizing:border-box;">
-                </div>
-                <div>
-                    <label style="font-size:.8em; color:var(--text-muted); display:block; margin-bottom:4px;">Iterace <span style="opacity:.6;">(1–10)</span></label>
-                    <input id="bm-iter" type="number" value="3" min="1" max="10" style="width:100%; background:var(--code-bg,#111); color:var(--text-main); border:1px solid var(--border); border-radius:4px; padding:6px 8px; font-size:.85em; box-sizing:border-box;">
-                </div>
-                <div>
-                    <label style="font-size:.8em; color:var(--text-muted); display:block; margin-bottom:4px;">Paralelní dotazy <span style="opacity:.6;">(1–4)</span></label>
-                    <input id="bm-parallel" type="number" value="1" min="1" max="4" style="width:100%; background:var(--code-bg,#111); color:var(--text-main); border:1px solid var(--border); border-radius:4px; padding:6px 8px; font-size:.85em; box-sizing:border-box;">
-                </div>
-            </div>
+        <div class="modal-body" style="background:var(--bg); overflow-y:auto; flex:1; padding:18px;">
+
+            <!-- Model selector -->
             <div style="margin-bottom:14px;">
-                <label style="font-size:.8em; color:var(--text-muted); display:block; margin-bottom:4px;">Test prompt</label>
-                <input id="bm-prompt" value="Reply with exactly: BENCHMARK_OK" style="width:100%; background:var(--code-bg,#111); color:var(--text-main); border:1px solid var(--border); border-radius:4px; padding:6px 8px; font-size:.85em; box-sizing:border-box;">
+                <label style="font-size:.78em;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:6px;">
+                    <i class="fa-solid fa-brain" style="margin-right:4px;color:#c084fc;"></i>Model
+                </label>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <select id="bm-model-sel" style="flex:1;background:var(--code-bg,#111);color:var(--text-main);border:1px solid var(--border);border-radius:5px;padding:7px 10px;font-family:monospace;font-size:.85em;">
+                        <option value="">⏳ Načítám modely…</option>
+                    </select>
+                    <input id="bm-model-manual" placeholder="nebo zadat ručně…" style="flex:1;background:var(--code-bg,#111);color:var(--text-main);border:1px solid var(--border);border-radius:5px;padding:7px 10px;font-family:monospace;font-size:.85em;">
+                </div>
             </div>
-            <div style="display:flex; gap:8px; align-items:center; margin-bottom:16px;">
-                <button id="bm-run-btn" onclick="runBenchmark()" style="padding:8px 20px; background:rgba(168,85,247,.2); color:#c084fc; border:1px solid rgba(168,85,247,.4); border-radius:5px; cursor:pointer; font-weight:600; font-size:.9em;">
-                    <i class="fa-solid fa-play" style="margin-right:5px;"></i>Spustit Benchmark
+
+            <!-- Config row -->
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px;">
+                <div>
+                    <label style="font-size:.78em;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:5px;">
+                        <i class="fa-solid fa-rotate" style="margin-right:3px;"></i>Iterace / úroveň
+                    </label>
+                    <input id="bm-iter" type="number" value="3" min="1" max="10" style="width:100%;background:var(--code-bg,#111);color:var(--text-main);border:1px solid var(--border);border-radius:5px;padding:7px 9px;font-size:.9em;box-sizing:border-box;">
+                </div>
+                <div>
+                    <label style="font-size:.78em;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:5px;">
+                        <i class="fa-solid fa-code-branch" style="margin-right:3px;"></i>Max paralelně
+                    </label>
+                    <input id="bm-maxpara" type="number" value="4" min="1" max="16" style="width:100%;background:var(--code-bg,#111);color:var(--text-main);border:1px solid var(--border);border-radius:5px;padding:7px 9px;font-size:.9em;box-sizing:border-box;">
+                </div>
+                <div style="display:flex;flex-direction:column;justify-content:flex-end;padding-bottom:1px;">
+                    <label style="font-size:.78em;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:5px;">
+                        <i class="fa-solid fa-chart-line" style="margin-right:3px;"></i>Sweep mode
+                    </label>
+                    <label style="display:flex;align-items:center;gap:7px;cursor:pointer;padding:7px 9px;background:var(--code-bg,#111);border:1px solid var(--border);border-radius:5px;font-size:.85em;">
+                        <input type="checkbox" id="bm-sweep" checked style="accent-color:#c084fc;width:14px;height:14px;">
+                        <span>Auto 1→N paralelně</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Prompt -->
+            <div style="margin-bottom:16px;">
+                <label style="font-size:.78em;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:5px;">
+                    <i class="fa-solid fa-terminal" style="margin-right:3px;"></i>Test prompt
+                </label>
+                <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap;" id="bm-prompt-presets">
+                    <button onclick="_bmSetPrompt('quick')" style="padding:3px 10px;font-size:.76em;background:rgba(168,85,247,.1);color:#c084fc;border:1px solid rgba(168,85,247,.3);border-radius:4px;cursor:pointer;">Rychlý (echo)</button>
+                    <button onclick="_bmSetPrompt('log')" style="padding:3px 10px;font-size:.76em;background:rgba(99,102,241,.1);color:#818cf8;border:1px solid rgba(99,102,241,.3);border-radius:4px;cursor:pointer;">Analýza logu</button>
+                    <button onclick="_bmSetPrompt('security')" style="padding:3px 10px;font-size:.76em;background:rgba(239,68,68,.1);color:#f87171;border:1px solid rgba(239,68,68,.3);border-radius:4px;cursor:pointer;">Security incident</button>
+                    <button onclick="_bmSetPrompt('complex')" style="padding:3px 10px;font-size:.76em;background:rgba(251,146,60,.1);color:#fb923c;border:1px solid rgba(251,146,60,.3);border-radius:4px;cursor:pointer;">Komplexní analýza</button>
+                </div>
+                <textarea id="bm-prompt" rows="3" style="width:100%;background:var(--code-bg,#111);color:var(--text-main);border:1px solid var(--border);border-radius:5px;padding:8px 10px;font-family:monospace;font-size:.82em;box-sizing:border-box;resize:vertical;line-height:1.45;">You are a log analysis assistant. Analyze this log entry in 2-3 sentences:\nJul 03 00:00:01 node01 kernel: Out of memory: Kill process 12345 (java) score 900 or sacrifice child\nIdentify the event, severity, and recommended action.</textarea>
+            </div>
+
+            <!-- Run button -->
+            <div style="display:flex;gap:10px;align-items:center;margin-bottom:18px;">
+                <button id="bm-run-btn" onclick="runBenchmark()" style="padding:9px 24px;background:linear-gradient(135deg,rgba(168,85,247,.25),rgba(99,102,241,.2));color:#c084fc;border:1px solid rgba(168,85,247,.45);border-radius:6px;cursor:pointer;font-weight:700;font-size:.95em;letter-spacing:.02em;transition:opacity .2s;">
+                    <i class="fa-solid fa-play" style="margin-right:6px;"></i>Spustit Benchmark
                 </button>
-                <span id="bm-status" style="font-size:.82em; color:var(--text-muted);"></span>
+                <span id="bm-status" style="font-size:.83em;color:var(--text-muted);"></span>
             </div>
+
+            <!-- Results -->
             <div id="bm-results"></div>
         </div>
-        <div class="modal-footer">
-            <button onclick="closeBenchmarkModal()" style="background:transparent; border:1px solid #555; margin-left:auto;">Zavřít</button>
+        <div class="modal-footer" style="border-top:1px solid var(--border);">
+            <button onclick="closeBenchmarkModal()" style="background:transparent;border:1px solid #555;margin-left:auto;padding:7px 18px;border-radius:5px;cursor:pointer;">Zavřít</button>
         </div>
     </div>`;
     document.body.appendChild(m);
+
+    // Load models
+    fetch('/api/benchmark/models').then(r=>r.json()).then(d=>{
+        const sel = document.getElementById('bm-model-sel');
+        if (!sel) return;
+        const models = d.models || [];
+        const current = d.current || '';
+        sel.innerHTML = `<option value="">(aktuální: ${_escape(current)})</option>` +
+            models.map(m => `<option value="${_escape(m)}"${m===current?' selected':''}>${_escape(m)}</option>`).join('');
+    }).catch(()=>{
+        const sel = document.getElementById('bm-model-sel');
+        if (sel) sel.innerHTML = '<option value="">(nepodařilo se načíst)</option>';
+    });
+}
+
+const _BM_PROMPTS = {
+    quick: 'Reply with exactly: BENCHMARK_OK',
+    log: 'You are a log analysis assistant. Analyze this log entry in 2-3 sentences:\nJul 03 00:00:01 node01 kernel: Out of memory: Kill process 12345 (java) score 900 or sacrifice child\nIdentify the event, severity, and recommended action.',
+    security: 'You are a security analyst. Analyze this SIEM alert in 3 sentences:\nFailed password for invalid user admin from 185.220.101.45 port 54832 ssh2 — 847 attempts in 60 seconds from same IP\nIdentify the attack type, risk level, and mitigation steps.',
+    complex: 'You are a senior infrastructure engineer. Analyze these correlated log events and provide root cause analysis:\n1. kernel: NFS server 10.1.1.5 not responding, still trying\n2. kernel: device-mapper: multipath: Failing path 8:16\n3. mysqld: Got an error reading communication packets\n4. nginx: upstream timed out (110) while reading response header from upstream\nProvide: root cause, impact assessment, and recovery steps. Max 5 sentences.',
+};
+function _bmSetPrompt(key) {
+    const ta = document.getElementById('bm-prompt');
+    if (ta && _BM_PROMPTS[key]) ta.value = _BM_PROMPTS[key];
+}
+
+function _bmSvgBar(values, labels, color, maxVal, width, height) {
+    if (!values.length) return '';
+    const padL=42, padR=10, padT=10, padB=28;
+    const W=width-padL-padR, H=height-padT-padB;
+    const barW = Math.max(4, Math.floor(W/values.length)-2);
+    const yScale = v => H - (v/maxVal)*H;
+    const bars = values.map((v,i)=>{
+        const x = padL + i*(W/values.length) + (W/values.length-barW)/2;
+        const barH = Math.max(2, (v/maxVal)*H);
+        const y = padT + H - barH;
+        const col = v > maxVal*0.8 ? '#ef4444' : v > maxVal*0.5 ? '#fbbf24' : color;
+        return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW}" height="${barH.toFixed(1)}" fill="${col}" rx="2" opacity=".85"/>
+                <title>${labels[i]}: ${v}s</title>`;
+    }).join('');
+    // Y axis ticks
+    const ticks = [0, 0.25, 0.5, 0.75, 1].map(f=>{
+        const val = (f*maxVal).toFixed(1);
+        const y = padT + H - f*H;
+        return `<line x1="${padL}" x2="${padL+W}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="rgba(255,255,255,.06)" stroke-width="1"/>
+                <text x="${(padL-4).toFixed(1)}" y="${(y+4).toFixed(1)}" text-anchor="end" fill="#888" font-size="9">${val}</text>`;
+    }).join('');
+    // X labels
+    const xlabels = labels.map((l,i)=>{
+        const x = padL + i*(W/values.length) + W/values.length/2;
+        return `<text x="${x.toFixed(1)}" y="${(padT+H+16).toFixed(1)}" text-anchor="middle" fill="#888" font-size="9">${_escape(String(l))}</text>`;
+    }).join('');
+    return `<svg width="${width}" height="${height}" style="display:block;width:100%;height:${height}px;">
+        ${ticks}${bars}${xlabels}
+        <line x1="${padL}" x2="${padL}" y1="${padT}" y2="${padT+H}" stroke="#444" stroke-width="1"/>
+        <line x1="${padL}" x2="${padL+W}" y1="${padT+H}" y2="${padT+H}" stroke="#444" stroke-width="1"/>
+    </svg>`;
+}
+
+function _bmSvgLine(series, width, height) {
+    // series: [{label, color, points:[{x,y}]}]
+    if (!series.length) return '';
+    const padL=46, padR=14, padT=12, padB=30;
+    const W=width-padL-padR, H=height-padT-padB;
+    const allY = series.flatMap(s=>s.points.map(p=>p.y));
+    const allX = series.flatMap(s=>s.points.map(p=>p.x));
+    const maxY = Math.max(...allY, 0.1), minX = Math.min(...allX), maxX = Math.max(...allX, minX+1);
+    const toX = x => padL + ((x-minX)/(maxX-minX)) * W;
+    const toY = y => padT + H - (y/maxY)*H;
+    const paths = series.map(s=>{
+        const pts = s.points.sort((a,b)=>a.x-b.x);
+        const d = pts.map((p,i)=>`${i===0?'M':'L'}${toX(p.x).toFixed(1)},${toY(p.y).toFixed(1)}`).join(' ');
+        const dots = pts.map(p=>`<circle cx="${toX(p.x).toFixed(1)}" cy="${toY(p.y).toFixed(1)}" r="3.5" fill="${s.color}"><title>${s.label} p=${p.x}: ${p.y}s</title></circle>`).join('');
+        return `<path d="${d}" stroke="${s.color}" stroke-width="2" fill="none" opacity=".9"/>${dots}`;
+    }).join('');
+    // grid lines
+    const yTicks = [0,.25,.5,.75,1].map(f=>{
+        const val=(f*maxY).toFixed(1);
+        const y=padT+H-f*H;
+        return `<line x1="${padL}" x2="${padL+W}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="rgba(255,255,255,.06)"/>
+                <text x="${(padL-4).toFixed(1)}" y="${(y+4).toFixed(1)}" text-anchor="end" fill="#888" font-size="9">${val}s</text>`;
+    }).join('');
+    const xTicks = [...new Set(allX)].sort((a,b)=>a-b).map(x=>{
+        const px=toX(x);
+        return `<line x1="${px.toFixed(1)}" x2="${px.toFixed(1)}" y1="${padT}" y2="${(padT+H).toFixed(1)}" stroke="rgba(255,255,255,.04)"/>
+                <text x="${px.toFixed(1)}" y="${(padT+H+16).toFixed(1)}" text-anchor="middle" fill="#888" font-size="9">p=${x}</text>`;
+    }).join('');
+    const legend = series.map((s,i)=>`<g transform="translate(${padL+i*120},${height-4})"><rect width="12" height="8" fill="${s.color}" rx="2"/><text x="16" y="7" fill="#aaa" font-size="9">${_escape(s.label)}</text></g>`).join('');
+    return `<svg width="${width}" height="${height}" style="display:block;width:100%;height:${height}px;">
+        ${yTicks}${xTicks}${paths}${legend}
+        <line x1="${padL}" x2="${padL}" y1="${padT}" y2="${padT+H}" stroke="#444"/>
+        <line x1="${padL}" x2="${padL+W}" y1="${padT+H}" y2="${padT+H}" stroke="#444"/>
+    </svg>`;
 }
 
 async function runBenchmark() {
-    const btn = document.getElementById('bm-run-btn');
+    const btn    = document.getElementById('bm-run-btn');
     const status = document.getElementById('bm-status');
-    const results = document.getElementById('bm-results');
-    const model = document.getElementById('bm-model').value.trim();
-    const iter  = parseInt(document.getElementById('bm-iter').value) || 3;
-    const para  = parseInt(document.getElementById('bm-parallel').value) || 1;
-    const prompt = document.getElementById('bm-prompt').value.trim();
+    const results= document.getElementById('bm-results');
+    const selModel = (document.getElementById('bm-model-sel')||{}).value || '';
+    const manModel = (document.getElementById('bm-model-manual')||{}).value.trim() || '';
+    const model  = manModel || selModel;
+    const iter   = parseInt((document.getElementById('bm-iter')||{}).value)||3;
+    const maxPara= parseInt((document.getElementById('bm-maxpara')||{}).value)||4;
+    const sweep  = !!(document.getElementById('bm-sweep')||{}).checked;
+    const prompt = (document.getElementById('bm-prompt')||{}).value.trim();
 
     btn.disabled = true;
-    status.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="margin-right:4px;"></i>Probíhá benchmark…';
+    const sweepDesc = sweep ? `sweep 1→${maxPara}` : `${maxPara} paralelně`;
+    status.innerHTML = `<i class="fa-solid fa-spinner fa-spin" style="margin-right:4px;"></i>Probíhá benchmark (${sweepDesc}, ${iter} iterací/úroveň)…`;
     results.innerHTML = '';
 
     try {
         const r = await fetch('/api/benchmark/run', {
             method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({model, iterations: iter, parallel: para, prompt})
+            body: JSON.stringify({model, iterations: iter, max_parallel: maxPara, sweep, prompt})
         });
         const d = await r.json();
-        if (d.status !== 'ok') { status.textContent = 'Chyba: ' + (d.message || '?'); btn.disabled = false; return; }
+        if (d.status !== 'ok') {
+            status.innerHTML = `<span style="color:var(--error);">Chyba: ${_escape(d.message||'?')}</span>`;
+            btn.disabled = false; return;
+        }
 
-        const s = d.summary || {};
-        status.innerHTML = `<span style="color:var(--success);">Hotovo za ${s.total_elapsed}s</span>`;
+        const levels = d.levels || [];
+        const totalTime = levels.reduce((s,l)=>s+(l.summary?.total_elapsed||0),0).toFixed(1);
+        status.innerHTML = `<span style="color:var(--success);"><i class="fa-solid fa-check" style="margin-right:4px;"></i>Hotovo za ${totalTime}s</span>`;
 
-        // Tabulka výsledků
-        const rows = (d.results || []).map((res,i) =>
-            `<tr style="border-bottom:1px solid var(--border);">
-                <td style="padding:5px 8px; color:var(--text-muted);">${res.idx+1}</td>
-                <td style="padding:5px 8px;">${res.ok ? `<span style="color:var(--success);">OK</span>` : `<span style="color:var(--error);">CHYBA</span>`}</td>
-                <td style="padding:5px 8px; font-weight:${res.elapsed > 15 ? '600' : 'normal'}; color:${res.elapsed > 30 ? 'var(--error)' : res.elapsed > 10 ? '#ffc107' : 'var(--success)'};">${res.elapsed}s</td>
-                <td style="padding:5px 8px; font-size:.78em; color:var(--text-muted);">${res.error||''}</td>
-            </tr>`
-        ).join('');
+        // Best level summary
+        const best = levels.reduce((a,b)=>(b.summary?.throughput_rps||0)>(a.summary?.throughput_rps||0)?b:a, levels[0]);
+        const bs = best?.summary || {};
+
+        // Summary cards
+        const cards = [
+            {l:'Nejlepší průměr', v: bs.avg_s!=null?bs.avg_s+'s':'—', col:'#c084fc', icon:'fa-clock'},
+            {l:'Min latence',     v: bs.min_s!=null?bs.min_s+'s':'—', col:'#34d399', icon:'fa-bolt'},
+            {l:'Max latence',     v: bs.max_s!=null?bs.max_s+'s':'—', col:'#f87171', icon:'fa-triangle-exclamation'},
+            {l:'Propustnost',     v: bs.throughput_rps!=null?bs.throughput_rps+' r/s':'—', col:'#fbbf24', icon:'fa-gauge-simple-high'},
+            {l:'Opt. paralelismus',v: best?.parallel!=null?'p='+best.parallel:'—', col:'#60a5fa', icon:'fa-code-branch'},
+            {l:'Chyby',           v: levels.reduce((s,l)=>s+(l.summary?.errors||0),0), col: levels.reduce((s,l)=>s+(l.summary?.errors||0),0)>0?'#f87171':'#34d399', icon:'fa-circle-xmark'},
+        ].map(c=>`<div style="background:var(--panel);border:1px solid var(--border);border-radius:7px;padding:10px 8px;text-align:center;min-width:0;">
+            <div style="font-size:.7em;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;"><i class="fa-solid ${c.icon}" style="margin-right:3px;"></i>${c.l}</div>
+            <div style="font-size:1.15em;font-weight:700;color:${c.col};">${c.v}</div>
+        </div>`).join('');
+
+        // Per-level table
+        const levelRows = levels.map(l=>{
+            const s=l.summary||{};
+            const errCol=s.errors>0?'#f87171':'#34d399';
+            return `<tr style="border-bottom:1px solid var(--border);">
+                <td style="padding:6px 10px;font-weight:600;color:#c084fc;">p=${l.parallel}</td>
+                <td style="padding:6px 10px;">${s.avg_s!=null?s.avg_s+'s':'—'}</td>
+                <td style="padding:6px 10px;color:#34d399;">${s.min_s!=null?s.min_s+'s':'—'}</td>
+                <td style="padding:6px 10px;color:#f87171;">${s.max_s!=null?s.max_s+'s':'—'}</td>
+                <td style="padding:6px 10px;color:#fbbf24;font-weight:600;">${s.throughput_rps!=null?s.throughput_rps+' r/s':'—'}</td>
+                <td style="padding:6px 10px;color:${errCol};">${s.errors||0}</td>
+                <td style="padding:6px 10px;color:var(--text-muted);font-size:.8em;">${s.total_elapsed!=null?s.total_elapsed+'s':'—'}</td>
+            </tr>`;
+        }).join('');
+
+        // SVG charts
+        // 1. Latency bars for best level
+        const bestResults = (best?.results||[]).filter(r=>r.ok);
+        const barSvg = bestResults.length > 0 ? _bmSvgBar(
+            bestResults.map(r=>r.elapsed),
+            bestResults.map(r=>`#${r.idx+1}`),
+            '#c084fc', Math.max(...bestResults.map(r=>r.elapsed))*1.1 || 1,
+            800, 130
+        ) : '';
+
+        // 2. Sweep line chart: avg latency + throughput vs parallelism
+        const sweepSvg = levels.length > 1 ? _bmSvgLine([
+            {label:'Avg latence (s)', color:'#c084fc', points: levels.filter(l=>l.summary?.avg_s!=null).map(l=>({x:l.parallel,y:l.summary.avg_s}))},
+            {label:'Throughput (r/s)', color:'#fbbf24', points: levels.filter(l=>l.summary?.throughput_rps!=null).map(l=>({x:l.parallel,y:l.summary.throughput_rps}))},
+        ], 800, 150) : '';
 
         results.innerHTML = `
-        <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:14px;">
-            ${[
-                ['Průměr', s.avg_s != null ? s.avg_s+'s' : '—', 'var(--accent)'],
-                ['Min', s.min_s != null ? s.min_s+'s' : '—', 'var(--success)'],
-                ['Max', s.max_s != null ? s.max_s+'s' : '—', 'var(--error)'],
-                ['Propustnost', s.throughput_rps != null ? s.throughput_rps+' req/s' : '—', '#ffc107'],
-            ].map(([lbl,val,col]) => `<div style="background:var(--panel); border:1px solid var(--border); border-radius:5px; padding:9px; text-align:center;">
-                <div style="font-size:.7em; color:var(--text-muted); text-transform:uppercase; margin-bottom:3px;">${lbl}</div>
-                <div style="font-size:1.2em; font-weight:700; color:${col};">${val}</div>
-            </div>`).join('')}
+        <!-- Model + config info -->
+        <div style="font-size:.79em;color:var(--text-muted);margin-bottom:12px;display:flex;gap:14px;flex-wrap:wrap;">
+            <span><i class="fa-solid fa-brain" style="color:#c084fc;margin-right:4px;"></i>${_escape(d.model)}</span>
+            <span><i class="fa-solid fa-rotate" style="margin-right:4px;"></i>${iter} iter/úroveň</span>
+            <span><i class="fa-solid fa-code-branch" style="margin-right:4px;"></i>${sweep?'Sweep 1→'+maxPara:'p='+maxPara}</span>
         </div>
-        <div style="font-size:.8em; font-weight:600; color:var(--text-muted); text-transform:uppercase; margin-bottom:6px;">Model: <span style="color:var(--accent);">${d.model}</span> | ${iter} iterací × ${para} paralelně</div>
-        <div style="overflow-x:auto; border:1px solid var(--border); border-radius:5px; margin-bottom:12px;">
-        <table style="width:100%; border-collapse:collapse; font-size:.85em;">
-            <thead><tr style="background:var(--panel);">
-                <th style="padding:5px 8px; text-align:left; color:var(--text-muted); font-size:.78em;">#</th>
-                <th style="padding:5px 8px; text-align:left; color:var(--text-muted); font-size:.78em;">Výsledek</th>
-                <th style="padding:5px 8px; text-align:left; color:var(--text-muted); font-size:.78em;">Čas</th>
-                <th style="padding:5px 8px; text-align:left; color:var(--text-muted); font-size:.78em;">Chyba</th>
-            </tr></thead>
-            <tbody>${rows}</tbody>
-        </table>
-        </div>
-        ${d.recommendation ? `<div style="background:rgba(168,85,247,.08); border:1px solid rgba(168,85,247,.25); border-radius:5px; padding:10px 14px; font-size:.85em;">
-            <i class="fa-solid fa-lightbulb" style="color:#c084fc; margin-right:5px;"></i><b>Doporučení:</b> ${d.recommendation}
+
+        <!-- Summary cards -->
+        <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:16px;">${cards}</div>
+
+        ${levels.length > 1 ? `
+        <!-- Sweep chart -->
+        <div style="margin-bottom:16px;">
+            <div style="font-size:.78em;font-weight:600;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px;letter-spacing:.04em;">
+                <i class="fa-solid fa-chart-line" style="margin-right:4px;"></i>Latence & Propustnost vs Paralelismus
+            </div>
+            <div style="background:var(--panel);border:1px solid var(--border);border-radius:7px;padding:12px;overflow:hidden;">
+                ${sweepSvg}
+            </div>
+        </div>` : ''}
+
+        ${barSvg ? `
+        <!-- Latency bars per request -->
+        <div style="margin-bottom:16px;">
+            <div style="font-size:.78em;font-weight:600;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px;letter-spacing:.04em;">
+                <i class="fa-solid fa-chart-bar" style="margin-right:4px;"></i>Latence po požadavcích (optimální úroveň p=${best?.parallel})
+            </div>
+            <div style="background:var(--panel);border:1px solid var(--border);border-radius:7px;padding:12px;overflow:hidden;">
+                ${barSvg}
+            </div>
+        </div>` : ''}
+
+        ${levels.length > 1 ? `
+        <!-- Per-level table -->
+        <div style="margin-bottom:16px;">
+            <div style="font-size:.78em;font-weight:600;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px;letter-spacing:.04em;">
+                <i class="fa-solid fa-table" style="margin-right:4px;"></i>Výsledky po úrovních
+            </div>
+            <div style="overflow-x:auto;border:1px solid var(--border);border-radius:7px;">
+            <table style="width:100%;border-collapse:collapse;font-size:.84em;">
+                <thead><tr style="background:var(--panel);border-bottom:1px solid var(--border);">
+                    <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:.78em;">Paralelismus</th>
+                    <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:.78em;">Průměr</th>
+                    <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:.78em;">Min</th>
+                    <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:.78em;">Max</th>
+                    <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:.78em;">Propustnost</th>
+                    <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:.78em;">Chyby</th>
+                    <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:.78em;">Celk. čas</th>
+                </tr></thead>
+                <tbody>${levelRows}</tbody>
+            </table>
+            </div>
+        </div>` : `
+        <!-- Single level per-request table -->
+        <div style="margin-bottom:16px;">
+            <div style="font-size:.78em;font-weight:600;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px;letter-spacing:.04em;">
+                <i class="fa-solid fa-list" style="margin-right:4px;"></i>Výsledky požadavků
+            </div>
+            <div style="overflow-x:auto;border:1px solid var(--border);border-radius:7px;max-height:220px;overflow-y:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:.84em;">
+                <thead><tr style="background:var(--panel);">
+                    <th style="padding:5px 8px;text-align:left;color:var(--text-muted);font-size:.78em;">#</th>
+                    <th style="padding:5px 8px;text-align:left;color:var(--text-muted);font-size:.78em;">Status</th>
+                    <th style="padding:5px 8px;text-align:left;color:var(--text-muted);font-size:.78em;">Čas</th>
+                    <th style="padding:5px 8px;text-align:left;color:var(--text-muted);font-size:.78em;">Chyba</th>
+                </tr></thead>
+                <tbody>${(best?.results||[]).map(res=>`<tr style="border-bottom:1px solid var(--border);">
+                    <td style="padding:5px 8px;color:var(--text-muted);">${res.idx+1}</td>
+                    <td style="padding:5px 8px;">${res.ok?'<span style="color:var(--success);">OK</span>':'<span style="color:var(--error);">CHYBA</span>'}</td>
+                    <td style="padding:5px 8px;color:${res.elapsed>30?'#f87171':res.elapsed>10?'#fbbf24':'#34d399'};font-weight:${res.elapsed>15?'600':'400'};">${res.elapsed}s</td>
+                    <td style="padding:5px 8px;font-size:.78em;color:var(--text-muted);">${_escape(res.error||'')}</td>
+                </tr>`).join('')}</tbody>
+            </table>
+            </div>
+        </div>`}
+
+        <!-- Recommendation -->
+        ${d.recommendation ? `<div style="background:rgba(168,85,247,.07);border:1px solid rgba(168,85,247,.22);border-radius:7px;padding:11px 16px;font-size:.85em;line-height:1.55;">
+            <i class="fa-solid fa-lightbulb" style="color:#c084fc;margin-right:6px;"></i><b>Doporučení:</b> ${_escape(d.recommendation)}
         </div>` : ''}`;
 
     } catch(e) {
-        status.innerHTML = `<span style="color:var(--error);">Chyba: ${e}</span>`;
+        status.innerHTML = `<span style="color:var(--error);">Chyba: ${_escape(String(e))}</span>`;
     }
     btn.disabled = false;
 }

@@ -848,6 +848,23 @@ def create_blueprint(service):
             return jsonify({"status": "ok", "workers": n, "warning": f"Config not persisted: {e}"})
         return jsonify({"status": "ok", "workers": n, "note": "Změna počtu workerů se projeví po restartu služby"})
 
+    @bp.route('/api/benchmark/models', methods=['GET'])
+    @requires_auth
+    def api_benchmark_models():
+        """List available models from the Ollama/OpenAI-compatible endpoint."""
+        import requests as _req
+        base = config.OLLAMA_URL.replace('/v1/chat/completions', '').replace('/chat/completions', '')
+        models_url = base.rstrip('/') + '/v1/models'
+        try:
+            resp = _req.get(models_url, timeout=8,
+                           headers={"Authorization": f"Bearer {config.OLLAMA_API_KEY}"} if config.OLLAMA_API_KEY else {})
+            data = resp.json()
+            models = [m.get('id') or m.get('name','') for m in data.get('data', [])]
+            models = sorted(set(m for m in models if m))
+        except Exception as e:
+            models = []
+        return jsonify({"status": "ok", "models": models, "current": config.OLLAMA_MODEL})
+
     @bp.route('/api/benchmark/run', methods=['POST'])
     @requires_auth
     def api_benchmark_run():
@@ -856,79 +873,104 @@ def create_blueprint(service):
         import time as _time
         import threading as _threading
         from .. import ollama_service as _ollama
+
         data = request.json or {}
-        iterations = min(int(data.get('iterations', 3)), 10)
-        parallel   = min(int(data.get('parallel', 1)), 4)
         model_override = data.get('model', '').strip()
-        prompt_text = data.get('prompt', 'Reply with exactly: BENCHMARK_OK')
+        prompt_text    = data.get('prompt', '').strip() or (
+            "You are a log analysis assistant. Analyze the following log entry and reply in 2-3 sentences:\n"
+            "Jul 03 00:00:01 node01 kernel: Out of memory: Kill process 12345 (java) score 900 or sacrifice child\n"
+            "Identify the event, severity, and immediate action."
+        )
+        sweep_mode  = bool(data.get('sweep', False))
+        iterations  = max(1, min(int(data.get('iterations', 3)), 10))
+        max_para    = max(1, min(int(data.get('max_parallel', 4)), 16))
+
+        # sweep: test concurrency levels 1,2,4,8,... up to max_para
+        if sweep_mode:
+            levels = []
+            p = 1
+            while p <= max_para:
+                levels.append(p)
+                p = p * 2
+            if max_para not in levels:
+                levels.append(max_para)
+        else:
+            levels = [max_para]
 
         original_model = config.OLLAMA_MODEL
         if model_override:
             config.OLLAMA_MODEL = model_override
 
-        results = []
-        errors  = []
-        lock    = _threading.Lock()
+        def _run_batch(parallel_count, iter_count):
+            batch_results = []
+            lock = _threading.Lock()
+            def _run_one(idx):
+                t0 = _time.time()
+                try:
+                    _ollama.process_single_task({
+                        "text": prompt_text, "channel": "general", "type": "ai_request"
+                    })
+                    elapsed = round(_time.time() - t0, 3)
+                    with lock:
+                        batch_results.append({"idx": idx, "elapsed": elapsed, "ok": True})
+                except Exception as ex:
+                    elapsed = round(_time.time() - t0, 3)
+                    with lock:
+                        batch_results.append({"idx": idx, "elapsed": elapsed, "ok": False, "error": str(ex)})
 
-        def _run_one(idx):
-            t0 = _time.time()
-            try:
-                task = {"text": prompt_text, "channel": "general", "type": "ai_request"}
-                _ollama.process_single_task(task)
-                elapsed = round(_time.time() - t0, 2)
-                with lock:
-                    results.append({"idx": idx, "elapsed": elapsed, "ok": True})
-            except Exception as ex:
-                elapsed = round(_time.time() - t0, 2)
-                with lock:
-                    results.append({"idx": idx, "elapsed": elapsed, "ok": False, "error": str(ex)})
+            total_t0 = _time.time()
+            for i in range(iter_count):
+                threads = [_threading.Thread(target=_run_one, args=(i*parallel_count+j,), daemon=True)
+                           for j in range(parallel_count)]
+                for t in threads: t.start()
+                for t in threads: t.join(timeout=180)
+            total_elapsed = round(_time.time() - total_t0, 3)
 
-        total_t0 = _time.time()
-        threads_all = []
-        for i in range(iterations):
-            batch = []
-            for j in range(parallel):
-                t = _threading.Thread(target=_run_one, args=(i * parallel + j,), daemon=True)
-                batch.append(t); threads_all.append(t)
-            for t in batch: t.start()
-            for t in batch: t.join(timeout=120)
-        total_elapsed = round(_time.time() - total_t0, 2)
+            ok = [r for r in batch_results if r["ok"]]
+            avg = round(sum(r["elapsed"] for r in ok) / len(ok), 3) if ok else None
+            mn  = round(min(r["elapsed"] for r in ok), 3) if ok else None
+            mx  = round(max(r["elapsed"] for r in ok), 3) if ok else None
+            tp  = round(len(ok) / total_elapsed, 3) if total_elapsed > 0 else 0
+            return {
+                "parallel": parallel_count,
+                "results": batch_results,
+                "summary": {
+                    "total_elapsed": total_elapsed,
+                    "ok": len(ok),
+                    "errors": len(batch_results) - len(ok),
+                    "avg_s": avg, "min_s": mn, "max_s": mx,
+                    "throughput_rps": tp,
+                },
+            }
+
+        sweep_results = []
+        for lvl in levels:
+            sweep_results.append(_run_batch(lvl, iterations))
 
         if model_override:
             config.OLLAMA_MODEL = original_model
 
-        ok_results = [r for r in results if r["ok"]]
-        avg = round(sum(r["elapsed"] for r in ok_results) / len(ok_results), 2) if ok_results else None
-        mn  = round(min(r["elapsed"] for r in ok_results), 2) if ok_results else None
-        mx  = round(max(r["elapsed"] for r in ok_results), 2) if ok_results else None
-
-        throughput = round(len(ok_results) / total_elapsed, 2) if total_elapsed > 0 else 0
-
-        recommendation = ""
-        if avg and avg < 5:
-            recommendation = "Výborný výkon. Lze zvýšit počet workerů pro vyšší propustnost."
-        elif avg and avg < 15:
-            recommendation = "Dobrý výkon. Aktuální konfigurace je vhodná pro produkci."
-        elif avg and avg < 30:
-            recommendation = "Průměrný výkon. Zvažte rychlejší model nebo více VRAM."
-        elif avg:
-            recommendation = "Pomalý výkon. Doporučen menší model nebo GPU akcelerace."
+        # Overall recommendation based on best throughput level
+        best = max(sweep_results, key=lambda x: x["summary"]["throughput_rps"])
+        avg_best = best["summary"]["avg_s"]
+        tp_best  = best["summary"]["throughput_rps"]
+        if avg_best is None:
+            recommendation = "Nepodařilo se získat výsledky — zkontrolujte dostupnost modelu."
+        elif avg_best < 5:
+            recommendation = f"Výborný výkon ({avg_best}s/req). Optimální paralelismus: {best['parallel']}. Lze nasadit více workerů."
+        elif avg_best < 15:
+            recommendation = f"Dobrý výkon ({avg_best}s/req). Optimální paralelismus: {best['parallel']}. Vhodné pro produkci."
+        elif avg_best < 30:
+            recommendation = f"Průměrný výkon ({avg_best}s/req). Zvažte rychlejší model nebo více VRAM."
+        else:
+            recommendation = f"Pomalý výkon ({avg_best}s/req). Doporučen menší model nebo GPU akcelerace."
 
         return jsonify({
             "status": "ok",
             "model": model_override or config.OLLAMA_MODEL,
+            "sweep": sweep_mode,
             "iterations": iterations,
-            "parallel": parallel,
-            "results": results,
-            "summary": {
-                "total_elapsed": total_elapsed,
-                "ok": len(ok_results),
-                "errors": len(results) - len(ok_results),
-                "avg_s": avg,
-                "min_s": mn,
-                "max_s": mx,
-                "throughput_rps": throughput,
-            },
+            "levels": sweep_results,
             "recommendation": recommendation,
         })
 
