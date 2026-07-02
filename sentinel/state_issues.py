@@ -366,9 +366,9 @@ def resolve_stale_problems(ttl_hours: int = 24) -> int:
         try:
             conn = _get_conn()
             n = conn.execute(
-                "UPDATE problems SET status='resolved', resolved_at=? "
+                "UPDATE problems SET status='resolved' "
                 "WHERE status='active' AND last_seen < ?",
-                (datetime.now(timezone.utc).isoformat(), limit)
+                (limit,)
             ).rowcount
             conn.commit()
             conn.close()
@@ -388,15 +388,15 @@ def resolve_stale_problems_by_pattern(key_prefix: str, ttl_hours: int = 0) -> in
             if ttl_hours > 0:
                 limit = (datetime.now(timezone.utc) - timedelta(hours=ttl_hours)).isoformat()
                 n = conn.execute(
-                    "UPDATE problems SET status='resolved', resolved_at=? "
+                    "UPDATE problems SET status='resolved' "
                     "WHERE status='active' AND key LIKE ? AND last_seen < ?",
-                    (datetime.now(timezone.utc).isoformat(), key_prefix + '%', limit)
+                    (key_prefix + '%', limit)
                 ).rowcount
             else:
                 n = conn.execute(
-                    "UPDATE problems SET status='resolved', resolved_at=? "
+                    "UPDATE problems SET status='resolved' "
                     "WHERE status='active' AND key LIKE ?",
-                    (datetime.now(timezone.utc).isoformat(), key_prefix + '%')
+                    (key_prefix + '%',)
                 ).rowcount
             conn.commit()
             conn.close()
