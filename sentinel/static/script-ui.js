@@ -2922,6 +2922,45 @@ async function _togglePluginNotify(plugin, notify) {
     } catch(e) { console.error('toggle_notify:', e); }
 }
 
+async function sysTogglePlugin(btnEl, plugin, currentEnabled) {
+    const newEnabled = currentEnabled !== 'true';
+    try {
+        btnEl.disabled = true;
+        const r = await fetch('/api/plugins/toggle', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({plugin, enabled: newEnabled})
+        });
+        const d = await r.json();
+        if (d.status === 'ok') {
+            const label = newEnabled ? 'Vypnout' : 'Zapnout';
+            const btnStyle = newEnabled
+                ? 'padding:2px 10px;border-radius:4px;cursor:pointer;font-size:.8em;background:rgba(255,80,80,.15);color:var(--error);border:1px solid rgba(255,80,80,.3);'
+                : 'padding:2px 10px;border-radius:4px;cursor:pointer;font-size:.8em;background:rgba(80,255,120,.12);color:var(--success);border:1px solid rgba(80,255,120,.3);';
+            btnEl.textContent = label;
+            btnEl.setAttribute('style', btnStyle);
+            btnEl.setAttribute('onclick', `sysTogglePlugin(this,'${plugin}','${newEnabled}')`);
+            btnEl.disabled = false;
+            const row = btnEl.closest('tr');
+            if (row) {
+                row.style.opacity = newEnabled ? '1' : '0.45';
+                const dot = row.querySelector('td:first-child span');
+                if (dot) dot.style.color = newEnabled ? 'var(--success)' : 'rgba(255,255,255,.2)';
+                const statusTd = row.querySelectorAll('td')[2];
+                if (statusTd) statusTd.innerHTML = newEnabled
+                    ? "<span style='color:var(--success);font-weight:600;'>Aktivní</span>"
+                    : "<span style='color:var(--text-muted);'>Neaktivní</span>";
+            }
+        } else {
+            alert('Toggle failed: ' + (d.message || 'unknown error'));
+            btnEl.disabled = false;
+        }
+    } catch(e) {
+        console.error('sysTogglePlugin:', e);
+        btnEl.disabled = false;
+    }
+}
+
 // ─── System Info Modal ────────────────────────────────────────────────────────
 
 async function openSysInfoModal() {
