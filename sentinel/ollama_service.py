@@ -215,11 +215,12 @@ def _log_hailo_status():
 
 async def _task_watchdog(max_age_seconds: int = 120):
     """Periodic watchdog: resets tasks stuck in 'processing' longer than max_age_seconds back to pending."""
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta
     while not state.shutdown_event.is_set():
         await asyncio.sleep(60)
         try:
-            cutoff = (datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds)).isoformat()
+            # Použij naive local datetime — DB ukládá processed_at bez timezone
+            cutoff = (datetime.now() - timedelta(seconds=max_age_seconds)).isoformat(timespec='seconds')
             conn = state._get_conn()
             n = conn.execute(
                 "UPDATE task_queue SET status='pending', worker_id=NULL "
