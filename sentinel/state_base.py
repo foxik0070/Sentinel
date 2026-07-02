@@ -21,7 +21,7 @@ try:
 except Exception:
     _DB_DIR = config.LOG_DIR  # fallback (zpětná kompatibilita)
 DB_FILE = os.path.join(_DB_DIR, "sentinel_state.db")
-db_lock = threading.Lock()
+db_lock = threading.RLock()  # RLock: zabrání deadlocku při re-entrantním volání ze stejného vlákna
 
 def _db_file():
     """Returns current DB_FILE, respecting overrides set on sentinel.state (used by tests)."""
@@ -43,7 +43,7 @@ class _DBErrorHandler(logging.Handler):
             if record.exc_info:
                 import traceback as _tb
                 tb = ''.join(_tb.format_exception(*record.exc_info))
-            conn = sqlite3.connect(_db_file(), timeout=5.0, isolation_level=None)
+            conn = sqlite3.connect(_db_file(), timeout=0.5, isolation_level=None)
             conn.execute(
                 "INSERT INTO sentinel_errors (source, level, message, traceback) VALUES (?,?,?,?)",
                 (record.name[:64], record.levelname, msg[:1000], (tb or '')[:2000])
@@ -63,8 +63,11 @@ shutdown_event = threading.Event()
 _issue_lifecycle_callbacks: list = []
 
 def _get_conn():
-    conn = sqlite3.connect(_db_file(), timeout=10.0, isolation_level=None)
-    conn.execute("PRAGMA busy_timeout=15000")
+    conn = sqlite3.connect(_db_file(), timeout=10.0, isolation_level=None,
+                           check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA wal_autocheckpoint=100")
+    conn.execute("PRAGMA busy_timeout=30000")
     return conn
 
 def init_db():
@@ -491,23 +494,79 @@ def init_db():
 
 init_db()
 
+MAX_QUEUE_DEPTH = 50  # Maximální pending tasků — nejstarší s nízkou prioritou se zahazují
+
 class DBQueueAdapter:
     def put(self, item):
         priority = 1
         if isinstance(item, dict):
             channel = item.get("channel", "general")
-            if channel in ["security", "racks", "root", "infra"]: 
+            if channel in ["security", "racks", "root", "infra"]:
                 priority = 10
-            elif item.get("type") == "ai_request": 
+            elif item.get("type") == "ai_request":
                 priority = 5
-        
+
         try:
             json_payload = json.dumps(item)
             with db_lock:
                 conn = _get_conn()
-                now = datetime.now(timezone.utc).isoformat()
-                conn.execute("INSERT INTO task_queue (priority, payload, status, created_at) VALUES (?, ?, 'pending', ?)",
-                             (priority, json_payload, now))
+                now = datetime.now().isoformat(timespec='seconds')
+
+                # Dedup + rate limit per channel (max 3 pending na channel)
+                if isinstance(item, dict):
+                    ch = item.get("channel", "")
+                    # 1. Stejný text v kanálu už čeká? Přeskočit.
+                    txt_key = (item.get("text") or "")[:120]
+                    if txt_key:
+                        dup = conn.execute(
+                            "SELECT 1 FROM task_queue WHERE status='pending' "
+                            "AND json_extract(payload,'$.channel')=? "
+                            "AND substr(json_extract(payload,'$.text'),1,120)=? LIMIT 1",
+                            (ch, txt_key)
+                        ).fetchone()
+                        if dup:
+                            conn.close()
+                            return
+
+                    # 2. Problem_key dedup pro remediation tasky
+                    ctx = item.get("context") or {}
+                    pkey = ctx.get("problem_key") or ""
+                    if pkey:
+                        dup2 = conn.execute(
+                            "SELECT 1 FROM task_queue WHERE status='pending' "
+                            "AND json_extract(payload,'$.context.problem_key')=? LIMIT 1",
+                            (pkey,)
+                        ).fetchone()
+                        if dup2:
+                            conn.close()
+                            return
+
+                    # 3. Rate limit: max 5 pending per channel
+                    if ch and ch not in ("security", "racks"):  # high-priority kanály bez limitu
+                        ch_count = conn.execute(
+                            "SELECT COUNT(*) FROM task_queue WHERE status='pending' "
+                            "AND json_extract(payload,'$.channel')=?",
+                            (ch,)
+                        ).fetchone()[0]
+                        if ch_count >= 5:
+                            conn.close()
+                            return
+
+                # Globální limit hloubky fronty
+                depth = conn.execute(
+                    "SELECT COUNT(*) FROM task_queue WHERE status='pending'"
+                ).fetchone()[0]
+                if depth >= MAX_QUEUE_DEPTH:
+                    conn.execute(
+                        "DELETE FROM task_queue WHERE id IN ("
+                        "  SELECT id FROM task_queue WHERE status='pending' "
+                        "  ORDER BY priority ASC, created_at ASC LIMIT 1)"
+                    )
+
+                conn.execute(
+                    "INSERT INTO task_queue (priority, payload, status, created_at) VALUES (?, ?, 'pending', ?)",
+                    (priority, json_payload, now)
+                )
                 conn.commit()
                 conn.close()
         except Exception as e:
