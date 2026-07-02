@@ -320,14 +320,43 @@ def aggregate_telemetry(raw_after_hours: int = 24) -> int:
             return 0
 
 def prune_expired_actions():
+    from .state_base import ollama_queue
     with db_lock:
         try:
             conn = _get_conn()
+            conn.row_factory = sqlite3.Row
             limit = (datetime.now(timezone.utc) - timedelta(minutes=60)).isoformat()
+
+            # Zjisti akce, které chystáme expirovat — a mají stále aktivní problém
+            rows = conn.execute(
+                "SELECT a.id, a.problem_key, a.cluster, a.node, a.raw_line, a.reason "
+                "FROM actions a "
+                "WHERE a.status='pending' AND a.created_at < ? AND a.raw_line IS NOT NULL AND a.raw_line != ''",
+                (limit,)
+            ).fetchall()
+
             conn.execute("UPDATE actions SET status='expired' WHERE status='pending' AND created_at < ?", (limit,))
             conn.commit()
             conn.close()
-        except: pass
+        except:
+            return
+
+    # Re-queue AI analýzu pro stále aktivní problémy (mimo db_lock)
+    for row in rows:
+        try:
+            ollama_queue.put({
+                "text": row["raw_line"],
+                "channel": "infra",
+                "type": "problem",
+                "context": {
+                    "problem_key": row["problem_key"],
+                    "cluster": row["cluster"],
+                    "node": row["node"],
+                    "requeue_reason": "action_expired",
+                }
+            })
+        except Exception as e:
+            logger.debug(f"prune_expired_actions requeue failed: {e}")
 
 def create_pending_action(problem_key, cluster, node, command, reason,
                           mode="dry_run", risk_score=0, risk_reasons=None, raw_line=None):
