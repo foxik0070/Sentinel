@@ -1208,28 +1208,81 @@ async function _openAuditTrailPanel() {
     panel.id = 'audit-trail-panel';
     panel.style.cssText = 'padding:14px 20px;border-top:1px solid var(--border);';
     panel.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-        <div style="font-size:.78em;text-transform:uppercase;letter-spacing:.07em;color:var(--accent);"><i class="fa-solid fa-clipboard-list"></i> Audit Trail</div>
+        <div style="font-size:.78em;text-transform:uppercase;letter-spacing:.07em;color:var(--accent);"><i class="fa-solid fa-clipboard-list"></i> Audit Log Akcí</div>
         <i class="fa-solid fa-times" style="cursor:pointer;color:var(--text-muted);" onclick="document.getElementById('audit-trail-panel')?.remove()"></i>
     </div>
-    <div id="audit-trail-body" style="max-height:250px;overflow-y:auto;"><i class="fa-solid fa-spinner fa-spin"></i></div>`;
+    <div id="audit-trail-body" style="max-height:320px;overflow-y:auto;"><i class="fa-solid fa-spinner fa-spin"></i></div>`;
     const form = document.getElementById('settings-form');
     if (form) form.insertBefore(panel, form.firstChild);
+    else document.body.appendChild(panel);
     try {
-        const r = await fetch('/api/admin/audit_trail?limit=50');
+        const r = await fetch('/api/actions/audit_log?limit=100');
         const d = await r.json();
-        const events = d.events || [];
-        const typeColors = {config_change:'#60a5fa', ssh_execute:'#4ade80', action_approved:'#fbbf24', action_rejected:'#f87171'};
-        document.getElementById('audit-trail-body').innerHTML = events.length
-            ? events.map(e => `<div style="display:flex;gap:10px;padding:4px 0;border-bottom:1px solid var(--border);font-size:.78em;align-items:baseline;">
-                <span style="color:var(--text-muted);flex-shrink:0;width:130px;">${(e.at||'').slice(0,16).replace('T',' ')}</span>
-                <span style="flex-shrink:0;width:80px;overflow:hidden;text-overflow:ellipsis;color:var(--accent);">${_escape(e.actor||'?')}</span>
-                <span style="flex-shrink:0;width:110px;color:${typeColors[e.type]||'#888'};font-size:.72em;font-weight:600;">${_escape(e.type||'')}</span>
-                <span style="flex:1;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${_escape(e.detail||'')}">${_escape((e.detail||'').slice(0,80))}</span>
-            </div>`).join('')
-            : '<span style="color:var(--text-muted);">Žádné záznamy.</span>';
-    } catch(e) {
-        document.getElementById('audit-trail-body').innerHTML = `<span style="color:var(--error);">Chyba: ${_escape(e.message)}</span>`;
+        const events = d.audit || [];
+        const evColors = {
+            created:'var(--text-muted)', approved:'var(--success)', rejected:'var(--error)',
+            executed:'#4ade80', failed:'var(--error)', auto_executed:'#60a5fa', reviewed:'#fbbf24',
+        };
+        const body = document.getElementById('audit-trail-body');
+        if (!events.length) { body.innerHTML = '<span style="color:var(--text-muted);">Žádné záznamy.</span>'; return; }
+        body.innerHTML = events.map((e,i) => {
+            const col = evColors[e.event] || '#888';
+            const cmd = e.command || '';
+            const rowId = `audit-row-${i}`;
+            const hasCmd = cmd && cmd !== 'N/A';
+            return `<div style="border-bottom:1px solid var(--border);">
+                <div style="display:flex;gap:8px;padding:5px 0;font-size:.78em;align-items:center;cursor:pointer;" onclick="toggleAuditRow('${rowId}')">
+                    <span style="color:var(--text-muted);flex-shrink:0;width:115px;">${(e.at||'').slice(0,16).replace('T',' ')}</span>
+                    <span style="flex-shrink:0;width:70px;color:var(--accent);overflow:hidden;text-overflow:ellipsis;">${_escape(e.actor||'?')}</span>
+                    <span style="flex-shrink:0;min-width:90px;color:${col};font-size:.72em;font-weight:600;">${_escape(e.event||'')}</span>
+                    <span style="flex:1;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_escape((cmd).slice(0,60))}${cmd.length>60?'…':''}</span>
+                    <span style="color:var(--text-muted);font-size:.8em;"><i class="fa-solid fa-chevron-down"></i></span>
+                </div>
+                <div id="${rowId}" style="display:none;padding:8px 4px 10px;background:rgba(0,0,0,.2);border-radius:4px;margin-bottom:4px;">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:.78em;margin-bottom:8px;">
+                        <div><span style="color:var(--text-muted);">Node:</span> <b>${_escape(e.node||'—')}</b></div>
+                        <div><span style="color:var(--text-muted);">Cluster:</span> <b>${_escape(e.cluster||'—')}</b></div>
+                        <div><span style="color:var(--text-muted);">Action ID:</span> ${e.action_id||'—'}</div>
+                        <div><span style="color:var(--text-muted);">Risk:</span> <span style="color:${(e.risk_score||0)>50?'var(--error)':'var(--success)'}">${e.risk_score??'—'}</span></div>
+                    </div>
+                    ${hasCmd ? `<div style="font-size:.78em;color:var(--text-muted);margin-bottom:4px;">Příkaz:</div>
+                    <code style="display:block;background:var(--code-bg,#111);border:1px solid var(--border);border-radius:3px;padding:6px 8px;font-size:.82em;word-break:break-all;">${_escape(cmd)}</code>
+                    <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+                        <button onclick="_auditAddToAllowed('${_escape(cmd).replace(/'/g,"\\'")}', false)" style="padding:3px 10px;background:transparent;border:1px solid var(--accent);color:var(--accent);border-radius:3px;cursor:pointer;font-size:.75em;">
+                            <i class="fa-solid fa-plus" style="margin-right:3px;"></i>Přidat do Allowed Commands
+                        </button>
+                        <button onclick="_auditAddToAllowed('${_escape(cmd).replace(/'/g,"\\'")}', true)" style="padding:3px 10px;background:transparent;border:1px solid #ffc107;color:#ffc107;border-radius:3px;cursor:pointer;font-size:.75em;">
+                            <i class="fa-solid fa-bolt" style="margin-right:3px;"></i>Přidat + Auto-execute
+                        </button>
+                    </div>` : ''}
+                </div>
+            </div>`;
+        }).join('');
+    } catch(err) {
+        document.getElementById('audit-trail-body').innerHTML = `<span style="color:var(--error);">Chyba: ${_escape(err.message)}</span>`;
     }
+}
+
+function toggleAuditRow(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.display = el.style.display === 'none' ? '' : 'none';
+}
+
+async function _auditAddToAllowed(cmd, autoExec) {
+    const confirmed = confirm(`${autoExec ? '⚠️ Auto-execute: příkaz poběží automaticky bez potvrzení!\n\n' : ''}Přidat do Allowed Commands:\n${cmd}`);
+    if (!confirmed) return;
+    const desc = prompt('Popis pravidla:', `Povoleno z audit logu: ${cmd.split(' ')[0]}`);
+    if (desc === null) return;
+    try {
+        const r = await fetch('/api/v1/allowed-commands', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({pattern: cmd, description: desc, auto_execute: autoExec, risk_max: autoExec ? 30 : 100, note: 'Přidáno z audit logu'})
+        });
+        const d = await r.json();
+        if (d.status === 'ok') alert('Pravidlo přidáno.');
+        else alert('Chyba: ' + (d.reply || d.message || '?'));
+    } catch(e) { alert('Chyba: ' + e); }
 }
 
 // ── 301+303: Analytics tab — SLA + alert fatigue ─────────────────────────────
@@ -3099,80 +3152,313 @@ function closeRagModal() { document.getElementById('rag-modal').style.display = 
 
 // ─── Queue Details Modal ──────────────────────────────────────────────────────
 
+let _queueRefreshInterval = null;
+let _queueExpandedRows = new Set();
+
 async function openQueueModal() {
     document.getElementById('queue-modal').style.display = 'flex';
     await loadQueueDetails();
+    if (_queueRefreshInterval) clearInterval(_queueRefreshInterval);
+    _queueRefreshInterval = setInterval(loadQueueDetails, 10000);
 }
 
-function closeQueueModal() { document.getElementById('queue-modal').style.display = 'none'; }
+function closeQueueModal() {
+    document.getElementById('queue-modal').style.display = 'none';
+    if (_queueRefreshInterval) { clearInterval(_queueRefreshInterval); _queueRefreshInterval = null; }
+    _queueExpandedRows.clear();
+}
+
+function _fmtAge(s) {
+    if (s == null) return '—';
+    if (s < 60) return `${s}s`;
+    if (s < 3600) return `${Math.floor(s/60)}m ${s%60}s`;
+    return `${Math.floor(s/3600)}h ${Math.floor((s%3600)/60)}m`;
+}
+
+async function cancelQueueItem(id, btn) {
+    if (!confirm('Zrušit tuto položku z fronty?')) return;
+    btn.disabled = true;
+    try {
+        const r = await fetch(`/api/queue/${id}`, {method:'DELETE'});
+        const d = await r.json();
+        if (d.status === 'ok') { loadQueueDetails(); }
+        else { alert(d.message || 'Chyba při rušení'); btn.disabled = false; }
+    } catch(e) { alert('Chyba: ' + e); btn.disabled = false; }
+}
+
+function toggleQueueRow(id) {
+    const det = document.getElementById(`qdet-${id}`);
+    if (!det) return;
+    if (_queueExpandedRows.has(id)) {
+        det.style.display = 'none';
+        _queueExpandedRows.delete(id);
+    } else {
+        det.style.display = '';
+        _queueExpandedRows.add(id);
+    }
+}
+
+async function setWorkerCount(delta) {
+    const el = document.getElementById('worker-count-val');
+    const cur = parseInt(el?.textContent || '1');
+    const next = Math.max(1, Math.min(16, cur + delta));
+    if (next === cur) return;
+    try {
+        const r = await fetch('/api/queue/workers', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({workers: next})
+        });
+        const d = await r.json();
+        if (d.status === 'ok') {
+            if (el) el.textContent = next;
+            if (d.note) { const n = document.getElementById('worker-note'); if (n) n.textContent = d.note; }
+        } else { alert(d.message); }
+    } catch(e) { alert('Chyba: ' + e); }
+}
 
 async function loadQueueDetails() {
     const el = document.getElementById('queue-detail-content');
-    el.innerHTML = `<div style="text-align:center; padding:20px; color:var(--text-muted);"><i class="fa-solid fa-spinner fa-spin"></i></div>`;
+    if (!el._initialized) {
+        el.innerHTML = `<div style="text-align:center; padding:20px; color:var(--text-muted);"><i class="fa-solid fa-spinner fa-spin"></i></div>`;
+    }
     try {
         const r = await fetch('/api/queue/details');
         const d = await r.json();
+        el._initialized = true;
         const _esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-
         const isCS = (localStorage.getItem('sentinel_lang') || 'cs') === 'cs';
         const lbl = (cs, en) => isCS ? cs : en;
 
+        // Header: server time + worker control + benchmark btn
+        const headerHtml = `
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; flex-wrap:wrap; gap:8px;">
+            <div style="font-size:.8em; color:var(--text-muted);">
+                <i class="fa-solid fa-clock" style="margin-right:4px;"></i>
+                ${lbl('Čas serveru','Server time')}: <b style="color:var(--text-main);">${_esc(d.server_time || '—')}</b>
+                <span style="margin-left:10px; opacity:.5;">auto-refresh 10s</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <div style="display:flex; align-items:center; gap:4px; background:var(--panel); border:1px solid var(--border); border-radius:6px; padding:4px 8px;">
+                    <span style="font-size:.78em; color:var(--text-muted); margin-right:4px;">${lbl('Workery','Workers')}:</span>
+                    <button onclick="setWorkerCount(-1)" style="width:22px;height:22px;background:var(--border);border:none;color:var(--text-main);border-radius:3px;cursor:pointer;font-size:1em;line-height:1;">−</button>
+                    <span id="worker-count-val" style="font-weight:700; color:var(--accent); min-width:18px; text-align:center;">${d.workers ?? 1}</span>
+                    <button onclick="setWorkerCount(+1)" style="width:22px;height:22px;background:var(--border);border:none;color:var(--text-main);border-radius:3px;cursor:pointer;font-size:1em;line-height:1;">+</button>
+                </div>
+                <span id="worker-note" style="font-size:.72em; color:var(--text-muted);"></span>
+                <button onclick="openBenchmarkModal()" style="padding:5px 12px; background:rgba(168,85,247,.15); color:#c084fc; border:1px solid rgba(168,85,247,.3); border-radius:5px; cursor:pointer; font-size:.82em;">
+                    <i class="fa-solid fa-gauge-high" style="margin-right:4px;"></i>${lbl('Benchmark','Benchmark')}
+                </button>
+            </div>
+        </div>`;
+
         // Stat cards
         const stats = [
-            { icon:'fa-hourglass-half', color:'var(--accent)',   cs:'AI fronta',        en:'AI Queue',        val: d.pending ?? 0,             desc: isCS ? 'Dotazy čekající na zpracování LLM' : 'Requests waiting for LLM processing' },
-            { icon:'fa-microchip',      color:'#a855f7',         cs:'Pracovníci',        en:'Workers',         val: d.workers ?? 0,              desc: isCS ? 'Počet vláken pro AI zpracování' : 'AI processing thread count' },
-            { icon:'fa-bolt',           color:'var(--success)',  cs:'Latence AI',        en:'AI Latency',      val: d.ai_latency ?? 'N/A',       desc: isCS ? 'Průměrná doba odpovědi AI' : 'Average AI response time' },
-            { icon:'fa-chart-bar',      color:'#ffc107',         cs:'Požadavků celkem',  en:'Total Requests',  val: d.ai_requests_total ?? 0,    desc: isCS ? 'Celkový počet AI dotazů od startu' : 'Total AI requests since startup' },
-            { icon:'fa-triangle-exclamation', color:'var(--error)', cs:'Chyby AI',       en:'AI Errors',       val: d.ai_errors_total ?? 0,      desc: isCS ? 'Počet chybných AI odpovědí' : 'Failed AI responses count' },
+            { icon:'fa-hourglass-half', color:'var(--accent)',   cs:'AI fronta',        en:'AI Queue',        val: d.pending ?? 0 },
+            { icon:'fa-database',       color:'#7cb9f0',         cs:'DB fronta',        en:'DB Queue',        val: d.db_pending ?? 0 },
+            { icon:'fa-bolt',           color:'var(--success)',  cs:'Latence AI',       en:'AI Latency',      val: d.ai_latency ?? 'N/A' },
+            { icon:'fa-chart-bar',      color:'#ffc107',         cs:'Celkem dotazů',    en:'Total Reqs',      val: d.ai_requests_total ?? 0 },
+            { icon:'fa-triangle-exclamation', color:'var(--error)', cs:'Chyby AI',     en:'AI Errors',       val: d.ai_errors_total ?? 0 },
         ];
-        const statsHtml = `<div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:10px; margin-bottom:18px;">` +
-            stats.map(s => `<div style="background:var(--panel); border:1px solid var(--border); border-radius:6px; padding:10px 12px;">
-                <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
-                    <i class="fa-solid ${s.icon}" style="color:${s.color}; font-size:.9em;"></i>
-                    <span style="font-size:.75em; color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em;">${isCS ? s.cs : s.en}</span>
+        const statsHtml = `<div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:8px; margin-bottom:16px;">` +
+            stats.map(s => `<div style="background:var(--panel); border:1px solid var(--border); border-radius:6px; padding:9px 11px;">
+                <div style="display:flex; align-items:center; gap:5px; margin-bottom:4px;">
+                    <i class="fa-solid ${s.icon}" style="color:${s.color}; font-size:.85em;"></i>
+                    <span style="font-size:.72em; color:var(--text-muted); text-transform:uppercase;">${isCS ? s.cs : s.en}</span>
                 </div>
-                <div style="font-size:1.3em; font-weight:700; color:${s.color};">${_esc(String(s.val))}</div>
-                <div style="font-size:.7em; color:var(--text-muted); margin-top:4px; line-height:1.3;">${s.desc}</div>
+                <div style="font-size:1.25em; font-weight:700; color:${s.color};">${_esc(String(s.val))}</div>
             </div>`).join('') + `</div>`;
 
         // Requests table
         const reqs = d.requests || [];
-        const emptyMsg = isCS ? 'Fronta je prázdná — žádné čekající požadavky' : 'Queue is empty — no pending requests';
+        const emptyMsg = isCS ? 'Fronta je prázdná' : 'Queue is empty';
         const reqRows = reqs.length === 0
-            ? `<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:16px; font-style:italic;">${emptyMsg}</td></tr>`
+            ? `<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:16px; font-style:italic;">${emptyMsg}</td></tr>`
             : reqs.map((req, i) => {
-                const sc = req.status === 'processing' ? '#ffc107' : 'var(--text-muted)';
-                const si = req.status === 'processing' ? 'fa-spinner fa-spin' : 'fa-clock';
+                const isProc = req.status === 'processing';
+                const sc = isProc ? '#ffc107' : 'var(--text-muted)';
+                const si = isProc ? 'fa-spinner fa-spin' : 'fa-clock';
                 const time = req.created_at ? req.created_at.replace('T',' ').substring(0,16) : '—';
-                return `<tr style="border-bottom:1px solid var(--border);">
-                    <td style="padding:6px 8px; color:var(--text-muted); font-size:.85em;">${i+1}</td>
-                    <td style="padding:6px 8px;"><span style="background:rgba(0,120,212,.15); color:#7cb9f0; border-radius:3px; padding:1px 6px; font-size:.8em;">${_esc(req.channel || '—')}</span></td>
-                    <td style="padding:6px 8px; font-family:monospace; font-size:.82em;">${_esc(req.host || '—')}</td>
-                    <td style="padding:6px 8px;"><i class="fa-solid ${si}" style="color:${sc}; margin-right:4px; font-size:.8em;"></i><span style="color:${sc}; font-size:.82em;">${_esc(req.status)}</span></td>
-                    <td style="padding:6px 8px; color:var(--text-muted); font-size:.78em;">${time}</td>
+                const ageStr = _fmtAge(req.age_s);
+                const ageColor = (req.age_s > 300) ? 'var(--error)' : (req.age_s > 60) ? '#ffc107' : 'var(--text-muted)';
+                const canCancel = !isProc;
+                const isExpanded = _queueExpandedRows.has(req.id);
+                const detailRow = `<tr id="qdet-${req.id}" style="display:${isExpanded?'':'none'}; background:rgba(0,0,0,.2);">
+                    <td colspan="7" style="padding:10px 14px;">
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:.8em;">
+                            <div><span style="color:var(--text-muted);">${lbl('ID','ID')}:</span> <b>${req.id}</b> | <span style="color:var(--text-muted);">Priority:</span> ${req.priority ?? '—'}</div>
+                            <div><span style="color:var(--text-muted);">Worker:</span> ${_esc(req.worker_id || '—')} | <span style="color:var(--text-muted);">Source:</span> ${_esc(req.source || '—')}</div>
+                            <div style="grid-column:1/-1;"><span style="color:var(--text-muted);">Problem key:</span> <code style="font-size:.9em;">${_esc(req.problem_key || '—')}</code></div>
+                            <div style="grid-column:1/-1;">
+                                <div style="color:var(--text-muted); margin-bottom:3px;">${lbl('Dotaz / Text:','Query / Text:')}</div>
+                                <div style="background:var(--code-bg,#111); border:1px solid var(--border); border-radius:4px; padding:8px; font-family:monospace; font-size:.82em; white-space:pre-wrap; word-break:break-all; max-height:140px; overflow-y:auto;">${_esc(req.text || '(prázdný)')}</div>
+                            </div>
+                        </div>
+                    </td>
                 </tr>`;
+                return `<tr style="border-bottom:1px solid var(--border); cursor:pointer;" onclick="toggleQueueRow(${req.id})">
+                    <td style="padding:6px 8px; color:var(--text-muted); font-size:.82em;">${i+1}</td>
+                    <td style="padding:6px 8px;"><span style="background:rgba(0,120,212,.12); color:#7cb9f0; border-radius:3px; padding:1px 5px; font-size:.78em;">${_esc(req.channel || '—')}</span></td>
+                    <td style="padding:6px 8px; font-family:monospace; font-size:.8em; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${_esc(req.host || '—')}</td>
+                    <td style="padding:6px 8px; font-size:.8em; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-muted);" title="${_esc(req.text)}">${_esc((req.text||'').substring(0,60))}${(req.text||'').length>60?'…':''}</td>
+                    <td style="padding:6px 8px;"><i class="fa-solid ${si}" style="color:${sc}; margin-right:3px; font-size:.78em;"></i><span style="color:${sc}; font-size:.8em;">${_esc(req.status)}</span></td>
+                    <td style="padding:6px 8px; color:${ageColor}; font-size:.78em;">${ageStr}</td>
+                    <td style="padding:6px 8px;" onclick="event.stopPropagation()">
+                        ${canCancel ? `<button onclick="cancelQueueItem(${req.id},this)" title="${lbl('Zrušit','Cancel')}" style="padding:2px 7px; background:transparent; border:1px solid var(--error); color:var(--error); border-radius:3px; cursor:pointer; font-size:.75em;"><i class="fa-solid fa-xmark"></i></button>` : ''}
+                    </td>
+                </tr>${detailRow}`;
             }).join('');
 
-        el.innerHTML = statsHtml + `
-            <div style="font-size:.8em; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:8px;">
-                ${lbl('Položky ve frontě', 'Queue Items')}
-                <span style="font-weight:400; color:var(--text-muted); margin-left:6px;">(${reqs.length})</span>
+        el.innerHTML = headerHtml + statsHtml + `
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+                <div style="font-size:.78em; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em;">
+                    ${lbl('Položky ve frontě','Queue Items')}
+                    <span style="font-weight:400; margin-left:5px;">(${reqs.length})</span>
+                </div>
+                <span style="font-size:.72em; color:var(--text-muted);">${lbl('Klikni na řádek pro detail','Click row for details')}</span>
             </div>
             <div style="overflow-x:auto; border:1px solid var(--border); border-radius:6px;">
-            <table style="width:100%; border-collapse:collapse; font-size:.88em;">
+            <table style="width:100%; border-collapse:collapse; font-size:.86em;">
                 <thead><tr style="background:var(--panel);">
-                    <th style="padding:7px 8px; text-align:left; color:var(--text-muted); font-weight:500; font-size:.8em;">#</th>
-                    <th style="padding:7px 8px; text-align:left; color:var(--text-muted); font-weight:500; font-size:.8em;">${lbl('Kanál','Channel')}</th>
-                    <th style="padding:7px 8px; text-align:left; color:var(--text-muted); font-weight:500; font-size:.8em;">${lbl('Host','Host')}</th>
-                    <th style="padding:7px 8px; text-align:left; color:var(--text-muted); font-weight:500; font-size:.8em;">${lbl('Stav','Status')}</th>
-                    <th style="padding:7px 8px; text-align:left; color:var(--text-muted); font-weight:500; font-size:.8em;">${lbl('Čas','Time')}</th>
+                    <th style="padding:6px 8px; text-align:left; color:var(--text-muted); font-weight:500; font-size:.78em;">#</th>
+                    <th style="padding:6px 8px; text-align:left; color:var(--text-muted); font-weight:500; font-size:.78em;">${lbl('Kanál','Channel')}</th>
+                    <th style="padding:6px 8px; text-align:left; color:var(--text-muted); font-weight:500; font-size:.78em;">${lbl('Host','Host')}</th>
+                    <th style="padding:6px 8px; text-align:left; color:var(--text-muted); font-weight:500; font-size:.78em;">${lbl('Dotaz (zkráceno)','Query (truncated)')}</th>
+                    <th style="padding:6px 8px; text-align:left; color:var(--text-muted); font-weight:500; font-size:.78em;">${lbl('Stav','Status')}</th>
+                    <th style="padding:6px 8px; text-align:left; color:var(--text-muted); font-weight:500; font-size:.78em;">${lbl('Stáří','Age')}</th>
+                    <th style="padding:6px 8px;"></th>
                 </tr></thead>
                 <tbody>${reqRows}</tbody>
             </table>
             </div>`;
     } catch(e) {
-        el.innerHTML = `<div style="color:var(--error); padding:16px;">${t('data_load_failed')}</div>`;
+        if (!el._initialized) el.innerHTML = `<div style="color:var(--error); padding:16px;">${t('data_load_failed')}</div>`;
     }
+}
+
+// ─── Benchmark Modal ──────────────────────────────────────────────────────────
+
+function openBenchmarkModal() {
+    const existing = document.getElementById('benchmark-modal');
+    if (!existing) _createBenchmarkModal();
+    document.getElementById('benchmark-modal').style.display = 'flex';
+}
+
+function closeBenchmarkModal() {
+    const m = document.getElementById('benchmark-modal');
+    if (m) m.style.display = 'none';
+}
+
+function _createBenchmarkModal() {
+    const m = document.createElement('div');
+    m.id = 'benchmark-modal';
+    m.className = 'modal-overlay';
+    m.style.cssText = 'display:none;z-index:1200;';
+    m.innerHTML = `
+    <div class="modal" style="width:min(720px,96vw); max-height:90vh; display:flex; flex-direction:column;">
+        <div class="modal-header">
+            <span><i class="fa-solid fa-gauge-high" style="color:#c084fc;margin-right:6px;"></i> AI Benchmark</span>
+            <i class="fa-solid fa-times" style="cursor:pointer" onclick="closeBenchmarkModal()"></i>
+        </div>
+        <div class="modal-body" style="background:var(--bg); overflow-y:auto; flex:1; padding:16px;">
+            <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:14px;">
+                <div>
+                    <label style="font-size:.8em; color:var(--text-muted); display:block; margin-bottom:4px;">Model <span style="opacity:.6;">(prázdné = aktuální)</span></label>
+                    <input id="bm-model" placeholder="llama3.2:1b" style="width:100%; background:var(--code-bg,#111); color:var(--text-main); border:1px solid var(--border); border-radius:4px; padding:6px 8px; font-family:monospace; font-size:.85em; box-sizing:border-box;">
+                </div>
+                <div>
+                    <label style="font-size:.8em; color:var(--text-muted); display:block; margin-bottom:4px;">Iterace <span style="opacity:.6;">(1–10)</span></label>
+                    <input id="bm-iter" type="number" value="3" min="1" max="10" style="width:100%; background:var(--code-bg,#111); color:var(--text-main); border:1px solid var(--border); border-radius:4px; padding:6px 8px; font-size:.85em; box-sizing:border-box;">
+                </div>
+                <div>
+                    <label style="font-size:.8em; color:var(--text-muted); display:block; margin-bottom:4px;">Paralelní dotazy <span style="opacity:.6;">(1–4)</span></label>
+                    <input id="bm-parallel" type="number" value="1" min="1" max="4" style="width:100%; background:var(--code-bg,#111); color:var(--text-main); border:1px solid var(--border); border-radius:4px; padding:6px 8px; font-size:.85em; box-sizing:border-box;">
+                </div>
+            </div>
+            <div style="margin-bottom:14px;">
+                <label style="font-size:.8em; color:var(--text-muted); display:block; margin-bottom:4px;">Test prompt</label>
+                <input id="bm-prompt" value="Reply with exactly: BENCHMARK_OK" style="width:100%; background:var(--code-bg,#111); color:var(--text-main); border:1px solid var(--border); border-radius:4px; padding:6px 8px; font-size:.85em; box-sizing:border-box;">
+            </div>
+            <div style="display:flex; gap:8px; align-items:center; margin-bottom:16px;">
+                <button id="bm-run-btn" onclick="runBenchmark()" style="padding:8px 20px; background:rgba(168,85,247,.2); color:#c084fc; border:1px solid rgba(168,85,247,.4); border-radius:5px; cursor:pointer; font-weight:600; font-size:.9em;">
+                    <i class="fa-solid fa-play" style="margin-right:5px;"></i>Spustit Benchmark
+                </button>
+                <span id="bm-status" style="font-size:.82em; color:var(--text-muted);"></span>
+            </div>
+            <div id="bm-results"></div>
+        </div>
+        <div class="modal-footer">
+            <button onclick="closeBenchmarkModal()" style="background:transparent; border:1px solid #555; margin-left:auto;">Zavřít</button>
+        </div>
+    </div>`;
+    document.body.appendChild(m);
+}
+
+async function runBenchmark() {
+    const btn = document.getElementById('bm-run-btn');
+    const status = document.getElementById('bm-status');
+    const results = document.getElementById('bm-results');
+    const model = document.getElementById('bm-model').value.trim();
+    const iter  = parseInt(document.getElementById('bm-iter').value) || 3;
+    const para  = parseInt(document.getElementById('bm-parallel').value) || 1;
+    const prompt = document.getElementById('bm-prompt').value.trim();
+
+    btn.disabled = true;
+    status.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="margin-right:4px;"></i>Probíhá benchmark…';
+    results.innerHTML = '';
+
+    try {
+        const r = await fetch('/api/benchmark/run', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({model, iterations: iter, parallel: para, prompt})
+        });
+        const d = await r.json();
+        if (d.status !== 'ok') { status.textContent = 'Chyba: ' + (d.message || '?'); btn.disabled = false; return; }
+
+        const s = d.summary || {};
+        status.innerHTML = `<span style="color:var(--success);">Hotovo za ${s.total_elapsed}s</span>`;
+
+        // Tabulka výsledků
+        const rows = (d.results || []).map((res,i) =>
+            `<tr style="border-bottom:1px solid var(--border);">
+                <td style="padding:5px 8px; color:var(--text-muted);">${res.idx+1}</td>
+                <td style="padding:5px 8px;">${res.ok ? `<span style="color:var(--success);">OK</span>` : `<span style="color:var(--error);">CHYBA</span>`}</td>
+                <td style="padding:5px 8px; font-weight:${res.elapsed > 15 ? '600' : 'normal'}; color:${res.elapsed > 30 ? 'var(--error)' : res.elapsed > 10 ? '#ffc107' : 'var(--success)'};">${res.elapsed}s</td>
+                <td style="padding:5px 8px; font-size:.78em; color:var(--text-muted);">${res.error||''}</td>
+            </tr>`
+        ).join('');
+
+        results.innerHTML = `
+        <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:14px;">
+            ${[
+                ['Průměr', s.avg_s != null ? s.avg_s+'s' : '—', 'var(--accent)'],
+                ['Min', s.min_s != null ? s.min_s+'s' : '—', 'var(--success)'],
+                ['Max', s.max_s != null ? s.max_s+'s' : '—', 'var(--error)'],
+                ['Propustnost', s.throughput_rps != null ? s.throughput_rps+' req/s' : '—', '#ffc107'],
+            ].map(([lbl,val,col]) => `<div style="background:var(--panel); border:1px solid var(--border); border-radius:5px; padding:9px; text-align:center;">
+                <div style="font-size:.7em; color:var(--text-muted); text-transform:uppercase; margin-bottom:3px;">${lbl}</div>
+                <div style="font-size:1.2em; font-weight:700; color:${col};">${val}</div>
+            </div>`).join('')}
+        </div>
+        <div style="font-size:.8em; font-weight:600; color:var(--text-muted); text-transform:uppercase; margin-bottom:6px;">Model: <span style="color:var(--accent);">${d.model}</span> | ${iter} iterací × ${para} paralelně</div>
+        <div style="overflow-x:auto; border:1px solid var(--border); border-radius:5px; margin-bottom:12px;">
+        <table style="width:100%; border-collapse:collapse; font-size:.85em;">
+            <thead><tr style="background:var(--panel);">
+                <th style="padding:5px 8px; text-align:left; color:var(--text-muted); font-size:.78em;">#</th>
+                <th style="padding:5px 8px; text-align:left; color:var(--text-muted); font-size:.78em;">Výsledek</th>
+                <th style="padding:5px 8px; text-align:left; color:var(--text-muted); font-size:.78em;">Čas</th>
+                <th style="padding:5px 8px; text-align:left; color:var(--text-muted); font-size:.78em;">Chyba</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+        </table>
+        </div>
+        ${d.recommendation ? `<div style="background:rgba(168,85,247,.08); border:1px solid rgba(168,85,247,.25); border-radius:5px; padding:10px 14px; font-size:.85em;">
+            <i class="fa-solid fa-lightbulb" style="color:#c084fc; margin-right:5px;"></i><b>Doporučení:</b> ${d.recommendation}
+        </div>` : ''}`;
+
+    } catch(e) {
+        status.innerHTML = `<span style="color:var(--error);">Chyba: ${e}</span>`;
+    }
+    btn.disabled = false;
 }
 
 // ─── Connection Status Modal ──────────────────────────────────────────────────

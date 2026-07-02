@@ -61,17 +61,7 @@ function closeIssuesModal() {
 async function refreshModalIssuesContent(isAuto = false) {
     if (!currentOpenChannel) return;
     const bodyEl = document.getElementById('dedicated-modal-body');
-
-    // Nepřepisovat pokud uživatel pracuje (focus v inputu, picker otevřen, drag aktivní)
-    if (isAuto) {
-        // Input nebo textarea v těle modalu má focus nebo neprázdný obsah
-        const focusedInput = bodyEl && bodyEl.contains(document.activeElement) && ['INPUT','TEXTAREA'].includes(document.activeElement.tagName);
-        const anyInputWithText = bodyEl && [...bodyEl.querySelectorAll('input[type="text"],input:not([type]),textarea')].some(el => el.value.trim().length > 0);
-        // Otevřený picker (label color, tag) nebo dropdown
-        const openPicker = bodyEl && bodyEl.querySelector('[id^="lc-picker-"][style*="flex"], [id^="snooze-dropdown"]');
-        if (focusedInput || anyInputWithText || openPicker) return;
-    }
-
+    
     if (!isAuto) {
         bodyEl.innerHTML = `<div style='text-align:center; padding:30px; color:#666;'><i class='fa-solid fa-spinner fa-spin'></i> ${t('loading_db')}</div>`;
     }
@@ -127,8 +117,6 @@ async function refreshModalIssuesContent(isAuto = false) {
             if (typeof Sortable !== 'undefined') {
                 _initIssueSortable(bodyEl);
             }
-            // 223: Swipe gestures na mobilu
-            _initSwipeGestures(bodyEl);
         }
     } catch (e) {
         if (!isAuto) {
@@ -488,30 +476,6 @@ async function bulkAcknowledge() {
     if (d.acknowledged !== undefined) alert(`✓ Potvrzeno ${d.acknowledged} issues`);
 }
 
-// 265: Bulk CSV export vybraných issues
-async function bulkExportCsv() {
-    const keys = [..._bulkSelected];
-    if (!keys.length) { alert('Nejprve vyber issues.'); return; }
-    try {
-        const r = await fetch('/api/issues/export_csv', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({keys, channel: currentOpenChannel})
-        });
-        const blob = await r.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = `sentinel_issues_${new Date().toISOString().slice(0,10)}.csv`;
-        a.click(); URL.revokeObjectURL(url);
-    } catch(e) { alert('Export selhal: ' + e); }
-}
-
-// 268: Alt+A → bulk acknowledge, Alt+E → CSV export
-document.addEventListener('keydown', e => {
-    if (e.altKey && e.key === 'a' && currentOpenChannel) { e.preventDefault(); bulkAcknowledge(); }
-    if (e.altKey && e.key === 'e' && currentOpenChannel) { e.preventDefault(); bulkExportCsv(); }
-});
-
 // ---- Issue Assignee ----
 async function _openAssignPicker(kb64) {
     document.querySelectorAll('.assign-picker').forEach(el => el.remove());
@@ -627,7 +591,7 @@ async function openIssueTimeline(kb64) {
 }
 
 // ---- Dashboard Widget Layout ----
-const _SYS_SECTION_CATS = ['Hardware', 'Network', 'Security & Agents', 'AI Engine', 'Database & Runtime', 'Detektory'];
+const _DASH_WIDGETS = ['Hardware', 'Network', 'Security & Agents', 'AI Engine', 'Database & Runtime', 'Detektory'];
 const _DASH_LS_KEY = 'sentinel_dash_hidden';
 
 function _dashGetHidden() {
@@ -640,7 +604,7 @@ function _dashApply() {
     const hidden = _dashGetHidden();
     document.querySelectorAll('.sys-section').forEach(sec => {
         const title = sec.querySelector('.sys-section-title')?.textContent?.trim() || '';
-        const match = _SYS_SECTION_CATS.find(w => title.includes(w));
+        const match = _DASH_WIDGETS.find(w => title.includes(w));
         if (match) sec.style.display = hidden.includes(match) ? 'none' : '';
     });
 }
@@ -659,7 +623,7 @@ function openDashLayout() {
     menu.id = 'dash-layout-menu';
     menu.style.cssText = 'position:fixed;z-index:9999;background:var(--panel);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.4);padding:8px 0;min-width:200px;top:50%;left:50%;transform:translate(-50%,-50%);';
     menu.innerHTML = `<div style="padding:6px 14px 10px;font-size:.78em;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);border-bottom:1px solid var(--border);margin-bottom:4px;">Viditelné sekce sys monitoru</div>` +
-        _SYS_SECTION_CATS.map(w => `<div onclick="_dashToggle('${w}')" style="padding:7px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:.85em;"
+        _DASH_WIDGETS.map(w => `<div onclick="_dashToggle('${w}')" style="padding:7px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:.85em;"
             onmouseenter="this.style.background='rgba(255,255,255,.06)'" onmouseleave="this.style.background=''">
             <i class="fa-solid fa-${hidden.includes(w)?'eye-slash':'eye'}" style="color:${hidden.includes(w)?'var(--text-muted)':'var(--success)'};min-width:14px;"></i>
             ${w}
@@ -882,235 +846,6 @@ async function openChangelog() {
     } catch(e) { body.innerHTML = `<div style="color:var(--error);">Chyba: ${e}</div>`; }
 }
 
-// 137: Issue fullscreen detail overlay
-let _ifsKey = null;
-async function _openIssueFullscreen(kb64) {
-    _ifsKey = kb64;
-    const modal = document.getElementById('issue-fullscreen-modal');
-    if (!modal) return;
-    modal.style.display = 'flex';
-    document.addEventListener('keydown', _ifsEscHandler);
-
-    // Reset
-    document.getElementById('ifs-title').textContent = 'Načítám…';
-    document.getElementById('ifs-body').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-    document.getElementById('ifs-timeline').innerHTML = '';
-    document.getElementById('ifs-ai').textContent = 'Kliknutím spusť AI analýzu…';
-    document.getElementById('ifs-similar').textContent = '—';
-
-    try {
-        // Load issue detail
-        const [issR, commR] = await Promise.all([
-            fetch('/api/v1/issues').then(r=>r.json()).catch(()=>({issues:[]})),
-            fetch(`/api/issues/${kb64}/comments`).then(r=>r.json()).catch(()=>({comments:[]})),
-        ]);
-        const key = atob(kb64);
-        const issue = (issR.issues||[]).find(i=>i.key===key) || {};
-        const host = issue.host || '?';
-        const plugin = issue.plugin_name || '?';
-        const msg = issue.last_line || '—';
-        const ts = issue.last_seen ? new Date(issue.last_seen).toLocaleString('cs-CZ') : '—';
-        const sev = issue.severity || '';
-
-        document.getElementById('ifs-title').innerHTML =
-            `<span style="font-family:monospace;">${_escape(host)}</span> / <span style="color:var(--text-muted);">${_escape(plugin)}</span>` +
-            (sev ? ` <span style="font-size:.78em;padding:1px 7px;border-radius:8px;background:rgba(255,255,255,.1);">${_escape(sev)}</span>` : '');
-
-        document.getElementById('ifs-body').innerHTML = `
-            <div style="margin-bottom:12px;display:flex;gap:12px;flex-wrap:wrap;font-size:.82em;color:var(--text-muted);">
-                <span><i class="fa-solid fa-server"></i> ${_escape(host)}</span>
-                <span><i class="fa-solid fa-plug"></i> ${_escape(plugin)}</span>
-                <span><i class="fa-solid fa-clock"></i> ${_escape(ts)}</span>
-                ${issue.status ? `<span style="color:var(--accent);">● ${_escape(issue.status)}</span>` : ''}
-            </div>
-            <div style="background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:6px;padding:14px;font-family:monospace;font-size:.88em;white-space:pre-wrap;word-break:break-word;line-height:1.6;">${_escape(msg)}</div>
-            ${issue.tags?.length ? `<div style="margin-top:10px;">${issue.tags.map(t=>`<span style="display:inline-block;margin:2px;padding:2px 8px;background:rgba(0,120,212,.15);border-radius:10px;font-size:.78em;">#${_escape(t)}</span>`).join('')}</div>` : ''}`;
-
-        // Timeline/comments
-        const comms = commR.comments || [];
-        document.getElementById('ifs-timeline').innerHTML = comms.length
-            ? comms.map(c=>`<div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:.82em;">
-                <span style="color:var(--accent);font-weight:600;">${_escape(c.author||'?')}</span>
-                <span style="color:var(--text-muted);margin-left:6px;font-size:.85em;">${c.created_at||''}</span>
-                <div style="margin-top:4px;color:var(--text-main);">${_escape(c.text||'')}</div>
-              </div>`).join('')
-            : '<span style="color:var(--text-muted);font-size:.82em;">Žádné komentáře.</span>';
-
-        // Inline comment form
-        document.getElementById('ifs-timeline').innerHTML += `
-            <div style="margin-top:12px;display:flex;gap:6px;">
-                <input id="ifs-comment-inp" type="text" placeholder="Přidat komentář…"
-                    style="flex:1;padding:5px 8px;background:var(--input-bg);color:var(--text-main);border:1px solid var(--border);border-radius:4px;font-size:.82em;"
-                    onkeydown="if(event.key==='Enter')_ifsAddComment()">
-                <button onclick="_ifsAddComment()" style="padding:5px 10px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:.82em;">Přidat</button>
-            </div>`;
-
-        // Similar incidents
-        _ifsLoadSimilar(kb64);
-    } catch(e) {
-        document.getElementById('ifs-body').innerHTML = `<span style="color:var(--error);">Chyba: ${_escape(e.message)}</span>`;
-    }
-}
-
-async function _ifsLoadSimilar(kb64) {
-    try {
-        const r = await fetch(`/api/issues/${kb64}/similar`);
-        const d = await r.json();
-        const el = document.getElementById('ifs-similar');
-        const items = d.similar || [];
-        el.innerHTML = items.length
-            ? items.slice(0,5).map(s=>`<div style="padding:5px 0;border-bottom:1px solid var(--border);font-size:.8em;"><b style="color:var(--text-muted);">${_escape(s.host||'?')}</b>: ${_escape((s.last_line||'').slice(0,80))}</div>`).join('')
-            : '<span style="color:var(--text-muted);">Žádné podobné.</span>';
-    } catch(e) {}
-}
-
-async function _ifsRunAi() {
-    const el = document.getElementById('ifs-ai');
-    el.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> AI analyzuje…';
-    try {
-        const r = await fetch(`/api/issues/${_ifsKey}/analyze`, {method:'POST', headers:{'Content-Type':'application/json'}});
-        const d = await r.json();
-        el.innerHTML = _mdRender ? _mdRender(d.reply||d.error||'?') : (d.reply||d.error||'?');
-    } catch(e) {
-        el.innerHTML = `<span style="color:var(--error);">Chyba: ${_escape(e.message)}</span>`;
-    }
-}
-
-async function _ifsAddComment() {
-    const inp = document.getElementById('ifs-comment-inp');
-    if (!inp || !inp.value.trim() || !_ifsKey) return;
-    await fetch(`/api/issues/${_ifsKey}/comments`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({text: inp.value.trim()})});
-    inp.value = '';
-    await _openIssueFullscreen(_ifsKey);
-}
-
-function _closeIssueFullscreen() {
-    const modal = document.getElementById('issue-fullscreen-modal');
-    if (modal) modal.style.display = 'none';
-    document.removeEventListener('keydown', _ifsEscHandler);
-    _ifsKey = null;
-}
-
-function _ifsEscHandler(e) { if (e.key === 'Escape') _closeIssueFullscreen(); }
-
-// 223: Mobilní swipe na issue kartách (swipe right = acknowledge, swipe left = delete)
-function _initSwipeGestures(container) {
-    if (!container || window.innerWidth > 850) return;
-    container.querySelectorAll('[data-issue-card]').forEach(card => {
-        if (card.dataset.swipeInit) return;
-        card.dataset.swipeInit = '1';
-        let startX = 0, startY = 0, dx = 0;
-        card.addEventListener('touchstart', e => {
-            startX = e.touches[0].clientX;
-            startY = e.touches[0].clientY;
-            dx = 0;
-        }, {passive: true});
-        card.addEventListener('touchmove', e => {
-            dx = e.touches[0].clientX - startX;
-            const dy = Math.abs(e.touches[0].clientY - startY);
-            if (Math.abs(dx) > dy && Math.abs(dx) > 10) {
-                card.style.transform = `translateX(${dx * 0.5}px)`;
-                card.style.opacity = String(1 - Math.min(Math.abs(dx) / 200, 0.4));
-            }
-        }, {passive: true});
-        card.addEventListener('touchend', async () => {
-            card.style.transform = '';
-            card.style.opacity = '';
-            const kb64 = card.dataset.issueKey;
-            if (!kb64) return;
-            if (dx > 80) {
-                // Swipe right → acknowledge
-                card.style.border = '1px solid var(--success)';
-                await fetch(`/api/issues/${kb64}/acknowledge`, {method:'POST'});
-                setTimeout(() => refreshModalIssuesContent(false), 400);
-            } else if (dx < -80) {
-                // Swipe left → delete (s potvrzením)
-                if (confirm('Smazat tento záznam?')) {
-                    card.style.border = '1px solid var(--error)';
-                    await fetch(`/api/issues/delete`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({key_b64: kb64})});
-                    setTimeout(() => refreshModalIssuesContent(false), 400);
-                }
-            }
-        });
-    });
-}
-
-// 226: Virtual scroll — načíst další stránku issues
-async function _loadMoreIssues(channel, offset) {
-    const bodyEl = document.getElementById('dedicated-modal-body');
-    // Odstraň tlačítko "Načíst více"
-    const btn = bodyEl?.querySelector('button[onclick*="_loadMoreIssues"]')?.closest('div');
-    if (btn) btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="color:var(--accent);"></i>';
-    try {
-        const snoozeParam = _showSnoozed ? '&snoozed=1' : '';
-        const r = await fetch(`/api/modal_issues/${channel}?offset=${offset}${snoozeParam}`);
-        const d = await r.json();
-        if (d.html && bodyEl) {
-            // Nahraď tlačítko novým obsahem
-            if (btn) {
-                const tmp = document.createElement('div');
-                tmp.innerHTML = d.html;
-                btn.replaceWith(...tmp.childNodes);
-            }
-        }
-    } catch(e) {
-        if (btn) btn.innerHTML = `<span style="color:var(--error);font-size:.82em;">Chyba: ${_escape(String(e))}</span>`;
-    }
-}
-
-// 168: Auto-cluster correlation
-async function _autoClusterAnalyze() {
-    const btn = document.getElementById('auto-cluster-btn');
-    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; }
-    const body = document.getElementById('dedicated-modal-body');
-
-    const placeholder = document.createElement('div');
-    placeholder.id = 'auto-cluster-result';
-    placeholder.style.cssText = 'background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.3);border-radius:6px;padding:12px;margin-bottom:10px;font-size:.85em;';
-    placeholder.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Analyzuji clustery…';
-    if (body) body.insertAdjacentElement('afterbegin', placeholder);
-
-    try {
-        const r = await fetch('/api/analyze/auto_clusters', {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({channel: currentOpenChannel, window_min: 30, use_ai: true}),
-        });
-        const d = await r.json();
-        const clusters = d.clusters || [];
-        const el = document.getElementById('auto-cluster-result');
-        if (!el) return;
-
-        if (!clusters.length) {
-            el.innerHTML = `<div style="color:var(--text-muted);">${d.message || 'Žádné korelované clustery nalezeny (okno: 30 min).'}</div>`;
-            return;
-        }
-
-        const typeIcon = {plugin: 'fa-plug', host: 'fa-server'};
-        el.innerHTML = `<div style="margin-bottom:8px;font-size:.72em;text-transform:uppercase;color:rgba(16,185,129,.8);letter-spacing:.07em;">
-            <i class="fa-solid fa-object-group"></i> Auto-clustery — ${clusters.length} skupin (okno: ${d.window_min} min)
-        </div>` + clusters.map(c => {
-            const icon = typeIcon[c.type] || 'fa-layer-group';
-            const issues = c.issues || [];
-            return `<div style="border-left:3px solid #10b981;padding:8px 10px;margin-bottom:6px;background:rgba(255,255,255,.02);border-radius:0 4px 4px 0;">
-                <div style="font-weight:600;font-size:.85em;margin-bottom:3px;">
-                    <i class="fa-solid ${icon}" style="color:#10b981;margin-right:4px;"></i>${_escape(c.label)}
-                </div>
-                ${c.ai_summary ? `<div style="font-size:.78em;color:#a3e8d0;margin-bottom:4px;"><i class="fa-solid fa-lightbulb"></i> ${_escape(c.ai_summary)}</div>` : ''}
-                <div style="font-size:.76em;color:var(--text-muted);">
-                    ${issues.slice(0, 5).map(i =>
-                        `<span style="display:inline-block;margin:1px 3px 1px 0;padding:1px 6px;background:rgba(255,255,255,.06);border-radius:3px;">${_escape(i.host || i.plugin || '?')}: ${_escape((i.last_line||'').slice(0,60))}</span>`
-                    ).join('')}${issues.length > 5 ? `<span style="color:var(--text-muted);">+${issues.length-5} dalších</span>` : ''}
-                </div>
-            </div>`;
-        }).join('');
-    } catch(e) {
-        const el = document.getElementById('auto-cluster-result');
-        if (el) el.innerHTML = `<span style="color:var(--error);">Chyba: ${_escape(e.message)}</span>`;
-    } finally {
-        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-object-group"></i> Clustery'; }
-    }
-}
-
 // ---- Pattern Editor ----
 async function openPatternEditor() {
     document.getElementById('pattern-modal').style.display = 'flex';
@@ -1158,69 +893,6 @@ async function _testPattern() {
     if (d.error) res.innerHTML = `<span style="color:var(--error);">✗ Neplatný regex: ${_escape(d.error)}</span>`;
     else if (d.match) res.innerHTML = `<span style="color:var(--success);">✓ MATCH${d.groups.length?' — skupiny: '+d.groups.map(g=>`<code>${_escape(g)}</code>`).join(', '):''}</span>`;
     else res.innerHTML = '<span style="color:var(--text-muted);">✗ Žádná shoda</span>';
-}
-
-// 158: AI pattern suggestion
-async function _suggestPatterns() {
-    const btn = document.getElementById('pat-suggest-btn');
-    const panel = document.getElementById('pat-suggestions');
-    if (!btn || !panel) return;
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Analyzuji…';
-    panel.style.display = 'none';
-    panel.innerHTML = '';
-    try {
-        const r = await fetch('/api/patterns/suggest', {method: 'POST', headers: {'Content-Type': 'application/json'}});
-        const d = await r.json();
-        if (d.error) { panel.style.display='flex'; panel.innerHTML=`<span style="color:var(--error);font-size:.82em;">${_escape(d.error)}</span>`; return; }
-        const suggestions = d.suggestions || [];
-        if (!suggestions.length) {
-            panel.style.display = 'flex';
-            panel.innerHTML = `<span style="color:var(--text-muted);font-size:.82em;">${d.message || 'Žádné návrhy.'}</span>`;
-            return;
-        }
-        panel.style.display = 'flex';
-        panel.innerHTML = suggestions.map((s, i) => `
-            <div style="background:var(--panel);border:1px solid var(--border);border-radius:5px;padding:10px 12px;">
-                <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:6px;">
-                    <div>
-                        <b style="font-size:.85em;">${_escape(s.name || '?')}</b>
-                        <span style="margin-left:6px;font-size:.75em;color:var(--text-muted);">plugin: ${_escape(s.plugin||'?')} | kanál: ${_escape(s.channel||'agent')}</span>
-                    </div>
-                    <button onclick="_applySuggestion(${i})" style="padding:3px 9px;font-size:.78em;background:var(--accent);color:#fff;border:none;border-radius:3px;cursor:pointer;white-space:nowrap;">
-                        <i class="fa-solid fa-plus"></i> Přidat
-                    </button>
-                </div>
-                <code style="display:block;font-size:.8em;color:var(--accent);word-break:break-all;margin-bottom:4px;">${_escape(s.pattern||'')}</code>
-                ${s.reason ? `<div style="font-size:.75em;color:var(--text-muted);">${_escape(s.reason)}</div>` : ''}
-            </div>`).join('');
-        // Store suggestions for _applySuggestion
-        window._lastSuggestions = suggestions;
-    } catch(e) {
-        panel.style.display = 'flex';
-        panel.innerHTML = `<span style="color:var(--error);font-size:.82em;">Chyba: ${_escape(e.message)}</span>`;
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fa-solid fa-lightbulb"></i> Navrhnout';
-    }
-}
-
-async function _applySuggestion(index) {
-    const s = (window._lastSuggestions || [])[index];
-    if (!s) return;
-    const r = await fetch('/api/patterns', {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({name: s.name, plugin: s.plugin, pattern: s.pattern, channel: s.channel || 'agent'}),
-    });
-    const d = await r.json();
-    if (d.status === 'ok') {
-        await _loadPatterns();
-        // Highlight added pattern in suggestion panel
-        const btns = document.querySelectorAll('#pat-suggestions button');
-        if (btns[index]) { btns[index].textContent = '✓ Přidáno'; btns[index].disabled = true; btns[index].style.background = 'var(--success)'; }
-    } else {
-        alert(d.error || 'Chyba při přidávání patternu.');
-    }
 }
 
 // ---- System Errors Modal ----
@@ -1537,12 +1209,10 @@ async function _batchAiAnalyze() {
         appendMessage(reply, 'bot');
     } catch (e) {
         if (thinking) thinking.remove();
+        const msg = e.name === 'AbortError' ? 'Časový limit vypršel (3 min)' : `Síťová chyba: ${e}`;
         const el = document.getElementById('batch-ai-result');
-        if (e.name === 'AbortError') {
-            if (el) el.innerHTML = `<span style="color:var(--text-muted);font-size:.82em;"><i class="fa-solid fa-clock"></i> AI analýza trvá déle než obvykle. Zkuste znovu.</span>`;
-        } else {
-            if (el) el.innerHTML = `<span style="color:var(--error);font-size:.82em;">Chyba: ${_escape(String(e))}</span>`;
-        }
+        if (el) el.innerHTML = `<span style="color:var(--error)">${msg}</span>`;
+        appendMessage(`<span style="color:var(--error)">AI Souhrn: ${msg}</span>`, 'bot');
     } finally {
         clearTimeout(timer);
         if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-robot"></i> AI Souhrn'; }
@@ -1580,12 +1250,10 @@ async function _correlateAiAnalyze() {
         appendMessage(reply, 'bot');
     } catch(e) {
         if (thinking) thinking.remove();
+        const msg = e.name === 'AbortError' ? 'Časový limit vypršel (3 min)' : `Chyba: ${e}`;
         const el = document.getElementById('correlate-ai-result');
-        if (e.name === 'AbortError') {
-            if (el) el.innerHTML = `<span style="color:var(--text-muted);font-size:.82em;"><i class="fa-solid fa-clock"></i> AI analýza trvá déle než obvykle. Zkuste znovu.</span>`;
-        } else {
-            if (el) el.innerHTML = `<span style="color:var(--error);font-size:.82em;">Chyba: ${_escape(String(e))}</span>`;
-        }
+        if (el) el.innerHTML = `<span style="color:var(--error)">${msg}</span>`;
+        appendMessage(`<span style="color:var(--error)">AI Korelace: ${msg}</span>`, 'bot');
     } finally {
         clearTimeout(timer);
         if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-link"></i> Korelace'; }
@@ -1741,6 +1409,8 @@ async function loadPendingActions(isAutoRefresh = false) {
                         ${_abtn(`toggleEditCmd(${a.id})`, '#a855f7', 'fa-solid fa-pen', t('edit_command_title'))}
                         ${_abtn(`openAutofixModal('${reanalyzeB64}')`, '#888', 'fa-solid fa-rotate', t('reanalyze_title'))}
                         ${_abtn(`reviewPendingAction(${a.id})`, 'var(--success)', 'fa-solid fa-eye', t('mark_reviewed_title'))}
+                        ${_abtn(`_actionAddToAllowed(${a.id}, false)`, 'var(--accent)', 'fa-solid fa-shield-halved', 'Přidat do Allowed Commands')}
+                        ${_abtn(`_actionAddToAllowed(${a.id}, true)`, '#ffc107', 'fa-solid fa-bolt', 'Přidat + Auto-execute')}
                         ${_abtn(`deletePendingAction(${a.id})`, 'var(--error)', 'fa-solid fa-trash', t('delete_btn'))}
                         </div>
                     </td>`;
@@ -2002,14 +1672,22 @@ async function loadClientList(isAutoRefresh = false) {
         
         let newHtml = '';
         clients.forEach(c => {
+            let ispInfo = t('local_network');
+            const isLocal = c.ip.startsWith('192.168.') || c.ip.startsWith('10.') || c.ip === '127.0.0.1';
+            if (!isLocal) {
+                ispInfo = `<span class="isp-fetch" data-ip="${c.ip}"><i class="fa-solid fa-spinner fa-spin"></i> ${t('finding_isp')}</span>`;
+            }
+
+            // Detect device type and clean the username string
             const isMobile = c.user.includes(" (Mobil)");
             const cleanClientUser = c.user.replace(" (Mobil)", "").trim();
+
             const deviceIcon = isMobile
                 ? `<i class="fa-solid fa-mobile-screen-button" title="${t('mobile_device')}" style="margin-right:6px;"></i>`
                 : `<i class="fa-solid fa-desktop" title="${t('desktop_device')}" style="margin-right:6px;"></i>`;
-            const isLocal = c.ip && (c.ip.startsWith('192.168.') || c.ip.startsWith('10.') || c.ip.startsWith('172.') || c.ip === '127.0.0.1');
-            const ipLabel = isLocal ? `${c.ip} <span style="color:var(--text-muted);font-size:.78em;">(lokální síť)</span>` : `<span style="font-family:monospace;">${c.ip}</span>`;
 
+            const cleanCurrentUser = (window.currentUsername || "").trim();
+            
             let chatIconHtml = "";
             if (c.device_id !== window.currentClientIP) {
                 chatIconHtml = `<i class="fa-solid fa-comments" style="color:var(--accent); cursor:pointer; margin-right:10px; font-size:1.25em; transition: 0.2s;" onmouseover="this.style.opacity='0.7'" onmouseout="this.style.opacity='1'" title="${t('direct_chat_device')}" onclick="closeClientModal(); openDirectChat('${cleanClientUser}', '${c.device_id}')"></i>`;
@@ -2018,8 +1696,11 @@ async function loadClientList(isAutoRefresh = false) {
             newHtml += `
                 <tr style="border-bottom:1px solid var(--border);">
                     <td style="padding:10px; font-weight:bold; color:var(--accent);">${deviceIcon} ${cleanClientUser}</td>
-                    <td style="padding:10px; color:#aaa; font-size:.88em;">${ipLabel}</td>
-                    <td style="padding:10px; color:#aaa; font-size:.85em;">
+                    <td style="padding:10px; font-family:monospace; color:#aaa;">
+                        ${c.ip}<br>
+                        <small style="color:#777; font-family:var(--font);">${ispInfo}</small>
+                    </td>
+                    <td style="padding:10px; color:#aaa;">
                         ${c.connected_since}<br>
                         <small style="color:#666;">${t('last_ping', {time: c.last_seen})}</small>
                     </td>
@@ -2031,6 +1712,19 @@ async function loadClientList(isAutoRefresh = false) {
             `;
         });
         tbody.innerHTML = newHtml;
+
+        // Async ISP fetch
+        document.querySelectorAll('.isp-fetch').forEach(async (el) => {
+            if (el.dataset.fetched) return;
+            el.dataset.fetched = "true";
+            try {
+                let ipRes = await fetch(`http://ip-api.com/json/${el.dataset.ip}?fields=isp,org`);
+                let ipData = await ipRes.json();
+                el.innerHTML = ipData.isp || ipData.org || t('unknown_isp');
+            } catch(e) {
+                el.innerHTML = t('isp_unavailable');
+            }
+        });
 
     } catch(e) {
         if (!isAutoRefresh) tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding:20px; color:var(--error);">${t('api_comm_error')}</td></tr>`;
@@ -2061,32 +1755,34 @@ async function updateClientIndicatorColor() {
 setInterval(updateClientIndicatorColor, 5000);
 updateClientIndicatorColor();
 
-// 251: Cache pro agent badge — nezatěžovat API při každém tiku pokud se stav nezměnil
-let _agentBadgeCache = null, _agentBadgeLastFetch = 0;
 async function updateAgentsMgrBadge() {
     const el = document.getElementById('agents-mgr-indicator');
     if (!el) return;
     try {
-        const now = Date.now();
-        // Fetch jen každých 10s (max), nebo pokud jsou viditelné změny
-        if (!_agentBadgeCache || now - _agentBadgeLastFetch > 10000) {
-            const res = await fetch('/api/agents/list');
-            const data = await res.json();
-            if (data.status !== 'ok') return;
-            _agentBadgeCache = data.agents || [];
-            _agentBadgeLastFetch = now;
-        }
-        const agents = _agentBadgeCache.filter(a => a.category !== 'hw' && a.category !== 'alert');
+        const res = await fetch('/api/agents/list');
+        const data = await res.json();
+        if (data.status !== 'ok') return;
+        const allAgents = data.agents || [];
+        // Exclude hw/alert category nodes — they have their own badges
+        const agents = allAgents.filter(a => a.category !== 'hw' && a.category !== 'alert');
         const total = agents.length;
         const online = agents.filter(a => a.status === 'ONLINE').length;
         el.querySelector('span').innerText = ` ${online}/${total}`;
+        // Badge color only reflects monitored agents (ignore_offline=false)
         const monitored = agents.filter(a => !a.ignore_offline);
         const monOnline = monitored.filter(a => a.status === 'ONLINE').length;
-        if (total === 0) { el.className = 'badge badge-agents'; }
-        else if (monOnline === monitored.length) { el.className = 'badge badge-agents online'; }
-        else if (monOnline > 0) { el.className = 'badge badge-agents partial'; }
-        else { el.className = 'badge badge-agents offline'; }
-    } catch (e) { console.error("Failed to fetch agent counts:", e); }
+        if (total === 0) {
+            el.className = 'badge badge-agents';
+        } else if (monOnline === monitored.length) {
+            el.className = 'badge badge-agents online';
+        } else if (monOnline > 0) {
+            el.className = 'badge badge-agents partial';
+        } else {
+            el.className = 'badge badge-agents offline';
+        }
+    } catch (e) {
+        console.error("Failed to fetch agent counts:", e);
+    }
 }
 
 setInterval(updateAgentsMgrBadge, 10000);
@@ -2376,32 +2072,21 @@ function _depRemove(depKeyB64) {
 }
 
 // ── Toast helper ─────────────────────────────────────────────────────────
-// 393: Toast queue — max 3 visible, stack
-const _toastStack = [];
 function _showToast(msg, type) {
-    // Remove oldest if already 3 visible
-    while (_toastStack.length >= 3) {
-        const old = _toastStack.shift();
-        old?.remove();
+    let t = document.getElementById('_sentinel-toast');
+    if (!t) {
+        t = document.createElement('div');
+        t.id = '_sentinel-toast';
+        t.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:99999;padding:9px 16px;border-radius:6px;font-size:.87em;max-width:320px;box-shadow:0 4px 14px rgba(0,0,0,.4);transition:opacity .3s;pointer-events:none;';
+        document.body.appendChild(t);
     }
-    const colors = {success:'rgba(16,124,16,.92)', error:'rgba(197,15,31,.92)', info:'rgba(0,100,180,.92)', warning:'rgba(180,100,0,.92)'};
-    const borders = {success:'#2a9d2a', error:'#c50f1f', info:'#0064b4', warning:'#b46400'};
-    const t = document.createElement('div');
-    t.style.cssText = `position:fixed;right:20px;z-index:99999;padding:9px 16px;border-radius:6px;font-size:.87em;max-width:320px;box-shadow:0 4px 14px rgba(0,0,0,.4);transition:opacity .3s;pointer-events:none;background:${colors[type]||colors.info};color:#fff;border:1px solid ${borders[type]||borders.info};`;
+    t.style.background = type === 'success' ? 'rgba(16,124,16,.9)' : 'rgba(197,15,31,.9)';
+    t.style.color = '#fff';
+    t.style.border = type === 'success' ? '1px solid #2a9d2a' : '1px solid #c50f1f';
     t.textContent = msg;
-    // Stack from bottom
-    const bottom = 20 + _toastStack.length * 52;
-    t.style.bottom = bottom + 'px';
-    document.body.appendChild(t);
-    _toastStack.push(t);
-    setTimeout(() => {
-        t.style.opacity = '0';
-        setTimeout(() => {
-            t.remove();
-            const idx = _toastStack.indexOf(t);
-            if (idx >= 0) _toastStack.splice(idx, 1);
-        }, 350);
-    }, 3200);
+    t.style.opacity = '1';
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => { t.style.opacity = '0'; }, 3000);
 }
 
 // ── False Positive (057) ──────────────────────────────────────────────────
@@ -2564,62 +2249,26 @@ async function _toggleIntegNotify(name) {
     _loadNotifySettingsBody();
 }
 
-// 131: Inline komentáře v issue kartách
-function _icToggle(kb64) {
-    const el = document.getElementById(`ic-${kb64}`);
-    if (!el) return;
-    const visible = el.style.display !== 'none';
-    el.style.display = visible ? 'none' : '';
-    if (!visible) setTimeout(() => document.getElementById(`ic-inp-${kb64}`)?.focus(), 50);
-}
-function _icHide(kb64) {
-    const el = document.getElementById(`ic-${kb64}`);
-    if (el) el.style.display = 'none';
-}
-async function _icSubmit(kb64) {
-    const inp = document.getElementById(`ic-inp-${kb64}`);
-    const msg = document.getElementById(`ic-msg-${kb64}`);
-    if (!inp) return;
-    const text = inp.value.trim();
-    if (!text) return;
+async function _actionAddToAllowed(actionId, autoExec) {
+    const a = _actionCache[actionId];
+    if (!a) { alert('Akce nenalezena v cache — znovu otevři modal.'); return; }
+    const cmd = a.command || '';
+    if (!cmd) { alert('Akce nemá příkaz.'); return; }
+    const confirmed = confirm(`${autoExec ? '⚠️ Auto-execute: příkaz poběží automaticky!\n\n' : ''}Přidat do Allowed Commands:\n${cmd}`);
+    if (!confirmed) return;
+    const desc = prompt('Popis pravidla:', `${a.reason ? a.reason.slice(0,60) : 'Povoleno z AI návrhu'}`);
+    if (desc === null) return;
     try {
-        const r = await fetch(`/api/issues/${kb64}/comments`, {
-            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({text})
+        const r = await fetch('/api/v1/allowed-commands', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({
+                pattern: cmd, description: desc,
+                auto_execute: autoExec, risk_max: autoExec ? Math.min(a.risk_score || 30, 50) : 100,
+                note: `Action ID ${actionId} | node: ${a.node}`
+            })
         });
         const d = await r.json();
-        if (d.status === 'ok') {
-            inp.value = '';
-            if (msg) { msg.style.color = 'var(--success)'; msg.textContent = '✓ Komentář přidán'; setTimeout(() => { if(msg) msg.textContent=''; _icHide(kb64); }, 1500); }
-        } else {
-            if (msg) { msg.style.color = 'var(--error)'; msg.textContent = d.error || 'Chyba'; }
-        }
-    } catch(e) {
-        if (msg) { msg.style.color = 'var(--error)'; msg.textContent = String(e); }
-    }
+        if (d.status === 'ok') { alert('Pravidlo přidáno.'); }
+        else alert('Chyba: ' + (d.reply || d.message || '?'));
+    } catch(e) { alert('Chyba: ' + e); }
 }
-
-// 136: Barevné štítky issues
-function _lcToggle(kb64) {
-    const el = document.getElementById(`lc-picker-${kb64}`);
-    if (!el) return;
-    // Zavři všechny ostatní pickery
-    document.querySelectorAll('[id^="lc-picker-"]').forEach(p => { if (p.id !== `lc-picker-${kb64}`) p.style.display = 'none'; });
-    const vis = el.style.display === 'flex';
-    el.style.display = vis ? 'none' : 'flex';
-}
-async function _lcSet(kb64, color) {
-    const el = document.getElementById(`lc-picker-${kb64}`);
-    if (el) el.style.display = 'none';
-    try {
-        await fetch(`/api/issues/${kb64}/label_color`, {
-            method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({color})
-        });
-        refreshModalIssuesContent(false);
-    } catch(e) { console.error('label_color:', e); }
-}
-// Zavři picker kliknutím mimo
-document.addEventListener('click', e => {
-    if (!e.target.closest('[id^="lc-picker-"]') && !e.target.closest('[id^="lc-dot-"]')) {
-        document.querySelectorAll('[id^="lc-picker-"]').forEach(p => p.style.display = 'none');
-    }
-});

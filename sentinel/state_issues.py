@@ -323,7 +323,7 @@ def prune_expired_actions():
     with db_lock:
         try:
             conn = _get_conn()
-            limit = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat()
+            limit = (datetime.now(timezone.utc) - timedelta(minutes=60)).isoformat()
             conn.execute("UPDATE actions SET status='expired' WHERE status='pending' AND created_at < ?", (limit,))
             conn.commit()
             conn.close()
@@ -1014,11 +1014,12 @@ def get_queue_items(limit=50) -> list:
             conn = _get_conn()
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                "SELECT id, priority, payload, status, created_at, worker_id FROM task_queue "
+                "SELECT id, priority, payload, status, created_at, processed_at, worker_id FROM task_queue "
                 "WHERE status IN ('pending','processing') ORDER BY priority DESC, created_at ASC LIMIT ?",
                 (limit,)
             ).fetchall()
             conn.close()
+            now = datetime.now()
             result = []
             for row in rows:
                 try:
@@ -1026,20 +1027,44 @@ def get_queue_items(limit=50) -> list:
                 except Exception:
                     p = {}
                 ctx = p.get("context") or {}
+                # Výpočet stáří položky v sekundách
+                age_s = None
+                try:
+                    ts = datetime.fromisoformat(row["created_at"].replace("Z","").split("+")[0])
+                    age_s = int((now - ts).total_seconds())
+                except Exception:
+                    pass
                 result.append({
                     "id": row["id"],
                     "priority": row["priority"],
                     "status": row["status"],
                     "created_at": row["created_at"],
+                    "processed_at": row["processed_at"],
                     "worker_id": row["worker_id"],
+                    "age_s": age_s,
                     "type": p.get("type", ""),
                     "channel": p.get("channel", ""),
                     "host": ctx.get("host", ctx.get("agent_id", "")),
-                    "text": (p.get("text") or "")[:80],
+                    "text": (p.get("text") or "")[:500],
+                    "problem_key": ctx.get("problem_key", ""),
+                    "source": ctx.get("source", ""),
                 })
             return result
         except Exception:
             return []
+
+def cancel_queue_item(item_id: int) -> bool:
+    with db_lock:
+        try:
+            conn = _get_conn()
+            n = conn.execute(
+                "DELETE FROM task_queue WHERE id=? AND status='pending'", (item_id,)
+            ).rowcount
+            conn.commit()
+            conn.close()
+            return n > 0
+        except Exception:
+            return False
 
 def get_issue_comments(problem_key: str) -> list:
     with db_lock:

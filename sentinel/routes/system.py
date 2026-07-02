@@ -803,16 +803,133 @@ def create_blueprint(service):
     @bp.route('/api/queue/details', methods=['GET'])
     @requires_auth
     def api_queue_details():
+        from datetime import datetime as _dt
         workers = getattr(config, 'WORKER_THREADS', 2)
         m = service.get_detailed_metrics()
         return jsonify({
-            "pending": service.chat_queue_depth,      # LLM semaphore queue (badge)
-            "db_pending": state.get_queue_depth(),    # DB task_queue (AI actions)
+            "pending": service.chat_queue_depth,
+            "db_pending": state.get_queue_depth(),
             "workers": workers,
             "ai_latency": m.get('ai_lat', 'N/A'),
             "ai_requests_total": service.metrics.get('ai_requests', 0),
             "ai_errors_total": service.metrics.get('ai_errors', 0),
             "requests": state.get_queue_items(),
+            "server_time": _dt.now().strftime("%Y-%m-%d %H:%M:%S"),
+        })
+
+    @bp.route('/api/queue/<int:item_id>', methods=['DELETE'])
+    @requires_auth
+    def api_queue_cancel(item_id):
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"status": "error", "message": "Unauthorized"}), 403
+        ok = state.cancel_queue_item(item_id)
+        if ok:
+            return jsonify({"status": "ok"})
+        return jsonify({"status": "error", "message": "Item not found or already processing"}), 404
+
+    @bp.route('/api/queue/workers', methods=['POST'])
+    @requires_auth
+    def api_queue_set_workers():
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"status": "error", "message": "Unauthorized"}), 403
+        data = request.json or {}
+        n = int(data.get('workers', 1))
+        if not (1 <= n <= 16):
+            return jsonify({"status": "error", "message": "Workers must be 1–16"}), 400
+        config.WORKER_THREADS = n
+        # Persist to YAML config
+        try:
+            with open(config.CONFIG_PATH, 'r') as f:
+                cfg_data = yaml.safe_load(f) or {}
+            cfg_data['worker_threads'] = n
+            with open(config.CONFIG_PATH, 'w') as f:
+                yaml.dump(cfg_data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        except Exception as e:
+            return jsonify({"status": "ok", "workers": n, "warning": f"Config not persisted: {e}"})
+        return jsonify({"status": "ok", "workers": n, "note": "Změna počtu workerů se projeví po restartu služby"})
+
+    @bp.route('/api/benchmark/run', methods=['POST'])
+    @requires_auth
+    def api_benchmark_run():
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"status": "error", "message": "Unauthorized"}), 403
+        import time as _time
+        import threading as _threading
+        from .. import ollama_service as _ollama
+        data = request.json or {}
+        iterations = min(int(data.get('iterations', 3)), 10)
+        parallel   = min(int(data.get('parallel', 1)), 4)
+        model_override = data.get('model', '').strip()
+        prompt_text = data.get('prompt', 'Reply with exactly: BENCHMARK_OK')
+
+        original_model = config.OLLAMA_MODEL
+        if model_override:
+            config.OLLAMA_MODEL = model_override
+
+        results = []
+        errors  = []
+        lock    = _threading.Lock()
+
+        def _run_one(idx):
+            t0 = _time.time()
+            try:
+                task = {"text": prompt_text, "channel": "general", "type": "ai_request"}
+                _ollama.process_single_task(task)
+                elapsed = round(_time.time() - t0, 2)
+                with lock:
+                    results.append({"idx": idx, "elapsed": elapsed, "ok": True})
+            except Exception as ex:
+                elapsed = round(_time.time() - t0, 2)
+                with lock:
+                    results.append({"idx": idx, "elapsed": elapsed, "ok": False, "error": str(ex)})
+
+        total_t0 = _time.time()
+        threads_all = []
+        for i in range(iterations):
+            batch = []
+            for j in range(parallel):
+                t = _threading.Thread(target=_run_one, args=(i * parallel + j,), daemon=True)
+                batch.append(t); threads_all.append(t)
+            for t in batch: t.start()
+            for t in batch: t.join(timeout=120)
+        total_elapsed = round(_time.time() - total_t0, 2)
+
+        if model_override:
+            config.OLLAMA_MODEL = original_model
+
+        ok_results = [r for r in results if r["ok"]]
+        avg = round(sum(r["elapsed"] for r in ok_results) / len(ok_results), 2) if ok_results else None
+        mn  = round(min(r["elapsed"] for r in ok_results), 2) if ok_results else None
+        mx  = round(max(r["elapsed"] for r in ok_results), 2) if ok_results else None
+
+        throughput = round(len(ok_results) / total_elapsed, 2) if total_elapsed > 0 else 0
+
+        recommendation = ""
+        if avg and avg < 5:
+            recommendation = "Výborný výkon. Lze zvýšit počet workerů pro vyšší propustnost."
+        elif avg and avg < 15:
+            recommendation = "Dobrý výkon. Aktuální konfigurace je vhodná pro produkci."
+        elif avg and avg < 30:
+            recommendation = "Průměrný výkon. Zvažte rychlejší model nebo více VRAM."
+        elif avg:
+            recommendation = "Pomalý výkon. Doporučen menší model nebo GPU akcelerace."
+
+        return jsonify({
+            "status": "ok",
+            "model": model_override or config.OLLAMA_MODEL,
+            "iterations": iterations,
+            "parallel": parallel,
+            "results": results,
+            "summary": {
+                "total_elapsed": total_elapsed,
+                "ok": len(ok_results),
+                "errors": len(results) - len(ok_results),
+                "avg_s": avg,
+                "min_s": mn,
+                "max_s": mx,
+                "throughput_rps": throughput,
+            },
+            "recommendation": recommendation,
         })
 
     @bp.route('/api/plugins/toggle', methods=['POST'])

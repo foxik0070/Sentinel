@@ -720,19 +720,43 @@
                     <tbody id="allowed-cmds-tbody"></tbody>
                 </table>
                 <hr style="border-color:var(--border); margin:14px 0;">
-                <div>
-                    <b style="color:var(--text-main); font-size:0.9em;">Add Rule</b>
-                    <div style="display:grid; grid-template-columns:2fr 2fr 1fr 70px; gap:8px; margin-top:8px;">
-                        <input id="new-ac-pattern" placeholder="Pattern, e.g. systemctl restart *" style="background:var(--code-bg,#1a1a1a); color:var(--text-main); border:1px solid var(--border); border-radius:4px; padding:6px 8px; font-family:monospace; font-size:0.88em;">
-                        <input id="new-ac-desc" placeholder="Description" style="background:var(--code-bg,#1a1a1a); color:var(--text-main); border:1px solid var(--border); border-radius:4px; padding:6px 8px; font-size:0.88em;">
-                        <input id="new-ac-note" placeholder="Note (optional)" style="background:var(--code-bg,#1a1a1a); color:var(--text-main); border:1px solid var(--border); border-radius:4px; padding:6px 8px; font-size:0.88em;">
-                        <input id="new-ac-risk" type="number" value="30" min="0" max="100" placeholder="Max risk" style="background:var(--code-bg,#1a1a1a); color:var(--text-main); border:1px solid var(--border); border-radius:4px; padding:6px 8px; font-size:0.88em;">
+                <div style="background:var(--panel); border:1px solid var(--border); border-radius:6px; padding:14px;">
+                    <div style="font-size:.78em; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:.06em; margin-bottom:12px;">
+                        <i class="fa-solid fa-plus" style="margin-right:4px;"></i> Přidat nové pravidlo
                     </div>
-                    <div style="display:flex; align-items:center; gap:14px; margin-top:8px;">
-                        <label style="color:var(--text-main); display:flex; align-items:center; gap:6px; cursor:pointer; font-size:0.88em;">
-                            <input id="new-ac-auto" type="checkbox"> Auto-execute when matched
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
+                        <div>
+                            <label style="font-size:.78em; color:var(--text-muted); display:block; margin-bottom:3px;">Pattern <span style="color:var(--error);">*</span></label>
+                            <input id="new-ac-pattern" placeholder="Např. systemctl restart *" style="width:100%; box-sizing:border-box; background:var(--code-bg,#1a1a1a); color:var(--text-main); border:1px solid var(--border); border-radius:4px; padding:7px 9px; font-family:monospace; font-size:.88em;">
+                            <div style="font-size:.72em; color:var(--text-muted); margin-top:3px;">Glob syntax: <code>*</code> = cokoliv, <code>?</code> = jeden znak</div>
+                        </div>
+                        <div>
+                            <label style="font-size:.78em; color:var(--text-muted); display:block; margin-bottom:3px;">Popis <span style="color:var(--error);">*</span></label>
+                            <input id="new-ac-desc" placeholder="Stručný popis co pravidlo dělá" style="width:100%; box-sizing:border-box; background:var(--code-bg,#1a1a1a); color:var(--text-main); border:1px solid var(--border); border-radius:4px; padding:7px 9px; font-size:.88em;">
+                        </div>
+                    </div>
+                    <div style="display:grid; grid-template-columns:1fr 120px; gap:10px; margin-bottom:10px;">
+                        <div>
+                            <label style="font-size:.78em; color:var(--text-muted); display:block; margin-bottom:3px;">Poznámka (volitelné)</label>
+                            <input id="new-ac-note" placeholder="Kontext, odkaz na ticket, atd." style="width:100%; box-sizing:border-box; background:var(--code-bg,#1a1a1a); color:var(--text-main); border:1px solid var(--border); border-radius:4px; padding:7px 9px; font-size:.88em;">
+                        </div>
+                        <div>
+                            <label style="font-size:.78em; color:var(--text-muted); display:block; margin-bottom:3px;">Max riziko <span style="opacity:.6;">(0–100)</span></label>
+                            <input id="new-ac-risk" type="number" value="30" min="0" max="100" style="width:100%; box-sizing:border-box; background:var(--code-bg,#1a1a1a); color:var(--text-main); border:1px solid var(--border); border-radius:4px; padding:7px 9px; font-size:.88em;">
+                            <div style="font-size:.7em; color:var(--text-muted); margin-top:2px;">0=bezpečné, 100=kritické</div>
+                        </div>
+                    </div>
+                    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:.88em; color:var(--text-main); background:rgba(255,200,0,.06); border:1px solid rgba(255,200,0,.2); border-radius:4px; padding:7px 12px;">
+                            <input id="new-ac-auto" type="checkbox" style="width:16px; height:16px;">
+                            <span>
+                                <b>Auto-execute</b> — spustit automaticky bez potvrzení
+                                <div style="font-size:.78em; color:var(--text-muted); margin-top:1px;">Použij pouze pro bezpečné, reverzibilní příkazy</div>
+                            </span>
                         </label>
-                        <button onclick="addAllowedCmd()" style="background:#6f42c1; color:white; border:none; padding:7px 18px; border-radius:4px; cursor:pointer; font-weight:600; font-size:0.88em;">➕ Add Rule</button>
+                        <button onclick="addAllowedCmd()" style="padding:8px 20px; background:#6f42c1; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:600; font-size:.88em; white-space:nowrap;">
+                            <i class="fa-solid fa-plus" style="margin-right:5px;"></i>Přidat pravidlo
+                        </button>
                     </div>
                 </div>
             </div>
