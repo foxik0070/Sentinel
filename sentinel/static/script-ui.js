@@ -78,7 +78,7 @@ function _dashWidget(id, icon, title, content, style) {
     </div>`;
 }
 // 9: Nastavení viditelnosti widgetů dashboardu
-const _DASH_WIDGETS = [
+const _DASH_WIDGETS_DASH = [
     {id:'sys',   label:'Systém'},
     {id:'temp',  label:'Teploty hostů'},
     {id:'charts',label:'Trend / Donut'},
@@ -94,7 +94,7 @@ function _dashWidgetSettings() {
     panel.id = 'dash-settings-panel';
     panel.style.cssText = 'background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:12px 16px;margin-bottom:12px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;';
     panel.innerHTML = `<span style="font-size:.8em;color:var(--text-muted);font-weight:600;margin-right:4px;">Widgety:</span>` +
-        _DASH_WIDGETS.map(w => {
+        _DASH_WIDGETS_DASH.map(w => {
             const hidden = localStorage.getItem(`dash_hide_${w.id}`) === '1';
             return `<label style="display:inline-flex;align-items:center;gap:5px;font-size:.82em;cursor:pointer;">
                 <input type="checkbox" ${hidden?'':'checked'} onchange="_dashWidgetToggleHide('${w.id}',this.checked)">
