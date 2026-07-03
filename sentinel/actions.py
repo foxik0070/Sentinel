@@ -176,7 +176,9 @@ def suggest_remediation(cluster, issue_type, node, raw_line, problem_key):
 
 def process_ai_proposal(context, ai_response):
     try:
-        clean_json = ai_response.replace("```json", "").replace("```", "").strip()
+        clean_json = re.sub(r'```(?:json)?\s*', '', ai_response).strip()
+        m = re.search(r'\{.*\}', clean_json, re.DOTALL)
+        clean_json = m.group(0) if m else clean_json
         data = json.loads(clean_json)
         
         command = data.get("command", "N/A")
