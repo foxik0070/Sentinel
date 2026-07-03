@@ -264,9 +264,9 @@ class ChatService(threading.Thread):
             # CSP: povolujeme CDN pro Chart.js, FontAwesome, Swagger UI; inline scripts pro Jinja2
             resp.headers['Content-Security-Policy'] = (
                 "default-src 'self'; "
-                "script-src 'self' 'unsafe-inline' cdn.jsdelivr.net unpkg.com; "
-                "style-src 'self' 'unsafe-inline' cdn.jsdelivr.net unpkg.com; "
-                "font-src 'self' cdn.jsdelivr.net; "
+                "script-src 'self' 'unsafe-inline' cdn.jsdelivr.net unpkg.com cdnjs.cloudflare.com; "
+                "style-src 'self' 'unsafe-inline' cdn.jsdelivr.net unpkg.com cdnjs.cloudflare.com; "
+                "font-src 'self' cdn.jsdelivr.net cdnjs.cloudflare.com; "
                 "img-src 'self' data: blob:; "
                 "connect-src 'self' ws: wss:; "
                 "frame-ancestors 'none';"
