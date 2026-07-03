@@ -17,10 +17,10 @@ Sentinel Commander is an advanced AI-powered monitoring system for Linux and ent
 
 | Category | What it does |
 |---|---|
-| **Log monitoring** | inotify tailing, 11 detector plugins, pattern matching |
+| **Log monitoring** | inotify tailing, plugin system (hot-reload), pattern matching |
 | **AI analysis** | Ollama LLM integration, Hailo NPU (hailo-ollama), ChromaDB RAG |
 | **AI Autofix** | SSH-based remediation with safety classifier, modal approval |
-| **Push agents** | REST ingest endpoint for sentinel-agent nodes |
+| **Push agents** | REST ingest: sentinel-agent nodes (`/api/v1/agent/ingest`), Windows agents (`/api/ingest/windows`) |
 | **Alerts** | 13 channels — Teams, Slack, ntfy, SMTP, Telegram, Matrix, HA, Gotify, PagerDuty, MQTT, Syslog, Webhook, SMS |
 | **Security** | LDAP/AD auth, 2FA TOTP, bcrypt passwords, CSRF, API keys, audit trail |
 | **Observability** | Prometheus `/metrics`, Swagger UI `/api/docs`, health `/healthz` |
@@ -92,7 +92,8 @@ web:
 
 ```
 Log files (inotify) ──► plugins/*_detector.py ──► SQLite WAL
-Agents (POST /api/v1/agent/ingest) ─────────────────────┘
+Agents   (POST /api/v1/agent/ingest)  ──────────────────────┤
+Windows  (POST /api/ingest/windows)   ──────────────────────┘
                                                          │
                                               scheduler.py (30s loop)
                                                          │ notifier.py
@@ -142,12 +143,13 @@ Full documentation (EN + CS): **https://sentinel-docs.foxik-iot.cz**
 
 | Module | Description |
 |---|---|
-| [sentinel-agent](https://github.com/foxik0070/sentinel-agent) | Push agent for monitored nodes |
+| [sentinel-agent](https://github.com/foxik0070/sentinel-agent) | Push agent for monitored Linux nodes |
+| [sentinel-agent-windows](https://github.com/foxik0070/sentinel_agent_windows) | PowerShell agent for Windows monitoring (Event Log + WMI) |
+| [sentinel-plugins-hpc](https://github.com/foxik0070/sentinel-plugins-hpc) | HPC cluster detector plugins (HPC / universal) |
 | [sentinel-alert](https://github.com/foxik0070/sentinel-alert) | Network security dashboard |
 | [sentinel-app](https://github.com/foxik0070/sentinel-app) | Android mobile client |
 | [sentinel-console](https://github.com/foxik0070/sentinel-console) | TUI terminal client |
 | [sentinel-overhealth](https://github.com/foxik0070/sentinel-overhealth) | Pull orchestrator |
-| [sentinel-plugins](https://github.com/foxik0070/sentinel-plugins) | Detector plugins |
 | [sentinel-hw](https://github.com/foxik0070/sentinel-hw) | RPi hardware robot |
 | [sentinel-docs](https://github.com/foxik0070/sentinel-docs) | Documentation |
 
