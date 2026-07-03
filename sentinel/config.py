@@ -739,6 +739,7 @@ _KNOWN_KEYS = {
     'syslog_receiver', 'ntfy', 'gotify', 'smtp', 'matrix', 'discord', 'telegram', 'opsgenie',
     'grafana_annotations',
     'issue_history_retention_days', 'display_tz', 'heartbeat_urls', 'gitea',
+    'windows_ingest_key',
 }
 
 VALIDATION_WARNINGS: list = []   # populated by _validate_config(), readable via API
