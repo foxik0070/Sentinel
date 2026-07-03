@@ -215,6 +215,24 @@ def add_root_audit(server: str, ip: str):
     except Exception as e:
         log(f"add_root_audit error: {e}")
 
+def close_root_audit(server: str, ip: str):
+    """Mark active root_audit records for server+ip as disconnected."""
+    from .state_base import DB_FILE as DB_PATH
+    import sqlite3
+    from datetime import datetime, timezone
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+        conn = sqlite3.connect(DB_PATH, timeout=5)
+        conn.execute(
+            "UPDATE root_audit SET disconnected_at=?, is_active=0 "
+            "WHERE server=? AND (ip=? OR ip LIKE ?) AND is_active=1",
+            (now, server, ip, ip + ' (%')
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        log(f"close_root_audit error: {e}")
+
 def save_telemetry(metric: str, value: float, category: str = "general"):
     """Adds a telemetry point to the async buffer (non-blocking). Preferred over save_telemetry_snapshot."""
     from . import state

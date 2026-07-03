@@ -3563,6 +3563,17 @@ async function runBenchmark(autoAll = false) {
             method:'POST', headers:{'Content-Type':'application/json'},
             body: JSON.stringify(body)
         });
+        if (!r.ok) {
+            const txt = await r.text().catch(()=>'');
+            const isHtml = txt.trim().startsWith('<');
+            const msg = isHtml
+                ? `HTTP ${r.status} — server nedostupný nebo session vypršela (zkus reload stránky)`
+                : (txt.slice(0,200) || `HTTP ${r.status}`);
+            status.innerHTML = `<span style="color:var(--error);">${_escape(msg)}</span>`;
+            if (runBtn) runBtn.disabled = false;
+            if (autoBtn) autoBtn.disabled = false;
+            return;
+        }
         const d = await r.json();
         if (d.status !== 'ok') {
             status.innerHTML = `<span style="color:var(--error);">Chyba: ${_escape(d.message||'?')}</span>`;
