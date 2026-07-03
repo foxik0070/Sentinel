@@ -999,13 +999,32 @@ def create_blueprint(service):
             return {"model": model_name, "levels": sweep_res, "best": best}
 
         if auto_all:
+            # auto_all: pevně 1 iterace, bez sweep — porovnání modelů, ne stress-test
+            _auto_iters = 1
+            _auto_lvls  = [1]   # parallelism=1 pro fér porovnání latence
+
+            def _test_model_auto(model_name, timeout_s=60):
+                """Rychlý single-level test pro auto_all s wall-clock timeoutem."""
+                result_box = [None]
+                err_box    = [None]
+                def _worker():
+                    try:
+                        result_box[0] = _run_batch(model_name, 1, _auto_iters)
+                    except Exception as ex:
+                        err_box[0] = str(ex)[:120]
+                t = _threading.Thread(target=_worker, daemon=True)
+                t.start(); t.join(timeout=timeout_s)
+                if t.is_alive():
+                    return None, f"timeout after {timeout_s}s"
+                return result_box[0], err_box[0]
+
             all_model_results = []
             for mdl in avail:
-                try:
-                    r = _test_model(mdl)
-                    all_model_results.append(r)
-                except Exception as ex:
-                    all_model_results.append({"model": mdl, "levels": [], "best": {}, "error": str(ex)[:120]})
+                lvl_res, err = _test_model_auto(mdl)
+                if err or lvl_res is None:
+                    all_model_results.append({"model": mdl, "levels": [], "best": {}, "error": err or "timeout"})
+                else:
+                    all_model_results.append({"model": mdl, "levels": [lvl_res], "best": lvl_res})
 
             # Recommendation: model with best (throughput balanced with quality)
             scored = []
