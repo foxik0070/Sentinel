@@ -2225,6 +2225,7 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
         from .routes import export as export_routes
         from .routes import integrations as integrations_routes
         from .routes import chat as chat_routes
+        from .routes import windows_ingest as windows_ingest_routes
 
         self.app.register_blueprint(main_routes.create_blueprint(self, self.socketio))
         self.app.register_blueprint(issues_routes.create_blueprint(self))
@@ -2234,6 +2235,7 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
         self.app.register_blueprint(export_routes.create_blueprint(self))
         self.app.register_blueprint(integrations_routes.create_blueprint(self))
         self.app.register_blueprint(chat_routes.create_blueprint(self))
+        self.app.register_blueprint(windows_ingest_routes.create_blueprint(self))
 
 def start_chat_service():
     srv = ChatService(); srv.start(); return srv

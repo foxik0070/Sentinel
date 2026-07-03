@@ -277,6 +277,7 @@ SLA_RULES: dict = {}  # {channel_lower: hours}
 # Inbound webhook token pro příjem alertů z externích systémů
 INBOUND_WEBHOOK_TOKEN: str = ""
 AUTO_REGISTER_TOKEN: str = ""  # Prázdný = vypnuto; agenti s tímto tokenem se auto-registrují
+WINDOWS_INGEST_KEY: str = ""   # Prázdný = endpoint zakázán; Bearer token pro Windows agenty
 
 # Telemetry alerting rules: [{metric, above, below, channel}]
 TELEMETRY_ALERTS: list = []
@@ -601,6 +602,8 @@ def load_config():
     INBOUND_WEBHOOK_TOKEN = data.get("inbound_webhook", {}).get("token", INBOUND_WEBHOOK_TOKEN)
     global AUTO_REGISTER_TOKEN
     AUTO_REGISTER_TOKEN = data.get("auto_register_token", AUTO_REGISTER_TOKEN)
+    global WINDOWS_INGEST_KEY
+    WINDOWS_INGEST_KEY = data.get("windows_ingest_key", WINDOWS_INGEST_KEY)
     global TELEMETRY_ALERTS, INFLUXDB, SELF_MONITOR_WEBHOOK, SELF_MONITOR_INTERVAL
     global WEEKLY_REPORT_DAY, WEEKLY_REPORT_HOUR
     TELEMETRY_ALERTS = data.get("telemetry_alerts", [])
