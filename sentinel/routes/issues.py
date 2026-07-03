@@ -202,7 +202,7 @@ def create_blueprint(service):
                     sub += f" +{len(items)-6}"
                 _icon = "fa-server" if _by_tech else "fa-layer-group"
                 _unit = "záznamů" if _by_tech else "serverů"
-                html_out += f"""<details style='margin-bottom:10px;'>
+                html_out += f"""<details data-group-key="{html.escape((gkey or '?').upper())}" style='margin-bottom:10px;'>
                         <summary style='cursor:pointer; padding:8px 12px; background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:4px; font-size:0.88em; color:var(--accent); font-weight:700; user-select:none; list-style:none; display:flex; justify-content:space-between; align-items:center;'>
                             <span><i class='fa-solid {_icon}'></i> {html.escape((gkey or '?').upper())} <span style='color:var(--text-muted); font-weight:400;'>({len(items)} {_unit})</span></span>
                             <span style='color:var(--text-muted); font-size:0.82em; font-weight:400;'>{html.escape(sub)}</span>

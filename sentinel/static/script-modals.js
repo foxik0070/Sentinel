@@ -80,19 +80,16 @@ async function refreshModalIssuesContent(isAuto = false) {
         }
         if (data.html) {
             // Zapamatovat otevřené <details> skupiny před přepsáním HTML
-            const openPlugins = new Set();
+            const openGroups = new Set();
             bodyEl.querySelectorAll('details[open]').forEach(d => {
-                const summary = d.querySelector('summary');
-                if (summary) openPlugins.add(summary.textContent.trim().slice(0, 30));
+                const key = d.dataset.groupKey;
+                if (key) openGroups.add(key);
             });
             bodyEl.innerHTML = data.html;
-            // Obnovit open stav <details>
-            if (openPlugins.size) {
-                bodyEl.querySelectorAll('details').forEach(d => {
-                    const summary = d.querySelector('summary');
-                    if (summary && openPlugins.has(summary.textContent.trim().slice(0, 30))) {
-                        d.open = true;
-                    }
+            // Obnovit open stav <details> podle stabilního data-group-key
+            if (openGroups.size) {
+                bodyEl.querySelectorAll('details[data-group-key]').forEach(d => {
+                    if (openGroups.has(d.dataset.groupKey)) d.open = true;
                 });
             }
             // Re-apply filter if active
