@@ -893,10 +893,14 @@ def create_blueprint(service):
             bm_hdrs = {"Content-Type": "application/json"}
             if config.OLLAMA_API_KEY:
                 bm_hdrs["Authorization"] = f"Bearer {config.OLLAMA_API_KEY}"
+            _SKIP_PATTERNS = ('embed', 'proxy', 'vision', 'whisper', 'tts', 'dall-e')
             try:
                 r_m = _req.get(models_url, timeout=10, headers=bm_hdrs)
                 avail = [m.get('id') or m.get('name','') for m in r_m.json().get('data',[])]
-                avail = sorted(set(m for m in avail if m))
+                avail = sorted(set(
+                    m for m in avail
+                    if m and not any(p in m.lower() for p in _SKIP_PATTERNS)
+                ))
             except Exception:
                 avail = [config.OLLAMA_MODEL]
             if not avail:
