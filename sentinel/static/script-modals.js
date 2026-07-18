@@ -61,9 +61,18 @@ function closeIssuesModal() {
 async function refreshModalIssuesContent(isAuto = false) {
     if (!currentOpenChannel) return;
     const bodyEl = document.getElementById('dedicated-modal-body');
-    
+
+    // Nepřepisovat pokud uživatel pracuje (focus v inputu, picker otevřen, drag aktivní)
+    if (isAuto) {
+        const focusedInput = bodyEl && bodyEl.contains(document.activeElement) && ['INPUT','TEXTAREA'].includes(document.activeElement.tagName);
+        const anyInputWithText = bodyEl && [...bodyEl.querySelectorAll('input[type="text"],input:not([type]),textarea')].some(el => el.value.trim().length > 0);
+        const openPicker = bodyEl && bodyEl.querySelector('[id^="lc-picker-"][style*="flex"], [id^="snooze-dropdown"]');
+        if (focusedInput || anyInputWithText || openPicker) return;
+    }
+
     if (!isAuto) {
-        bodyEl.innerHTML = `<div style='text-align:center; padding:30px; color:#666;'><i class='fa-solid fa-spinner fa-spin'></i> ${t('loading_db')}</div>`;
+        // 392: skeleton placeholdery místo spinneru (vnímaná rychlost)
+        bodyEl.innerHTML = '<div class="skeleton-row"></div>'.repeat(5);
     }
     
     try {
@@ -114,6 +123,8 @@ async function refreshModalIssuesContent(isAuto = false) {
             if (typeof Sortable !== 'undefined') {
                 _initIssueSortable(bodyEl);
             }
+            // 223: Swipe gestures na mobilu
+            _initSwipeGestures(bodyEl);
         }
     } catch (e) {
         if (!isAuto) {
@@ -471,6 +482,73 @@ async function bulkAcknowledge() {
     _bulkSelected.clear();
     refreshModalIssuesContent(false);
     if (d.acknowledged !== undefined) alert(`✓ Potvrzeno ${d.acknowledged} issues`);
+}
+
+// 265: Bulk CSV export vybraných issues
+async function bulkExportCsv() {
+    const keys = [..._bulkSelected];
+    if (!keys.length) { alert('Nejprve vyber issues.'); return; }
+    try {
+        const r = await fetch('/api/issues/export_csv', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({keys, channel: currentOpenChannel})
+        });
+        if (!r.ok) { alert('Export selhal: HTTP ' + r.status); return; }
+        const blob = await r.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `sentinel_issues_${new Date().toISOString().slice(0,10)}.csv`;
+        a.click(); URL.revokeObjectURL(url);
+    } catch(e) { alert('Export selhal: ' + e); }
+}
+
+// 268: Alt+A → bulk acknowledge, Alt+E → CSV export
+document.addEventListener('keydown', e => {
+    if (e.altKey && e.key === 'a' && currentOpenChannel) { e.preventDefault(); bulkAcknowledge(); }
+    if (e.altKey && e.key === 'e' && currentOpenChannel) { e.preventDefault(); bulkExportCsv(); }
+});
+
+// 223: Mobilní swipe na issue kartách (swipe right = acknowledge, swipe left = delete)
+function _initSwipeGestures(container) {
+    if (!container || window.innerWidth > 850) return;
+    container.querySelectorAll('[data-issue-card]').forEach(card => {
+        if (card.dataset.swipeInit) return;
+        card.dataset.swipeInit = '1';
+        let startX = 0, startY = 0, dx = 0;
+        card.addEventListener('touchstart', e => {
+            startX = e.touches[0].clientX;
+            startY = e.touches[0].clientY;
+            dx = 0;
+        }, {passive: true});
+        card.addEventListener('touchmove', e => {
+            dx = e.touches[0].clientX - startX;
+            const dy = Math.abs(e.touches[0].clientY - startY);
+            if (Math.abs(dx) > dy && Math.abs(dx) > 10) {
+                card.style.transform = `translateX(${dx * 0.5}px)`;
+                card.style.opacity = String(1 - Math.min(Math.abs(dx) / 200, 0.4));
+            }
+        }, {passive: true});
+        card.addEventListener('touchend', async () => {
+            card.style.transform = '';
+            card.style.opacity = '';
+            const kb64 = card.dataset.issueKey;
+            if (!kb64) return;
+            if (dx > 80) {
+                // Swipe right → acknowledge
+                card.style.border = '1px solid var(--success)';
+                await fetch(`/api/issues/${kb64}/acknowledge`, {method:'POST'});
+                setTimeout(() => refreshModalIssuesContent(false), 400);
+            } else if (dx < -80) {
+                // Swipe left → delete (s potvrzením)
+                if (confirm('Smazat tento záznam?')) {
+                    card.style.border = '1px solid var(--error)';
+                    await fetch(`/api/issues/${kb64}/delete`, {method:'DELETE'});
+                    setTimeout(() => refreshModalIssuesContent(false), 400);
+                }
+            }
+        });
+    });
 }
 
 // ---- Issue Assignee ----

@@ -23,6 +23,7 @@ class Scheduler:
 
     _last_joke_hour: int = -1
     _last_weekly_report_date = None
+    _last_digest_date = None
 
     def __init__(self, service):
         self._service = service
@@ -60,6 +61,14 @@ class Scheduler:
                 if now.minute == 0 and now.hour != Scheduler._last_joke_hour:
                     Scheduler._last_joke_hour = now.hour
                     self._hourly_tasks()
+
+                # ── AI denní digest (431) ─────────────────────────────────────
+                _dig_hour = int(getattr(config, 'AI_DIGEST_HOUR', 7))
+                if (_dig_hour >= 0 and now.hour == _dig_hour and now.minute == 0
+                        and Scheduler._last_digest_date != now.date()):
+                    Scheduler._last_digest_date = now.date()
+                    threading.Thread(target=self._service._generate_ai_daily_digest,
+                                     daemon=True, name="AIDailyDigest").start()
 
                 # ── Týdenní digest ────────────────────────────────────────────
                 _wr_day = int(getattr(config, 'WEEKLY_REPORT_DAY', 0))

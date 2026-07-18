@@ -259,7 +259,9 @@ def process_ai_proposal(context, ai_response):
     except Exception as e:
         utils.log_message(f"Error processing AI proposal: {e}")
 
-def run_ssh_command_real(cluster, command, action_id=None, timeout: int = 30):
+def run_ssh_command_real(cluster, command, action_id=None, timeout: int = 30, internal: bool = False):
+    """internal=True: hardcoded read-only diagnostika ze serveru — přeskočí allowlist,
+    ale ne dry-run guard. Nikdy nepoužívat pro příkazy odvozené z user inputu."""
     mgmt_node = "localhost"
     found = False
 
@@ -307,7 +309,7 @@ def run_ssh_command_real(cluster, command, action_id=None, timeout: int = 30):
         return True, dry_run_output
 
     # 244: Pre-validace příkazu proti allowlistu (extra vrstva před SSH)
-    if not _pre_validate_ssh_command(command):
+    if not internal and not _pre_validate_ssh_command(command):
         err = f"[BLOCKED-244] Command not in allowlist: {command[:80]}"
         utils.log_message(err)
         return False, err

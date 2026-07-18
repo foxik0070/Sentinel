@@ -336,6 +336,20 @@ EXCLUDED_CLIENT_IPS: list = []
 
 # 366: Issue history retention (days) — prune issue_history older than this
 ISSUE_HISTORY_RETENTION_DAYS: int = 90
+# Lifecycle: per-severity stale TTL v hodinách (0 = nikdy automaticky neresolvovat).
+# Issue bez severity spadá pod "default". Acknowledged issues žijí déle (multiplier).
+STALE_TTL_BY_SEVERITY: dict = {"critical": 48, "high": 24, "medium": 12, "low": 6, "default": 24}
+STALE_ACK_MULTIPLIER: float = 2.0
+# Recheck endpoint: prahy v minutách (fresh = ještě platí, agent/source = auto-resolve)
+RECHECK_FRESH_MIN: int = 10
+RECHECK_AGENT_SILENCE_MIN: int = 15
+RECHECK_SOURCE_SILENCE_MIN: int = 45
+# AI denní digest — hodina odeslání (viz _generate_ai_daily_digest); -1 = vypnuto
+AI_DIGEST_HOUR: int = 7
+# HTTP timeout pro AI volání (s) — na RPi5 CPU trvá dlouhý prompt i přes 90 s
+AI_TIMEOUT_SECONDS: int = 180
+# 428: Auto-ingest vyřešených issues do RAG KB
+RAG_LEARN_RESOLVED: bool = True
 # 339: Display timezone for UI timestamps (pytz name, e.g. "Europe/Prague")
 DISPLAY_TZ: str = ""
 # 407: Heartbeat URL monitoring (list of {name, url, timeout_s})
@@ -675,6 +689,32 @@ def load_config():
         GITEA_URL = str(gitea_conf.get("url", GITEA_URL))
         GITEA_TOKEN = str(gitea_conf.get("token", GITEA_TOKEN))
         GITEA_REPO = str(gitea_conf.get("repo", GITEA_REPO))
+
+    # Lifecycle + AI digest + RAG learning
+    global STALE_TTL_BY_SEVERITY, STALE_ACK_MULTIPLIER, AI_DIGEST_HOUR, RAG_LEARN_RESOLVED
+    lc = data.get("lifecycle", {})
+    if isinstance(lc, dict) and lc:
+        ttl_map = lc.get("stale_ttl_by_severity")
+        if isinstance(ttl_map, dict):
+            merged = dict(STALE_TTL_BY_SEVERITY)
+            for k, v in ttl_map.items():
+                try:
+                    merged[str(k).lower()] = float(v)
+                except (TypeError, ValueError):
+                    pass
+            STALE_TTL_BY_SEVERITY = merged
+        try:
+            STALE_ACK_MULTIPLIER = float(lc.get("stale_ack_multiplier", STALE_ACK_MULTIPLIER))
+        except (TypeError, ValueError):
+            pass
+        global RECHECK_FRESH_MIN, RECHECK_AGENT_SILENCE_MIN, RECHECK_SOURCE_SILENCE_MIN
+        RECHECK_FRESH_MIN = int(lc.get("recheck_fresh_min", RECHECK_FRESH_MIN))
+        RECHECK_AGENT_SILENCE_MIN = int(lc.get("recheck_agent_silence_min", RECHECK_AGENT_SILENCE_MIN))
+        RECHECK_SOURCE_SILENCE_MIN = int(lc.get("recheck_source_silence_min", RECHECK_SOURCE_SILENCE_MIN))
+    AI_DIGEST_HOUR = int(data.get("ai_digest_hour", AI_DIGEST_HOUR))
+    RAG_LEARN_RESOLVED = bool(data.get("rag_learn_resolved", RAG_LEARN_RESOLVED))
+    global AI_TIMEOUT_SECONDS
+    AI_TIMEOUT_SECONDS = int(data.get("ai_timeout_seconds", AI_TIMEOUT_SECONDS))
 
     _validate_config(data)
     _schema_validate(data)

@@ -359,22 +359,53 @@ def prune_expired_actions():
             logger.debug(f"prune_expired_actions requeue failed: {e}")
 
 
-def resolve_stale_problems(ttl_hours: int = 24) -> int:
-    """Resolve active problems not updated in ttl_hours hours. Returns count of resolved."""
-    limit = (datetime.now(timezone.utc) - timedelta(hours=ttl_hours)).isoformat()
+def resolve_stale_problems(ttl_hours: int = 0) -> int:
+    """Auto-resolve stale issues dle per-severity TTL z config.STALE_TTL_BY_SEVERITY.
+
+    ttl_hours > 0 přebije config a použije jednotné TTL (zpětná kompatibilita).
+    Zahrnuje status active/validating; acknowledged má TTL × STALE_ACK_MULTIPLIER.
+    TTL 0 pro severitu = nikdy neresolvovat. Archivuje s resolve_reason='stale_auto'.
+    """
+    ttl_map = getattr(config, 'STALE_TTL_BY_SEVERITY', {}) or {}
+    default_ttl = float(ttl_map.get('default', 24))
+    if ttl_hours > 0:
+        ttl_map = {}
+        default_ttl = float(ttl_hours)
+    ack_mult = max(1.0, float(getattr(config, 'STALE_ACK_MULTIPLIER', 2.0)))
+    now = datetime.now(timezone.utc)
+    total = 0
     with db_lock:
         try:
             conn = _get_conn()
-            n = conn.execute(
-                "UPDATE problems SET status='resolved' "
-                "WHERE status='active' AND last_seen < ?",
-                (limit,)
-            ).rowcount
+            rows = conn.execute(
+                "SELECT key, severity, status, last_seen FROM problems "
+                "WHERE status IN ('active', 'validating', 'acknowledged')"
+            ).fetchall()
+            for key, severity, status, last_seen in rows:
+                ttl = float(ttl_map.get((severity or '').lower(), default_ttl))
+                if ttl <= 0:
+                    continue  # tato severita nikdy neexpiruje
+                if status == 'acknowledged':
+                    ttl *= ack_mult
+                try:
+                    seen_dt = datetime.fromisoformat(last_seen)
+                    if seen_dt.tzinfo is None:
+                        seen_dt = seen_dt.replace(tzinfo=timezone.utc)
+                except (TypeError, ValueError):
+                    continue
+                if (now - seen_dt) > timedelta(hours=ttl):
+                    _archive_problem(conn, key, reason='stale_auto')
+                    conn.execute(
+                        "UPDATE actions SET status='resolved_auto' WHERE problem_key=? AND status='pending'",
+                        (key,)
+                    )
+                    conn.execute("DELETE FROM problems WHERE key=?", (key,))
+                    total += 1
             conn.commit()
             conn.close()
-            if n:
-                logger.info(f"resolve_stale_problems: resolved {n} stale records (TTL={ttl_hours}h)")
-            return n
+            if total:
+                logger.info(f"resolve_stale_problems: resolved {total} stale issues (per-severity TTL)")
+            return total
         except Exception as e:
             logger.error(f"resolve_stale_problems failed: {e}")
             return 0
@@ -622,30 +653,31 @@ def has_pending_action_for_key(problem_key: str) -> bool:
     except Exception:
         return False
 
-def _archive_problem(conn, key):
+def _archive_problem(conn, key, reason: str = '', resolved_by: str = ''):
     """Copy problem to issue_history before deletion."""
     try:
         row = conn.execute(
-            "SELECT channel_type, host, details, last_seen FROM problems WHERE key=?", (key,)
+            "SELECT channel_type, host, details, last_seen, first_seen FROM problems WHERE key=?", (key,)
         ).fetchone()
         if not row: return
-        ch, host, details_json, last_seen = row
+        ch, host, details_json, last_seen, first_seen = row
         now = datetime.now(timezone.utc).isoformat()
         det = json.loads(details_json) if details_json else {}
         conn.execute(
-            "INSERT INTO issue_history (key, channel_type, host, plugin_name, last_line, last_seen, resolved_at) VALUES (?,?,?,?,?,?,?)",
-            (key, ch, host or det.get('host'), det.get('plugin_name'), det.get('last_line'), last_seen, now)
+            "INSERT INTO issue_history (key, channel_type, host, plugin_name, last_line, first_seen, last_seen, resolved_at, resolve_reason, resolved_by) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (key, ch, host or det.get('host'), det.get('plugin_name'), det.get('last_line'), first_seen, last_seen, now, reason, resolved_by)
         )
     except Exception as e:
         logger.debug(f"_archive_problem: {e}")
 
-def mark_resolved(key):
+def mark_resolved(key, reason: str = 'manual', resolved_by: str = ''):
     """Resolve and immediately delete the problem record (only active issues matter)."""
+    _rag_learn_resolved(key)
     with db_lock:
         try:
             conn = _get_conn()
             c = conn.cursor()
-            _archive_problem(conn, key)
+            _archive_problem(conn, key, reason=reason, resolved_by=resolved_by)
             c.execute("UPDATE actions SET status='resolved_auto' WHERE problem_key=? AND status='pending'", (key,))
             c.execute("DELETE FROM problems WHERE key=?", (key,))
             conn.commit()
@@ -653,11 +685,52 @@ def mark_resolved(key):
             return True
         except: return False
 
-def delete_problem(key):
+def resolve_problem(key, reason: str = 'auto_recovered', resolved_by: str = ''):
+    """Alias pro mark_resolved — používají ho heartbeat/SSL monitory přes state fasádu."""
+    return mark_resolved(key, reason=reason, resolved_by=resolved_by)
+
+def _rag_learn_resolved(key: str):
+    """428: Vyřešený issue + jeho komentáře → RAG KB pro budoucí AI odpovědi."""
+    try:
+        from . import config as _cfg
+        if not getattr(_cfg, 'RAG_LEARN_RESOLVED', False):
+            return
+        # Nejdřív komentáře — bez nich není co učit; šetří get_problem
+        # na frekventované webhook resolve cestě (flapping alerty)
+        comments = get_issue_comments(key)
+        if not comments:
+            return
+        prob = get_problem(key)
+        if not prob:
+            return
+        det = prob.get('details') or {}
+        if isinstance(det, str):
+            try: det = json.loads(det)
+            except Exception: det = {}
+        parts = [
+            f"Vyřešený incident: {prob.get('plugin_name') or det.get('plugin_name', '?')} "
+            f"na {prob.get('host') or det.get('host', '?')}",
+            f"Zpráva: {(prob.get('last_line') or det.get('last_line') or '')[:300]}",
+            "Řešení / poznámky: " + " | ".join(c.get('text', '')[:200] for c in comments[:5]),
+        ]
+        text = "\n".join(parts)
+
+        def _learn():
+            try:
+                from . import rag
+                rag.rag_system.add_learned_chunk(text, source="resolved_issue")
+            except Exception as e2:
+                logger.debug(f"_rag_learn_resolved thread: {e2}")
+        # Embedding = HTTP volání — nesmí blokovat resolve
+        threading.Thread(target=_learn, daemon=True, name="RAG-Learn").start()
+    except Exception as e:
+        logger.debug(f"_rag_learn_resolved: {e}")
+
+def delete_problem(key, resolved_by: str = ''):
     with db_lock:
         try:
             conn = _get_conn()
-            _archive_problem(conn, key)
+            _archive_problem(conn, key, reason='deleted', resolved_by=resolved_by)
             conn.execute("DELETE FROM problems WHERE key=?", (key,))
             conn.commit()
             conn.close()

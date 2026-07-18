@@ -221,6 +221,14 @@ def init_db():
             c.execute('CREATE INDEX IF NOT EXISTS idx_issue_history_resolved ON issue_history(resolved_at)')
             c.execute('CREATE INDEX IF NOT EXISTS idx_issue_history_channel ON issue_history(channel_type)')
 
+            # Lifecycle: proč a kým byl issue vyřešen
+            c.execute("PRAGMA table_info(issue_history)")
+            _hist_cols = {r[1] for r in c.fetchall()}
+            if 'resolve_reason' not in _hist_cols:
+                c.execute("ALTER TABLE issue_history ADD COLUMN resolve_reason TEXT DEFAULT ''")
+            if 'resolved_by' not in _hist_cols:
+                c.execute("ALTER TABLE issue_history ADD COLUMN resolved_by TEXT DEFAULT ''")
+
             c.execute('''CREATE TABLE IF NOT EXISTS root_audit
                          (id INTEGER PRIMARY KEY AUTOINCREMENT,
                           server TEXT, ip TEXT, connected_at TEXT,
@@ -510,7 +518,8 @@ class DBQueueAdapter:
             json_payload = json.dumps(item)
             with db_lock:
                 conn = _get_conn()
-                now = datetime.now().isoformat(timespec='seconds')
+                # UTC — fetch_next_task/processed_at i watchdog srovnávají lexikálně
+                now = datetime.now(timezone.utc).isoformat()
 
                 # Dedup + rate limit per channel (max 3 pending na channel)
                 if isinstance(item, dict):
@@ -550,6 +559,7 @@ class DBQueueAdapter:
                             (ch,)
                         ).fetchone()[0]
                         if ch_count >= limit:
+                            logger.warning(f"Queue rate-limit: dropped task for channel '{ch}' ({ch_count} pending >= {limit})")
                             conn.close()
                             return
 

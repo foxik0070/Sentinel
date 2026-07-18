@@ -798,3 +798,13 @@ details.ok-metrics[open] > summary::after { content: '▲'; }
     [data-issue-card] { border: 1px solid #ccc !important; break-inside: avoid; margin-bottom: 8px; }
     a { color: black !important; text-decoration: none !important; }
 }
+
+/* 392: Loading skeletons — vnímaná rychlost místo spinnerů */
+@keyframes skeleton-shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
+.skeleton-row {
+    height: 52px; border-radius: 4px; margin-bottom: 6px;
+    background: linear-gradient(90deg, rgba(255,255,255,.04) 25%, rgba(255,255,255,.09) 50%, rgba(255,255,255,.04) 75%);
+    background-size: 800px 100%;
+    animation: skeleton-shimmer 1.3s linear infinite;
+    border: 1px solid var(--border);
+}

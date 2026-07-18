@@ -91,10 +91,24 @@
             <i class="fa-solid fa-moon icon-btn-header" onclick="toggleTheme()" data-i18n-title="toggle_theme" title="Přepnout režim"></i>
             <i class="fa-solid fa-bell-slash icon-btn-header" id="notification-btn" onclick="toggleNotifications()" data-i18n-title="enable_notifications" title="Zapnout upozornění"></i>
             <i class="fa-solid fa-volume-xmark icon-btn-header" id="alert-sound-btn" onclick="toggleAlertSound()" title="Zvuk alertu vypnut"></i>
+            <i class="fa-solid fa-inbox icon-btn-header" id="notif-center-btn" onclick="toggleNotifCenter()" title="Centrum událostí — poslední alerty &amp; AI přehled"></i>
             <i class="fa-solid fa-sign-out-alt icon-btn-header" onclick="window.location.href='/logout'" data-i18n-title="logout" title="Odhlásit"></i>
         </div>
     </header>
     <div id="startup-loading-bar" style="height:3px;background:linear-gradient(90deg,var(--accent),#fd7e14,var(--accent));background-size:200% 100%;animation:loadbar 1.2s linear infinite;position:fixed;top:48px;left:0;right:0;z-index:9999;transition:opacity .4s;"></div>
+
+    <!-- Centrum událostí (383): poslední alerty + AI denní přehled -->
+    <div id="notif-center-panel" style="display:none;position:fixed;top:52px;right:8px;width:360px;max-width:calc(100vw - 16px);max-height:70vh;background:var(--card-bg);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 30px rgba(0,0,0,.45);z-index:1500;flex-direction:column;overflow:hidden;">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--border);flex-shrink:0;">
+            <b style="font-size:.85em;"><i class="fa-solid fa-inbox" style="margin-right:6px;color:var(--accent);"></i>Centrum událostí</b>
+            <span>
+                {% if role in ('admin', 'superadmin') %}<i class="fa-solid fa-rotate icon-btn-header" style="font-size:.85em;margin-right:8px;" onclick="_regenDigest(this)" title="Vygenerovat AI přehled teď"></i>{% endif %}
+                <i class="fa-solid fa-times icon-btn-header" style="font-size:.9em;" onclick="toggleNotifCenter()"></i>
+            </span>
+        </div>
+        <div id="notif-center-digest" style="padding:10px 12px;border-bottom:1px solid var(--border);background:rgba(0,120,212,.05);flex-shrink:0;"></div>
+        <div id="notif-center-list" style="overflow-y:auto;flex-grow:1;"></div>
+    </div>
     {% if default_creds_warning and role in ('admin', 'superadmin') %}
     <div id="default-creds-banner" style="background:#7c2d12;color:#fed7aa;padding:7px 16px;font-size:.82em;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-shrink:0;border-bottom:1px solid #c2410c;">
         <span><i class="fa-solid fa-triangle-exclamation" style="margin-right:6px;"></i><b>Výchozí hesla:</b> Změňte <code style="background:rgba(0,0,0,.3);padding:1px 5px;border-radius:3px;">web.password</code> a <code style="background:rgba(0,0,0,.3);padding:1px 5px;border-radius:3px;">web.viewer_password</code> v <code style="background:rgba(0,0,0,.3);padding:1px 5px;border-radius:3px;">/etc/sentinel/config.yaml</code></span>
@@ -957,34 +971,6 @@
     </div>
     {% endif %}
 
-    <!-- Issue Fullscreen Modal (137) -->
-    <div id="issue-fullscreen-modal" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:9990;flex-direction:column;overflow:hidden;">
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:var(--panel);border-bottom:1px solid var(--border);flex-shrink:0;">
-            <div style="display:flex;align-items:center;gap:10px;">
-                <i class="fa-solid fa-compress" style="cursor:pointer;color:var(--text-muted);font-size:1.1em;" onclick="_closeIssueFullscreen()" title="Zavřít fullscreen (Esc)"></i>
-                <span id="ifs-title" style="font-weight:700;color:var(--accent);font-size:1em;"></span>
-            </div>
-            <div style="display:flex;gap:8px;" id="ifs-actions"></div>
-        </div>
-        <div style="flex:1;overflow-y:auto;display:grid;grid-template-columns:1fr 380px;gap:0;height:100%;">
-            <div style="padding:20px;border-right:1px solid var(--border);overflow-y:auto;">
-                <div id="ifs-body"></div>
-                <div style="margin-top:20px;">
-                    <div style="font-size:.78em;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;font-weight:700;">Komentáře &amp; Timeline</div>
-                    <div id="ifs-timeline"></div>
-                </div>
-            </div>
-            <div style="padding:16px;overflow-y:auto;background:rgba(0,0,0,.15);">
-                <div style="font-size:.78em;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;font-weight:700;">AI Analýza</div>
-                <div id="ifs-ai" style="font-size:.85em;color:var(--text-muted);">Kliknutím spusť AI analýzu…</div>
-                <button onclick="_ifsRunAi()" style="margin-top:10px;padding:5px 14px;background:transparent;border:1px solid #a855f7;color:#a855f7;border-radius:4px;cursor:pointer;font-size:.82em;">
-                    <i class="fa-solid fa-robot"></i> Spustit AI
-                </button>
-                <div style="margin-top:16px;font-size:.78em;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;font-weight:700;">Podobné incidenty</div>
-                <div id="ifs-similar" style="font-size:.82em;color:var(--text-muted);">—</div>
-            </div>
-        </div>
-    </div>
 
     <!-- Batch SSH Modal (145) -->
     {% if role in ['admin', 'superadmin'] %}

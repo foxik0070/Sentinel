@@ -589,6 +589,25 @@ def create_blueprint(service):
             return jsonify({"error": "Snapshot nenalezen"}), 404
         return jsonify({"content": content})
 
+    @bp.route('/api/config/history/diff', methods=['GET'])
+    @requires_auth
+    def api_config_history_diff():
+        """333: Unified diff mezi dvěma config snapshoty."""
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        import difflib as _dl
+        sid_from = int_param(request.args.get('from'), 0, 1, 10**9)
+        sid_to = int_param(request.args.get('to'), 0, 1, 10**9)
+        a = state.get_config_snapshot(sid_from)
+        b = state.get_config_snapshot(sid_to)
+        if a is None or b is None:
+            return jsonify({"error": "Snapshot nenalezen"}), 404
+        diff = '\n'.join(_dl.unified_diff(
+            a.splitlines(), b.splitlines(),
+            fromfile=f'snapshot #{sid_from}', tofile=f'snapshot #{sid_to}', lineterm=''
+        ))
+        return jsonify({"diff": diff, "has_diff": bool(diff)})
+
     @bp.route('/api/config/diff', methods=['GET'])
     @requires_auth
     def api_config_diff():
@@ -800,6 +819,94 @@ def create_blueprint(service):
             service.save_ignored_issues()
         return jsonify({"status": "ok"})
 
+    @bp.route('/api/telemetry/compare', methods=['POST'])
+    @requires_auth
+    def api_telemetry_compare():
+        """Porovnání metriky: baseline okno vs. aktuální okno (avg/min/max, % změna)."""
+        d = request.get_json(silent=True) or {}
+        metric = str(d.get('metric', '')).strip()
+        if not metric:
+            return jsonify({"error": "metric je povinný"}), 400
+        base_end = int_param(d.get('baseline_hours'), 48, 1, 24 * 90)   # kolik hodin zpět končí baseline
+        base_len = int_param(d.get('baseline_len'), 24, 1, 24 * 30)
+        cur_len = int_param(d.get('current_len'), 24, 1, 24 * 30)
+
+        def _window(offset_h, len_h):
+            row = conn.execute(
+                "SELECT AVG(value), MIN(value), MAX(value), COUNT(*) FROM telemetry "
+                "WHERE metric=? AND timestamp >= datetime('now', ?) AND timestamp < datetime('now', ?)",
+                (metric, f'-{offset_h + len_h} hours', f'-{offset_h} hours')
+            ).fetchone()
+            avg, mn, mx, cnt = row
+            r2 = lambda v: round(v, 2) if v is not None else None
+            return {"avg": r2(avg), "min": r2(mn), "max": r2(mx), "count": cnt}
+
+        conn = state._get_conn()
+        try:
+            baseline = _window(base_end, base_len)
+            current = _window(0, cur_len)
+        finally:
+            conn.close()
+        pct = None
+        if baseline["avg"] and current["avg"] is not None and baseline["avg"] != 0:
+            pct = round((current["avg"] - baseline["avg"]) / abs(baseline["avg"]) * 100, 1)
+        return jsonify({"metric": metric, "baseline": baseline, "current": current, "pct": pct})
+
+    @bp.route('/api/predictions/capacity', methods=['GET'])
+    @requires_auth
+    def api_predictions_capacity():
+        """Kapacitní forecast: lineární trend disk/RAM metrik → čas do 100 % (TTC)."""
+        days = int_param(request.args.get('days'), 3, 1, 30)
+        conn = state._get_conn()
+        try:
+            metrics = conn.execute(
+                "SELECT DISTINCT category, metric FROM telemetry "
+                "WHERE timestamp >= datetime('now', ?) "
+                "AND (metric LIKE '%disk%' OR metric LIKE '%ram%' OR metric LIKE '%mem%' "
+                "     OR metric LIKE '%storage%' OR metric LIKE '%usage%' OR metric LIKE '%pct%')",
+                (f'-{days} days',)
+            ).fetchall()
+            preds = []
+            for cat, met in metrics[:60]:
+                rows = conn.execute(
+                    "SELECT strftime('%s', timestamp), value FROM telemetry "
+                    "WHERE category=? AND metric=? AND timestamp >= datetime('now', ?) "
+                    "ORDER BY timestamp",
+                    (cat, met, f'-{days} days')
+                ).fetchall()
+                if len(rows) < 8:
+                    continue
+                xs = [float(r[0]) for r in rows]
+                ys = [float(r[1]) for r in rows]
+                n = len(xs)
+                mean_x, mean_y = sum(xs) / n, sum(ys) / n
+                denom = sum((x - mean_x) ** 2 for x in xs)
+                if denom == 0:
+                    continue
+                slope = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys)) / denom
+                change_per_h = slope * 3600
+                current = ys[-1]
+                ttc_hours = None
+                # TTC jen pro procentuální metriky rostoucí k 100 %
+                if change_per_h > 0.001 and 0 <= current <= 100:
+                    ttc_hours = round((100 - current) / change_per_h, 1)
+                    if ttc_hours > 24 * 365:
+                        ttc_hours = None
+                status = 'ok'
+                if ttc_hours is not None:
+                    status = 'critical' if ttc_hours < 48 else ('warning' if ttc_hours < 24 * 7 else 'ok')
+                preds.append({
+                    "category": cat, "metric": met,
+                    "current": round(current, 1),
+                    "change_per_h": round(change_per_h, 3),
+                    "ttc_hours": ttc_hours,
+                    "status": status,
+                })
+        finally:
+            conn.close()
+        preds.sort(key=lambda p: (p["ttc_hours"] is None, p["ttc_hours"] or 0))
+        return jsonify({"predictions": preds, "days": days})
+
     @bp.route('/api/queue/details', methods=['GET'])
     @requires_auth
     def api_queue_details():
@@ -865,6 +972,18 @@ def create_blueprint(service):
             models = []
         return jsonify({"status": "ok", "models": models, "current": config.OLLAMA_MODEL})
 
+    def _sweep_levels(max_para, sweep_mode):
+        """Geometrické úrovně paralelismu 1,2,4,… až po max_para."""
+        if not sweep_mode:
+            return [max_para]
+        levels, p = [], 1
+        while p <= max_para:
+            levels.append(p)
+            p *= 2
+        if max_para not in levels:
+            levels.append(max_para)
+        return levels
+
     @bp.route('/api/benchmark/run', methods=['POST'])
     @requires_auth
     def api_benchmark_run():
@@ -908,21 +1027,7 @@ def create_blueprint(service):
         else:
             avail = None  # single model mode
 
-        # sweep: test concurrency levels 1,2,4,8,... up to max_para
-        if sweep_mode:
-            levels = []
-            p = 1
-            while p <= max_para:
-                levels.append(p)
-                p = p * 2
-            if max_para not in levels:
-                levels.append(max_para)
-        else:
-            levels = [max_para]
-
-        original_model = config.OLLAMA_MODEL
-        if model_override:
-            config.OLLAMA_MODEL = model_override
+        levels = _sweep_levels(max_para, sweep_mode)
 
         _bm_headers = {"Content-Type": "application/json"}
         if config.OLLAMA_API_KEY:
@@ -988,16 +1093,7 @@ def create_blueprint(service):
 
         def _test_model(model_name):
             """Test a single model with sweep or fixed parallelism."""
-            if sweep_mode:
-                lvls = []
-                p = 1
-                while p <= max_para:
-                    lvls.append(p)
-                    p *= 2
-                if max_para not in lvls:
-                    lvls.append(max_para)
-            else:
-                lvls = [max_para]
+            lvls = _sweep_levels(max_para, sweep_mode)
             sweep_res = [_run_batch(model_name, lvl, iterations) for lvl in lvls]
             best = max(sweep_res, key=lambda x: x["summary"]["throughput_rps"])
             return {"model": model_name, "levels": sweep_res, "best": best}
@@ -1062,23 +1158,13 @@ def create_blueprint(service):
         # --- Single model mode ---
         sweep_results = []
         act_model = model_override or config.OLLAMA_MODEL
-        if sweep_mode:
-            lvls = []
-            p = 1
-            while p <= max_para:
-                lvls.append(p)
-                p *= 2
-            if max_para not in lvls:
-                lvls.append(max_para)
-        else:
-            lvls = [max_para]
+        lvls = _sweep_levels(max_para, sweep_mode)
         for lvl in lvls:
             sweep_results.append(_run_batch(act_model, lvl, iterations))
 
         # Overall recommendation based on best throughput level
         best = max(sweep_results, key=lambda x: x["summary"]["throughput_rps"])
         avg_best = best["summary"]["avg_s"]
-        tp_best  = best["summary"]["throughput_rps"]
         if avg_best is None:
             recommendation = "Nepodařilo se získat výsledky — zkontrolujte dostupnost modelu."
         elif avg_best < 5:

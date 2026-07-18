@@ -726,7 +726,7 @@ def reconcile_agent_issues(hostname: str, reported_keys: set) -> list:
                     else:
                         new_count = (m_count or 0) + 1
                         if new_count >= threshold:
-                            _archive_problem(conn, row_key)
+                            _archive_problem(conn, row_key, reason='agent_report_ok')
                             conn.execute(
                                 "UPDATE actions SET status='resolved_auto' WHERE problem_key=? AND status='pending'",
                                 (row_key,)
@@ -778,7 +778,7 @@ def auto_resolve_old_problems(days: int = 7):
                         (channel.lower(), f'-{exp_secs} seconds')
                     ).fetchall()
                     for (key,) in stale_ch:
-                        _archive_problem(conn, key)
+                        _archive_problem(conn, key, reason='channel_expiry')
                         conn.execute(
                             "UPDATE actions SET status='resolved_auto' WHERE problem_key=? AND status='pending'",
                             (key,)
@@ -804,7 +804,7 @@ def auto_resolve_old_problems(days: int = 7):
                   )
             """, (f'-{hours} hours',)).fetchall()
             for (key,) in stale:
-                _archive_problem(conn, key)
+                _archive_problem(conn, key, reason='agent_silent')
                 conn.execute(
                     "UPDATE actions SET status='resolved_auto' WHERE problem_key=? AND status='pending'",
                     (key,)

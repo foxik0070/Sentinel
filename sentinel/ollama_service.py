@@ -65,6 +65,7 @@ def ollama_monitor(interval: int = 300):
 # --- WORKER LOGIC ---
 
 def process_single_task(item):
+    _ai_timeout = int(getattr(config, "AI_TIMEOUT_SECONDS", 180))
     """Agnostic Task Processor. Does not care what it processes, only relies on channel config."""
     if isinstance(item, dict):
         line = item.get("text", "")
@@ -102,7 +103,7 @@ def process_single_task(item):
                     "max_tokens": 200 if line_type == "ai_request" else 512,
                 }
                 resp = requests.post(config.HAILO_OLLAMA_URL, json=payload,
-                                     headers={"Content-Type": "application/json"}, timeout=90)
+                                     headers={"Content-Type": "application/json"}, timeout=_ai_timeout)
                 resp.raise_for_status()
                 data = resp.json()
                 text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
@@ -120,7 +121,7 @@ def process_single_task(item):
                 if config.OLLAMA_API_KEY:
                     headers["Authorization"] = f"Bearer {config.OLLAMA_API_KEY}"
 
-                resp = requests.post(config.OLLAMA_URL, json=payload, headers=headers, timeout=90)
+                resp = requests.post(config.OLLAMA_URL, json=payload, headers=headers, timeout=_ai_timeout)
                 resp.raise_for_status()
 
                 data = resp.json()
@@ -130,7 +131,7 @@ def process_single_task(item):
                     text = data.get("message", {}).get("content", "")
             else:
                 # Fallback to local subprocess
-                res = subprocess.run(["ollama", "run", config.OLLAMA_MODEL], input=prompt_text, capture_output=True, text=True, timeout=90)
+                res = subprocess.run(["ollama", "run", config.OLLAMA_MODEL], input=prompt_text, capture_output=True, text=True, timeout=_ai_timeout)
                 if res.returncode != 0: raise RuntimeError(res.stderr)
                 text = res.stdout
 
@@ -213,22 +214,26 @@ def _log_hailo_status():
             f"NPU embeddingy: {'ano' if use_emb else 'ne (Ollama fallback)'}"
         )
 
-async def _task_watchdog(max_age_seconds: int = 120):
+async def _task_watchdog(max_age_seconds: int = 0):
     """Periodic watchdog: resets tasks stuck in 'processing' longer than max_age_seconds back to pending."""
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
     while not state.shutdown_event.is_set():
         await asyncio.sleep(60)
         try:
-            # Použij naive local datetime — DB ukládá processed_at bez timezone
-            cutoff = (datetime.now() - timedelta(seconds=max_age_seconds)).isoformat(timespec='seconds')
-            conn = state._get_conn()
-            n = conn.execute(
-                "UPDATE task_queue SET status='pending', worker_id=NULL "
-                "WHERE status='processing' AND processed_at < ?",
-                (cutoff,)
-            ).rowcount
-            conn.commit()
-            conn.close()
+            # Delší než wait_for cap ve workeru — watchdog je až poslední záchrana
+            if max_age_seconds <= 0:
+                max_age_seconds = 2 * int(getattr(config, "AI_TIMEOUT_SECONDS", 180)) + 120
+            # UTC — fetch_next_task ukládá processed_at jako aware UTC isoformat
+            cutoff = (datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds)).isoformat()
+            with state.db_lock:
+                conn = state._get_conn()
+                n = conn.execute(
+                    "UPDATE task_queue SET status='pending', worker_id=NULL "
+                    "WHERE status='processing' AND processed_at < ?",
+                    (cutoff,)
+                ).rowcount
+                conn.commit()
+                conn.close()
             if n > 0:
                 utils.ollama_logger.warning(f"[TaskWatchdog] Reset {n} stuck task(s) to pending (age > {max_age_seconds}s)")
         except Exception as e:
@@ -245,17 +250,19 @@ async def _async_worker_loop(worker_id: str, loop_semaphore: asyncio.Semaphore):
         if task:
             try:
                 async with loop_semaphore:
+                    # 2× AI timeout: process_single_task může udělat 2 sekvenční pokusy (hailo + fallback)
                     await asyncio.wait_for(
                         loop.run_in_executor(None, process_single_task, task['payload']),
-                        timeout=110.0
+                        timeout=2.0 * float(getattr(config, "AI_TIMEOUT_SECONDS", 180)) + 30.0
                     )
             except asyncio.TimeoutError:
                 utils.ollama_logger.error(f"AsyncWorker {worker_id}: task {task['id']} timed out — resetting to pending")
                 try:
-                    conn = state._get_conn()
-                    conn.execute("UPDATE task_queue SET status='pending', worker_id=NULL WHERE id=?", (task['id'],))
-                    conn.commit()
-                    conn.close()
+                    with state.db_lock:
+                        conn = state._get_conn()
+                        conn.execute("UPDATE task_queue SET status='pending', worker_id=NULL WHERE id=?", (task['id'],))
+                        conn.commit()
+                        conn.close()
                 except Exception:
                     pass
                 continue

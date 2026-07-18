@@ -141,14 +141,14 @@ def _enqueue_severity_classify(key: str, data: dict):
 
 def mark_resolved(key: str):
     """Marks an active problem as resolved."""
-    state.mark_resolved(key)
+    state.mark_resolved(key, reason='detector_ok')
 
 def resolve_problem(key: str):
     """
-    CRITICAL FIX: Explicit alias wrapper for mark_resolved 
+    CRITICAL FIX: Explicit alias wrapper for mark_resolved
     to support modern thread-safe detectors architecture.
     """
-    state.mark_resolved(key)
+    state.mark_resolved(key, reason='detector_ok')
 
 def get_problem(key: str) -> dict:
     """Retrieves an existing problem by its unique key."""

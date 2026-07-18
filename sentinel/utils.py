@@ -369,3 +369,24 @@ class SentinelMqttManager:
             self.client.publish(topic, json.dumps(payload), retain=True)
 
 mqtt_manager = SentinelMqttManager()
+
+
+def stale_age_label(issue: dict) -> str | None:
+    """Lifecycle: vrátí label stáří ('26h' / '3d') pokud issue překročil 50 %
+    svého stale TTL (config STALE_TTL_BY_SEVERITY), jinak None.
+    Sdíleno mezi rendererem hlavního view a modal view."""
+    try:
+        ttl_map = getattr(config, 'STALE_TTL_BY_SEVERITY', {}) or {}
+        sev = (issue.get('severity') or '').lower()
+        ttl_h = float(ttl_map.get(sev or 'default', ttl_map.get('default', 24)))
+        if ttl_h <= 0:
+            return None
+        ls = datetime.fromisoformat(issue.get('last_seen', ''))
+        if ls.tzinfo is None:
+            ls = ls.replace(tzinfo=timezone.utc)
+        age_h = (datetime.now(timezone.utc) - ls).total_seconds() / 3600
+        if age_h <= ttl_h * 0.5:
+            return None
+        return f"{age_h:.0f}h" if age_h < 48 else f"{age_h/24:.0f}d"
+    except Exception:
+        return None

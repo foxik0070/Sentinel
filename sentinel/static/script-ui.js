@@ -4759,6 +4759,114 @@ async function _loadJokeLog() {
     }
 }
 
+// ── Lifecycle: ověření platnosti issue (recheck) ────────────────────────────
+async function _recheckIssue(kb64) {
+    _lifecycleToast('<i class="fa-solid fa-stethoscope"></i> Ověřuji platnost…');
+    try {
+        let r = await fetch(`/api/issues/${kb64}/recheck`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
+        });
+        let d = await r.json();
+        if (d.error) { _lifecycleToast('❌ ' + _escape(d.error)); return; }
+        if (d.verdict === 'uncertain'
+            && confirm((d.detail || '') + '\n\nVyřešit přesto ručně?')) {
+            r = await fetch(`/api/issues/${kb64}/recheck`, {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({force: true})
+            });
+            d = await r.json();
+        }
+        const icons = {resolved: '✅', still_active: '🔄', uncertain: '❓', gone: '✅'};
+        _lifecycleToast(`${icons[d.verdict] || ''} ${_escape(d.detail || '')}`);
+        if (d.verdict === 'resolved' || d.verdict === 'gone') {
+            if (typeof updateStatus === 'function') updateStatus();
+        }
+    } catch (e) {
+        _lifecycleToast('❌ Recheck selhal.');
+    }
+}
+
+function _lifecycleToast(html) {
+    const t = document.createElement('div');
+    t.className = 'sentinel-toast';
+    t.innerHTML = `<div style="font-size:.9em;line-height:1.4;">${html}</div>`;
+    t.onclick = () => t.remove();
+    document.body.appendChild(t);
+    setTimeout(() => { if (document.body.contains(t)) t.remove(); }, 6000);
+}
+
+// ── Centrum událostí (383): poslední alerty + AI denní přehled ──────────────
+function toggleNotifCenter() {
+    const p = document.getElementById('notif-center-panel');
+    if (!p) return;
+    const open = p.style.display !== 'flex';
+    p.style.display = open ? 'flex' : 'none';
+    if (open) _loadNotifCenter();
+}
+
+async function _loadNotifCenter() {
+    const dEl = document.getElementById('notif-center-digest');
+    const lEl = document.getElementById('notif-center-list');
+    if (!dEl || !lEl) return;
+    try {
+        const r = await fetch('/api/analyze/daily_digest');
+        const d = await r.json();
+        if (d.digest && d.digest.text) {
+            dEl.innerHTML =
+                `<div style="font-size:.72em;color:var(--text-muted);margin-bottom:4px;">` +
+                `<i class="fa-solid fa-robot"></i> AI přehled — ${_escape(d.digest.date || '')}</div>` +
+                `<div style="font-size:.85em;line-height:1.5;">${d.digest.text.replace(/\n/g, '<br>')}</div>`;
+        } else {
+            dEl.innerHTML = '<span style="color:var(--text-muted);font-size:.82em;font-style:italic;">Zatím žádný AI přehled. Generuje se denně ráno.</span>';
+        }
+    } catch (e) { dEl.innerHTML = ''; }
+    lEl.innerHTML = '<div style="text-align:center;padding:14px;color:var(--text-muted);"><i class="fa-solid fa-spinner fa-spin"></i></div>';
+    try {
+        const r = await fetch('/api/issues/history?limit=20');
+        const d = await r.json();
+        const items = d.items || [];
+        if (!items.length) {
+            lEl.innerHTML = '<div style="color:var(--text-muted);font-style:italic;padding:10px;font-size:.85em;">Žádné události.</div>';
+            return;
+        }
+        lEl.innerHTML = items.map(e => {
+            const resolved = e.issue_status === 'resolved';
+            const icon = resolved
+                ? '<i class="fa-solid fa-check" style="color:var(--success);margin-top:2px;"></i>'
+                : '<i class="fa-solid fa-triangle-exclamation" style="color:#fd7e14;margin-top:2px;"></i>';
+            const ts = ((resolved ? e.resolved_at : e.last_seen) || '').replace('T', ' ').split('.')[0].slice(5, 16);
+            const reasonLbl = {stale_auto: 'auto: stale', agent_report_ok: 'agent OK', detector_ok: 'detektor OK',
+                               source_recovered: 'zdroj OK', recheck_confirmed: 'recheck', recheck_forced: 'recheck (ručně)',
+                               channel_expiry: 'expirace', agent_silent: 'auto: ticho', deleted: 'smazáno', manual: 'ručně'}[e.resolve_reason] || '';
+            const reasonBadge = reasonLbl
+                ? `<span style="background:rgba(108,117,125,.2);color:#adb5bd;border-radius:3px;font-size:.85em;padding:0 4px;margin-left:4px;">${reasonLbl}</span>`
+                : '';
+            return `<div style="display:flex;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);font-size:.8em;align-items:flex-start;">
+                ${icon}<div style="min-width:0;">
+                <b>${_escape(e.host || '?')}</b> · ${_escape(e.plugin_name || '?')}
+                <span style="color:var(--text-muted);">${ts}</span>${reasonBadge}<br>
+                <span style="color:var(--text-muted);word-break:break-word;">${_escape((e.last_line || '').slice(0, 110))}</span>
+                </div></div>`;
+        }).join('');
+    } catch (e) {
+        lEl.innerHTML = '<div style="color:var(--error);padding:10px;font-size:.85em;">Chyba načítání.</div>';
+    }
+}
+
+async function _regenDigest(btn) {
+    if (btn) btn.classList.add('fa-spin');
+    try {
+        await fetch('/api/analyze/daily_digest', {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
+        });
+        await _loadNotifCenter();
+    } catch (e) {
+        _lifecycleToast('❌ Generování digestu selhalo.');
+    } finally {
+        if (btn) btn.classList.remove('fa-spin');
+    }
+}
+
 // 266: Export chatu do Markdown
 function exportChatToMarkdown() {
     const msgs = document.querySelectorAll('#chat-history .message');

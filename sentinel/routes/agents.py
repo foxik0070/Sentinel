@@ -1,6 +1,7 @@
 import logging
 import threading
 import sqlite3
+import os
 import re
 import secrets
 from datetime import datetime, timezone, timedelta
@@ -1081,7 +1082,7 @@ def create_blueprint(service):
                     continue  # Maintenance mode — přeskočit uložení alertu
 
                 if status.lower() in ["ok", "resolved"]:
-                    state.mark_resolved(unique_key)
+                    state.mark_resolved(unique_key, reason='agent_report_ok')
                     if assigned_channel == 'security':
                         threading.Thread(
                             target=service._send_notification,
@@ -1401,5 +1402,177 @@ def create_blueprint(service):
             "active_issues": issue_count,
             "lag_ms": lag_ms or 0,
         })
+
+    from .actions import _valid_host as _host_ok
+
+    # ── 269: Plánované akce agenta ──────────────────────────────────────────
+
+    @bp.route('/api/agents/<hostname>/scheduled_actions', methods=['GET'])
+    @requires_auth
+    def api_agent_scheduled_actions(hostname):
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        if not _host_ok(hostname):
+            return jsonify({"error": "Bad hostname"}), 400
+        with state.db_lock:
+            conn = state._get_conn()
+            try:
+                rows = conn.execute(
+                    "SELECT created_at, command, status, mode, risk_score FROM actions "
+                    "WHERE node=? AND status IN ('pending','reviewing','dry_run_completed') "
+                    "ORDER BY created_at DESC LIMIT 50",
+                    (hostname,)
+                ).fetchall()
+            finally:
+                conn.close()
+        return jsonify({"actions": [
+            {"created_at": r[0], "command": r[1], "status": r[2], "mode": r[3], "risk_score": r[4]}
+            for r in rows
+        ]})
+
+    # ── 328: SSH known_hosts management ─────────────────────────────────────
+
+    _KNOWN_HOSTS = os.path.expanduser('~/.ssh/known_hosts')
+
+    def _kh_matches(hostname, line):
+        """known_hosts řádek patří hostu — přesná shoda v čárkami odděleném poli hostů."""
+        line = line.strip()
+        if not line or line.startswith('#'):
+            return False
+        return hostname in line.split()[0].split(',')
+
+    @bp.route('/api/agents/<hostname>/ssh_keys', methods=['GET'])
+    @requires_auth
+    def api_agent_ssh_keys(hostname):
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        if not _host_ok(hostname):
+            return jsonify({"error": "Bad hostname"}), 400
+        keys = []
+        try:
+            with open(_KNOWN_HOSTS, 'r', encoding='utf-8', errors='replace') as f:
+                for line in f:
+                    if _kh_matches(hostname, line):
+                        keys.append(line.strip())
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+        return jsonify({"keys": keys})
+
+    @bp.route('/api/agents/<hostname>/ssh_keys/rescan', methods=['POST'])
+    @requires_auth
+    def api_agent_ssh_keys_rescan(hostname):
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        if not _host_ok(hostname):
+            return jsonify({"error": "Bad hostname"}), 400
+        import subprocess as _sp
+        try:
+            res = _sp.run(['ssh-keyscan', '-T', '5', hostname],
+                          capture_output=True, text=True, timeout=15)
+            new_keys = [l for l in res.stdout.splitlines() if l.strip() and not l.startswith('#')]
+            if not new_keys:
+                return jsonify({"status": "error", "message": "ssh-keyscan nic nevrátil"}), 502
+            # Odstranit staré záznamy hosta a přidat nové
+            existing = []
+            try:
+                with open(_KNOWN_HOSTS, 'r', encoding='utf-8', errors='replace') as f:
+                    existing = [l.rstrip('\n') for l in f]
+            except FileNotFoundError:
+                pass
+            kept = [l for l in existing if not _kh_matches(hostname, l)]
+            os.makedirs(os.path.dirname(_KNOWN_HOSTS), exist_ok=True)
+            with open(_KNOWN_HOSTS, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(kept + new_keys) + '\n')
+            service.log_event("ssh_keys_rescan", f"known_hosts rescan: {hostname} ({len(new_keys)} keys)", user=g.username)
+            return jsonify({"status": "ok", "keys": len(new_keys)})
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)}), 500
+
+    @bp.route('/api/agents/<hostname>/ssh_keys', methods=['DELETE'])
+    @requires_auth
+    def api_agent_ssh_keys_delete(hostname):
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        if not _host_ok(hostname):
+            return jsonify({"error": "Bad hostname"}), 400
+        try:
+            with open(_KNOWN_HOSTS, 'r', encoding='utf-8', errors='replace') as f:
+                lines = [l.rstrip('\n') for l in f]
+        except FileNotFoundError:
+            return jsonify({"status": "ok", "removed": 0})
+        kept = [l for l in lines if not _kh_matches(hostname, l)]
+        removed = len(lines) - len(kept)
+        with open(_KNOWN_HOSTS, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(kept) + ('\n' if kept else ''))
+        service.log_event("ssh_keys_delete", f"known_hosts delete: {hostname} ({removed} keys)", user=g.username)
+        return jsonify({"status": "ok", "removed": removed})
+
+    # ── HW metriky on-demand přes SSH ───────────────────────────────────────
+
+    _HW_COMMANDS = {
+        'net':   "ip -brief addr 2>/dev/null | head -20; echo '---'; ss -s 2>/dev/null | head -5",
+        'gpu':   "nvidia-smi --query-gpu=name,temperature.gpu,utilization.gpu,memory.used,memory.total --format=csv,noheader 2>/dev/null || vcgencmd measure_temp 2>/dev/null || echo NOT_FOUND",
+        'smart': "for d in /dev/sd? /dev/nvme?n1; do [ -e \"$d\" ] && echo \"== $d ==\" && smartctl -H \"$d\" 2>/dev/null | grep -E 'result|Status'; done 2>/dev/null || echo NOT_FOUND",
+        'ups':   "upsc ups 2>/dev/null | grep -E 'battery.charge|ups.load|ups.status|input.voltage' || apcaccess 2>/dev/null | grep -E 'STATUS|BCHARGE|LOADPCT|TIMELEFT' || echo NOT_FOUND",
+    }
+
+    @bp.route('/api/agents/<hostname>/hw_metrics', methods=['POST'])
+    @requires_auth
+    def api_agent_hw_metrics(hostname):
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        if not _host_ok(hostname):
+            return jsonify({"error": "Bad hostname"}), 400
+        mtype = (request.get_json(silent=True) or {}).get('type', '')
+        cmd = _HW_COMMANDS.get(mtype)
+        if not cmd:
+            return jsonify({"error": f"Neznámý typ '{mtype}'"}), 400
+        cluster = actions._find_cluster_for_host(hostname) or hostname
+        try:
+            ok, out = actions.run_ssh_command_real(cluster, cmd, timeout=20, internal=True)
+            if not ok:
+                return jsonify({"error": out or "SSH selhalo"}), 502
+            out = (out or '').replace('STDOUT: ', '', 1)
+            lines = [l for l in out.splitlines() if l.strip()][:40]
+            return jsonify({"lines": lines})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    # ── 171: CVE / security-updates scan přes SSH ───────────────────────────
+
+    @bp.route('/api/agents/<hostname>/cve_scan', methods=['POST'])
+    @requires_auth
+    def api_agent_cve_scan(hostname):
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        if not _host_ok(hostname):
+            return jsonify({"error": "Bad hostname"}), 400
+        cluster = actions._find_cluster_for_host(hostname) or hostname
+        cmd = ("apt list --upgradable 2>/dev/null | grep -i security || "
+               "dnf updateinfo list security 2>/dev/null | head -30 || echo NONE")
+        try:
+            ok, out = actions.run_ssh_command_real(cluster, cmd, timeout=45, internal=True)
+            if not ok:
+                return jsonify({"error": out or "SSH selhalo"}), 502
+            out = (out or '').replace('STDOUT: ', '', 1)
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+        findings = []
+        for line in (out or '').splitlines():
+            line = line.strip()
+            if not line or line == 'NONE' or line.startswith('Listing'):
+                continue
+            if '/' in line:  # apt formát: pkg/suite version …
+                pkg, _, rest = line.partition('/')
+                findings.append({"package": pkg.strip(), "info": rest.strip()[:120]})
+            else:            # dnf formát: ADV-ID severity pkg
+                parts = line.split()
+                if len(parts) >= 3:
+                    findings.append({"package": parts[-1], "info": ' '.join(parts[:-1])[:120]})
+        service.log_event("cve_scan", f"CVE scan {hostname}: {len(findings)} findings", user=g.username)
+        return jsonify({"findings": findings[:100],
+                        "message": "Žádné bezpečnostní aktualizace." if not findings else ""})
 
     return bp

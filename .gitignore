@@ -36,6 +36,7 @@ sentinel/plugins/*
 !sentinel/plugins/security_detector.py
 !sentinel/plugins/system_detector.py
 !sentinel/plugins/temperature_detector.py
+!sentinel/plugins/detector_windows.py
 
 # --- PYTHON ---
 __pycache__/

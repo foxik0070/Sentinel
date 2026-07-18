@@ -614,7 +614,7 @@ class ChatService(threading.Thread):
                                     if is_new:
                                         actions.maybe_suggest_remediation(key, payload)
                                 else:
-                                    state.mark_resolved(key)
+                                    state.mark_resolved(key, reason='source_recovered')
                         except Exception:
                             pass  # SSH not available for this host — skip
                 except Exception as e:
@@ -832,21 +832,74 @@ class ChatService(threading.Thread):
         except Exception as e:
             logger.debug(f"_save_health_snapshot: {e}")
 
-    def _generate_hourly_joke(self):
-        """Hodinový sarkastický vtip o aktuálním stavu infrastruktury ze šablon."""
-        try:
-            import random as _r
-            from datetime import datetime, timezone
+    @staticmethod
+    def _ai_reply_ok(text: str) -> bool:
+        """execute_ollama vrací chyby jako text — nefiltrované by se uložily do DB."""
+        t = (text or "").strip()
+        return bool(t) and not t.startswith("Chyba spojení s AI") and not t.startswith("AI Error")
 
-            TEMPLATES_ISSUE = [
-                # klep-klep
+    def _generate_ai_daily_digest(self):
+        """431: AI shrnutí posledních 24 h — uloží do kv_settings a notifikuje."""
+        try:
+            active = state.get_active_issues()
+            agents = state.get_all_agents()
+            offline = [a['hostname'] for a in agents
+                       if a.get('status') != 'ONLINE' and not a.get('ignore_offline')]
+            # Vyřešené za 24 h z issue_history
+            with state.db_lock:
+                conn = state._get_conn()
+                try:
+                    resolved = conn.execute(
+                        "SELECT plugin_name, host, resolve_reason, COUNT(*) FROM issue_history "
+                        "WHERE resolved_at > datetime('now', '-1 day') "
+                        "GROUP BY plugin_name, host ORDER BY COUNT(*) DESC LIMIT 15"
+                    ).fetchall()
+                    resolved_total = conn.execute(
+                        "SELECT COUNT(*) FROM issue_history WHERE resolved_at > datetime('now', '-1 day')"
+                    ).fetchone()[0]
+                finally:
+                    conn.close()
+
+            lines = [f"Aktivních issues: {len(active)}"]
+            for i in active[:15]:
+                lines.append(f"- [{i.get('severity') or '?'}] {i.get('plugin_name','?')} "
+                             f"na {i.get('host','?')}: {(i.get('last_line') or '')[:100]}")
+            lines.append(f"Vyřešeno za 24h: {resolved_total}")
+            for pl, host, reason, cnt in resolved[:10]:
+                lines.append(f"- {pl} na {host} ({cnt}×, {reason or 'manual'})")
+            if offline:
+                lines.append("Offline agenti: " + ", ".join(offline[:10]))
+
+            prompt = (
+                "Jsi Sentinel, monitorovací systém. Napiš stručný denní přehled česky "
+                "(max 6 vět): co je nejdůležitější, co se vyřešilo, na co se zaměřit. "
+                "Bez úvodních frází, rovnou k věci.\n\nData:\n" + "\n".join(lines)
+            )
+            digest = (self.execute_ollama(prompt, num_ctx=2048, max_tokens=350) or "").strip()
+            if not self._ai_reply_ok(digest):
+                logger.warning(f"AI digest skipped — AI error: {digest[:120]}")
+                return
+            state.set_setting('ai_daily_digest', json.dumps({
+                "date": datetime.now().strftime('%Y-%m-%d %H:%M'),
+                "text": digest,
+            }, ensure_ascii=False))
+            self._send_notification("ai_daily_digest", "report", "sentinel",
+                                    f"🤖 AI denní přehled\n{digest}")
+            logger.info("AI daily digest generated")
+        except Exception as e:
+            logger.error(f"_generate_ai_daily_digest: {e}")
+
+    _joke_recent_hosts = collections.deque(maxlen=5)
+
+    _JOKE_TEMPLATES = {
+        'cs': {
+            'issue': [
                 "Klep klep.\n— Kdo je?\n— {host}.\n— {host} kdo?\n— {host}, ten co má {plugin} v prdeli už {age}.",
                 "Klep klep.\n— Kdo je?\n— {plugin}.\n— {plugin} kdo?\n— {plugin} na {host}. Pořád. Furt. Dokola.",
                 "Klep klep.\n— Kdo je?\n— Monitoring.\n— Monitoring kdo?\n— Monitoring, co ti hlásí že {host} má problém s {plugin}. Překvapení.",
                 "Klep klep.\n— Kdo je?\n— Alert.\n— Alert kdo?\n— Alert číslo {count} dnes. {host}. {plugin}. Zvykej si.",
                 "Klep klep.\n— Kdo je?\n— On-call.\n— On-call kdo?\n— On-call, co kvůli {host} a {plugin} dnes zas nespí.",
                 "Klep klep.\n— Kdo je?\n— {host}.\n— {host} kdo?\n— {host}, tvůj oblíbený server. Ten s {plugin}. Zase.",
-                # jednořádkový sarkazmus
                 "Dnešní předpověď počasí: {host} — zataženo, {plugin} mimo provoz, šance na opravu 20 %.",
                 "Motivační citát dne: Nevzdávej se. {host} to taky neudělal, a podívej kde je teď.",
                 "{host} má {plugin} rozbité už {age}. Grafana to ví. Ty to víš. Všichni to ví. Nikdo nic nedělá.",
@@ -854,65 +907,106 @@ class ChatService(threading.Thread):
                 "Stav infrastruktury: {count} alertů. Nálada týmu: nekomentujeme.",
                 "Dobrá zpráva: monitoring funguje. Špatná zpráva: {host} s {plugin} rozhodně ne.",
                 "{host} slaví {age} bez {plugin}. Pošleme dort?",
-                # horoskop styl
                 "Horoskop pro {host}: Dnes není vhodný den pro {plugin}. Vlastně žádný den není.",
                 "Horoskop pro správce: Hvězdy říkají, že {host} tě dnes zklamal. Hvězdy mají pravdu.",
-                # podpora / ticket styl
                 "TICKET #∞ — {host}: {plugin} nefunguje {age}. Priorita: kritická. Status: neřeší se.",
                 "Vážený zákazníku, váš server {host} eviduje problém s {plugin} od {age}. Omlouváme se za komplikace. Váš tým ops.",
-                # filozofický
                 "Pokud {host} spadne do lesa a nikdo ho nevidí, pád stejně zaloguje. A {plugin} to hlásí {age}.",
                 "Co dřív? {host} nebo {plugin}? Dnes ani jedno nefunguje, takže to je jedno.",
-            ]
-            TEMPLATES_OK = [
-                # klep-klep ok
+            ],
+            'ok': [
                 "Klep klep.\n— Kdo je?\n— Infrastruktura.\n— Infrastruktura kdo?\n— Infrastruktura, co dnes nic nehlásí. Pravděpodobně rozbitý monitoring.",
                 "Klep klep.\n— Kdo je?\n— Silence.\n— Silence kdo?\n— Silence v alertech. Buď vše funguje, nebo je monitoring taky offline.",
                 "Klep klep.\n— Kdo je?\n— Klid.\n— Klid kdo?\n— Klid před bouří. Všechny servery zelené. Zálohuji teď.",
-                # jednořádkový ok
                 "Všechny servery jsou zelené. Tato zpráva se automaticky smaže, až to přestane platit.",
                 "Žádné aktivní alerty. Buď je vše v pořádku, nebo je monitoring konečně taky rozbité.",
                 "Infrastruktura funguje. Zapište si datum — tohle se nestává často.",
                 "Dnes žádné problémy. Zítra bude hůř, ale to řešíme zítra.",
                 "Nula alertů. Tým ops si dává kafe. Vychutnávejte tento vzácný okamžik.",
-            ]
+            ],
+        },
+        'en': {
+            'issue': [
+                "Knock knock.\n— Who's there?\n— {host}.\n— {host} who?\n— {host}, the one with {plugin} broken for {age} now.",
+                "Knock knock.\n— Who's there?\n— {plugin}.\n— {plugin} who?\n— {plugin} on {host}. Still. Always. Forever.",
+                "Knock knock.\n— Who's there?\n— Monitoring.\n— Monitoring who?\n— Monitoring, telling you {host} has a problem with {plugin}. Surprise.",
+                "Knock knock.\n— Who's there?\n— Alert.\n— Alert who?\n— Alert #{count} today. {host}. {plugin}. Get used to it.",
+                "Knock knock.\n— Who's there?\n— On-call.\n— On-call who?\n— On-call, who can't sleep tonight because of {host} and {plugin}.",
+                "Knock knock.\n— Who's there?\n— {host}.\n— {host} who?\n— {host}, your favorite server. The one with {plugin}. Again.",
+                "Today's weather forecast: {host} — overcast, {plugin} offline, 20% chance of fix.",
+                "Motivational quote of the day: Never give up. {host} didn't either, and look where that got it.",
+                "{host} has had {plugin} broken for {age}. Grafana knows. You know. Everyone knows. Nobody does anything.",
+                "Is it working? No. Will it be fixed? Maybe. When? {host} will reply when it feels like it.",
+                "Infrastructure status: {count} alerts. Team morale: no comment.",
+                "Good news: monitoring works. Bad news: {host} with {plugin} definitely doesn't.",
+                "{host} celebrates {age} without {plugin}. Should we send a cake?",
+                "Horoscope for {host}: Today is not a good day for {plugin}. Actually, no day is.",
+                "Horoscope for the sysadmin: The stars say {host} disappointed you today. The stars are right.",
+                "TICKET #∞ — {host}: {plugin} down for {age}. Priority: critical. Status: unresolved.",
+                "Dear customer, your server {host} has been experiencing issues with {plugin} for {age}. We apologize for the inconvenience. Your ops team.",
+                "If {host} crashes in the forest and no one sees it, the crash still gets logged. And {plugin} reports it for {age}.",
+                "Which came first: {host} or {plugin}? Neither works today, so it doesn't matter.",
+            ],
+            'ok': [
+                "Knock knock.\n— Who's there?\n— Infrastructure.\n— Infrastructure who?\n— Infrastructure that has nothing to report today. Probably broken monitoring.",
+                "Knock knock.\n— Who's there?\n— Silence.\n— Silence who?\n— Silence in the alerts. Either everything works, or monitoring is offline too.",
+                "Knock knock.\n— Who's there?\n— Calm.\n— Calm who?\n— The calm before the storm. All servers green. Backing up now.",
+                "All servers are green. This message will self-destruct once that changes.",
+                "Zero active alerts. Either everything is fine, or monitoring finally broke too.",
+                "Infrastructure is working. Write down the date — this doesn't happen often.",
+                "No issues today. Tomorrow will be worse, but we'll deal with that tomorrow.",
+                "Zero alerts. Ops team is having coffee. Enjoy this rare moment.",
+            ],
+        },
+    }
 
-            _SKIP_PLUGINS = {'detector_who', 'detector_icinga', 'agent_security_vulnerability_scan', 'agent_security_root_monitor'}
+    _JOKE_SKIP_PLUGINS = {'detector_who', 'detector_icinga', 'agent_security_vulnerability_scan', 'agent_security_root_monitor'}
 
-            active = state.get_active_issues()
-            if active:
-                candidates = [i for i in active if i.get('plugin_name') not in _SKIP_PLUGINS]
-                if not candidates:
-                    candidates = active
-                pool = candidates[:50]
-                _r.shuffle(pool)
-                issue = pool[0]
-                host = issue.get('host') or 'server'
-                plugin = issue.get('plugin_name') or 'monitoring'
-                try:
-                    fs = issue.get('first_seen') or ''
-                    dt = datetime.fromisoformat(fs.replace('Z', '+00:00'))
-                    age_sec = int((datetime.now(timezone.utc) - dt).total_seconds())
-                except Exception:
-                    age_sec = 0
-                age = f"{age_sec // 3600}h" if age_sec >= 3600 else f"{max(1, age_sec // 60)}min"
-                joke = _r.choice(TEMPLATES_ISSUE).format(host=host, plugin=plugin, age=age, count=len(active))
-            else:
-                joke = _r.choice(TEMPLATES_OK)
+    def pick_infra_joke(self, lang: str = 'cs', source: str = 'manual') -> str:
+        """Sdílený generátor sarkastického vtipu (dvouklik na logo i hodinový job).
 
-            if not joke:
-                return
-            with state.db_lock:
-                conn = state._get_conn()
-                try:
-                    conn.execute(
-                        "INSERT INTO infra_jokes (joke, source) VALUES (?, 'hourly')",
-                        (joke,)
-                    )
-                    conn.execute("DELETE FROM infra_jokes WHERE id NOT IN (SELECT id FROM infra_jokes ORDER BY id DESC LIMIT 50)")
-                    conn.commit()
-                finally:
-                    conn.close()
+        Vrací html-escaped vtip a ukládá ho do infra_jokes (max 50 záznamů)."""
+        import random as _r
+        tpl = self._JOKE_TEMPLATES.get(lang, self._JOKE_TEMPLATES['cs'])
+        active = state.get_active_issues()
+        if active:
+            candidates = [i for i in active if i.get('plugin_name') not in self._JOKE_SKIP_PLUGINS]
+            if not candidates:
+                candidates = active
+            # vynechej hosty z posledních 5 vtipů
+            fresh = [i for i in candidates if i.get('host') not in self._joke_recent_hosts]
+            pool = (fresh if fresh else candidates)[:50]
+            _r.shuffle(pool)
+            issue = pool[0]
+            self._joke_recent_hosts.append(issue.get('host', ''))
+            # host/plugin pochází z agent reportů — escapovat (joke log renderuje innerHTML)
+            host = html.escape(issue.get('host') or 'server')
+            plugin = html.escape(issue.get('plugin_name') or 'monitoring')
+            try:
+                fs = issue.get('first_seen') or ''
+                dt = datetime.fromisoformat(fs.replace('Z', '+00:00'))
+                age_sec = int((datetime.now(timezone.utc) - dt).total_seconds())
+            except Exception:
+                age_sec = 0
+            age = f"{age_sec // 3600}h" if age_sec >= 3600 else f"{max(1, age_sec // 60)}min"
+            joke = _r.choice(tpl['issue']).format(host=host, plugin=plugin, age=age, count=len(active))
+        else:
+            joke = _r.choice(tpl['ok'])
+
+        with state.db_lock:
+            conn = state._get_conn()
+            try:
+                conn.execute("INSERT INTO infra_jokes (joke, source) VALUES (?, ?)", (joke, source))
+                conn.execute("DELETE FROM infra_jokes WHERE id NOT IN (SELECT id FROM infra_jokes ORDER BY id DESC LIMIT 50)")
+                conn.commit()
+            finally:
+                conn.close()
+        return joke
+
+    def _generate_hourly_joke(self):
+        """Hodinový sarkastický vtip — scheduler hook."""
+        try:
+            self.pick_infra_joke(lang='cs', source='hourly')
         except Exception as e:
             logger.debug(f"_generate_hourly_joke: {e}")
 
@@ -1789,6 +1883,7 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
 
     def execute_ollama(self, prompt, num_ctx=2048, messages=None, max_tokens=None, temperature=0.1):
         self.chat_queue_depth += 1
+        _ai_timeout = int(getattr(config, 'AI_TIMEOUT_SECONDS', 180))
         try:
             self.llm_semaphore.acquire()
             self.chat_queue_depth -= 1
@@ -1813,10 +1908,10 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
                         "model": config.HAILO_OLLAMA_MODEL,
                         "messages": hailo_msgs,
                         "stream": False,
-                        "options": {"temperature": 0.1},
+                        "options": {"temperature": temperature},
                     }
                     resp = requests.post(hailo_chat_url, json=payload,
-                                         headers={"Content-Type": "application/json"}, timeout=90)
+                                         headers={"Content-Type": "application/json"}, timeout=_ai_timeout)
                     if resp.status_code != 200:
                         raise Exception(f"hailo-ollama error {resp.status_code}:{resp.text[:120]}")
                     data = resp.json()
@@ -1825,21 +1920,30 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
                         result = "AI Error (No response field)"
                 except Exception as hailo_err:
                     utils.log_message(f"AI: hailo-ollama Error: {hailo_err}, falling back to CPU ollama")
-                    # Fallback to CPU ollama
+                    # Fallback to CPU ollama — respektovat formát URL (OpenAI /v1/ vs. nativní)
                     try:
                         cpu_prompt = prompt or (messages[-1]["content"] if messages else "")
-                        cpu_payload = {"model": config.OLLAMA_MODEL,
-                                       "messages": [{"role": "user", "content": cpu_prompt}],
-                                       "stream": False, "options": {"temperature": 0.1}}
+                        cpu_msgs = [{"role": "user", "content": cpu_prompt}]
+                        if "/v1/" in config.OLLAMA_URL:
+                            cpu_payload = {"model": config.OLLAMA_MODEL, "messages": cpu_msgs,
+                                           "stream": False, "temperature": temperature}
+                        else:
+                            cpu_payload = {"model": config.OLLAMA_MODEL, "messages": cpu_msgs,
+                                           "stream": False, "options": {"temperature": temperature}}
+                        cpu_headers = {"Authorization": f"Bearer {config.OLLAMA_API_KEY}"} if config.OLLAMA_API_KEY else {}
                         cpu_resp = requests.post(config.OLLAMA_URL, json=cpu_payload,
-                                                 headers={}, timeout=90)
+                                                 headers=cpu_headers, timeout=_ai_timeout)
                         if cpu_resp.status_code == 200:
                             cpu_data = cpu_resp.json()
+                            _choices = cpu_data.get("choices") or [{}]
                             result = (cpu_data.get("message", {}).get("content")
+                                      or _choices[0].get("message", {}).get("content")
                                       or cpu_data.get("response", "AI Error (CPU fallback no response)"))
                         else:
+                            utils.log_message(f"AI: CPU fallback HTTP {cpu_resp.status_code}: {cpu_resp.text[:120]}")
                             result = f"Chyba spojení s AI: {hailo_err}"
                     except Exception as cpu_err:
+                        utils.log_message(f"AI: CPU fallback failed: {cpu_err}")
                         result = f"Chyba spojení s AI: {hailo_err}"
 
             elif config.ARGS.get("EXTERNAL_OLLAMA"):
@@ -1864,10 +1968,10 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
                 headers = {"Authorization": f"Bearer {config.OLLAMA_API_KEY}"} if config.OLLAMA_API_KEY else {}
 
                 try:
-                    resp = requests.post(config.OLLAMA_URL, json=primary_payload, headers=headers, timeout=90)
+                    resp = requests.post(config.OLLAMA_URL, json=primary_payload, headers=headers, timeout=_ai_timeout)
                     if resp.status_code == 400:
                         utils.log_message(f"AI: Primary format failed (400), trying fallback...")
-                        resp = requests.post(config.OLLAMA_URL, json=secondary_payload, headers=headers, timeout=90)
+                        resp = requests.post(config.OLLAMA_URL, json=secondary_payload, headers=headers, timeout=_ai_timeout)
 
                     if resp.status_code != 200:
                         raise Exception(f"External Ollama Error {resp.status_code}: {resp.text}")
@@ -1887,7 +1991,7 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
                     input=prompt,
                     capture_output=True,
                     text=True,
-                    timeout=90
+                    timeout=_ai_timeout
                 )
                 if res.returncode != 0:
                     raise RuntimeError(f"Local Ollama Error: {res.stderr}")
@@ -2101,6 +2205,27 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
                 except Exception:
                     pass
 
+        # Stale badge — issue dlouho nere-detekován (>50 % svého TTL)
+        _stale_badge = ""
+        _age_lbl = utils.stale_age_label(i)
+        if _age_lbl:
+            _stale_badge = (
+                f"<span title='Naposledy detekováno před {_age_lbl} — možná už neplatí. "
+                f"Klikni pro ověření.' onclick=\"_recheckIssue('{kb64}')\" "
+                f"style='background:rgba(108,117,125,.2);color:#adb5bd;border:1px solid rgba(108,117,125,.4);"
+                f"border-radius:4px;font-size:.72em;padding:1px 6px;margin-left:5px;cursor:pointer;'>"
+                f"🕓 {_age_lbl} bez detekce</span>"
+            )
+
+        recheck_btn = ""
+        if role in ['admin', 'superadmin']:
+            recheck_btn = (
+                f"<i class='fa-solid fa-stethoscope' title='Ověřit platnost (recheck)' "
+                f"style='cursor:pointer; color:var(--text-muted); font-size:1.1em; margin-right:12px; transition:color 0.2s;' "
+                f"onmouseover=\"this.style.color='#20c997'\" onmouseout=\"this.style.color='var(--text-muted)'\" "
+                f"onclick=\"_recheckIssue('{kb64}')\"></i>"
+            )
+
         # Assignee badge
         _assignee = i.get('assigned_to')
         _assignee_badge = ""
@@ -2138,12 +2263,12 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
                 f"border-right:1px solid var(--card-border); border-top:1px solid var(--card-border); border-bottom:1px solid var(--card-border); {card_opacity}'>"
                 f"<div style='flex-grow:1; min-width:0;'>"
                 f"<div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;'>"
-                f"<small style='color:var(--text-muted); font-size:0.8em;'>🕒 {ts} | <b style='color:{det_color};'>[{plugin_origin}]</b>{occ_badge}{first_seen_str}{extra_badge}{snooze_badge}{severity_badge}{_sla_badge}{_assignee_badge}</small>"
+                f"<small style='color:var(--text-muted); font-size:0.8em;'>🕒 {ts} | <b style='color:{det_color};'>[{plugin_origin}]</b>{occ_badge}{first_seen_str}{extra_badge}{snooze_badge}{severity_badge}{_sla_badge}{_stale_badge}{_assignee_badge}</small>"
                 f"<small style='background:rgba(255,255,255,0.05); padding:1px 5px; border-radius:3px; font-size:0.75em; color:var(--text-muted);'>{channel}</small>"
                 f"</div>"
                 f"<span style='font-size:0.95em; word-break:break-word;'><b>{safe_host}</b>: {safe_msg}</span>"
                 f"</div>"
-                f"<div style='display:flex; align-items:center; flex-shrink:0; padding-left:15px;'>{fix_btn}{reanalyze_btn}{runbook_btn}{ssh_btn}{ack_btn}{snooze_btn}{comment_btn}{share_btn}{ignore_html}{delete_html}</div>"
+                f"<div style='display:flex; align-items:center; flex-shrink:0; padding-left:15px;'>{fix_btn}{reanalyze_btn}{recheck_btn}{runbook_btn}{ssh_btn}{ack_btn}{snooze_btn}{comment_btn}{share_btn}{ignore_html}{delete_html}</div>"
                 f"</div>")
 
     _GROUP_COLLAPSE_AT = 3

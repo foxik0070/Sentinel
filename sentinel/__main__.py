@@ -227,9 +227,9 @@ def main():
     # --- INTERNAL WATCHDOG CONFIG ---
     web_failures = 0
     loop_counter = 0
-    stale_counter = 0
     WEB_CHECK_INTERVAL = 30
     STALE_CHECK_INTERVAL = 3600  # resolve stale problems once per hour
+    stale_counter = STALE_CHECK_INTERVAL - 60  # první sweep ~minutu po startu
     WEB_URL = f"http://127.0.0.1:{config.WEB_PORT}/api/status_check"
 
     # --- Main Loop ---
@@ -300,9 +300,9 @@ def main():
             if stale_counter >= STALE_CHECK_INTERVAL:
                 stale_counter = 0
                 try:
-                    n = state.resolve_stale_problems(ttl_hours=24)
+                    n = state.resolve_stale_problems()
                     if n:
-                        utils.log_message(f"Stale cleanup: resolved {n} inactive problems (TTL=24h)")
+                        utils.log_message(f"Stale cleanup: resolved {n} inactive problems (per-severity TTL)")
                 except Exception as _e:
                     utils.log_message(f"[!] Stale cleanup failed: {_e}")
 

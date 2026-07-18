@@ -211,15 +211,54 @@ class RAGEngine:
             return f"Vector DB ({count} items){status_suffix}{backend}"
         return f"Text Search Only ({len(self.kb_chunks)} chunks){backend}"
 
+    def _learned_file(self) -> str:
+        """Soubor s naučenými chunky (vyřešené issues) — přežívá restart."""
+        data_dir = getattr(config, 'DATA_DIR', '/var/lib/sentinel')
+        return os.path.join(data_dir, 'learned_kb.txt')
+
     def _load_text_chunks(self):
-        if not self.kb_file or not os.path.exists(self.kb_file): return
-        try:
-            with open(self.kb_file, 'r', encoding='utf-8', errors='replace') as f:
-                content = f.read()
-            raw = content.split("<<<SENTINEL_ENTRY>>>")
-            self.kb_chunks = [c.strip() for c in raw if c.strip()]
+        chunks = []
+        for path in (self.kb_file, self._learned_file()):
+            if not path or not os.path.exists(path):
+                continue
+            try:
+                with open(path, 'r', encoding='utf-8', errors='replace') as f:
+                    content = f.read()
+                raw = content.split("<<<SENTINEL_ENTRY>>>")
+                chunks.extend(c.strip() for c in raw if c.strip())
+            except Exception as e:
+                utils.log_message(f"RAG chunk load error ({path}): {e}")
+        if chunks:
+            self.kb_chunks = chunks
             self._build_idf_index()
-        except: pass
+
+    def add_learned_chunk(self, text: str, source: str = "learned") -> bool:
+        """428: Přidá naučený poznatek do KB — soubor + inkrementální vektorový index."""
+        text = (text or "").strip()
+        if not text:
+            return False
+        try:
+            lf = self._learned_file()
+            os.makedirs(os.path.dirname(lf), exist_ok=True)
+            with open(lf, 'a', encoding='utf-8') as f:
+                f.write("\n<<<SENTINEL_ENTRY>>>\n" + text + "\n")
+        except Exception as e:
+            utils.log_message(f"RAG learned-file write error: {e}")
+        self.kb_chunks.append(text)
+        self._build_idf_index()
+        if self.client and self.collection:
+            try:
+                emb = self._get_embedding(text)
+                if emb:
+                    cid = hashlib.md5(text.encode()).hexdigest()
+                    with self.db_lock:
+                        self.collection.add(ids=[cid], documents=[text],
+                                            embeddings=[emb],
+                                            metadatas=[{"source": source}])
+            except Exception as e:
+                utils.log_message(f"RAG learned-chunk index error: {e}")
+        utils.log_message(f"RAG: learned new chunk ({source}, {len(text)} chars)")
+        return True
 
     def _build_idf_index(self):
         N = len(self.kb_chunks)
@@ -323,19 +362,41 @@ class RAGEngine:
             return
 
         try:
+            # 433: Embeddings cache — hash chunku je zároveň ID v Chroma kolekci,
+            # takže nezměněné chunky nemusíme znovu embedovat (drahé na NPU/CPU)
+            cached: dict = {}
+            try:
+                if self.collection:
+                    all_hashes = [hashlib.md5(c.encode()).hexdigest() for c in self.kb_chunks]
+                    got = self.collection.get(ids=all_hashes, include=['embeddings'])
+                    got_embs = got.get('embeddings')
+                    if got_embs is not None:
+                        cached = {cid: emb for cid, emb in zip(got.get('ids', []), got_embs)
+                                  if emb is not None and len(emb)}
+            except Exception as ce:
+                utils.log_message(f"RAG: embedding cache lookup failed ({ce}) — full re-embed")
+
+            reused = 0
             ids, documents, embeddings, metadatas = [], [], [], []
-            
+
             for i, chunk in enumerate(self.kb_chunks):
-                if not self.client: break 
-                emb = self._get_embedding(chunk)
-                if emb:
-                    chunk_id = hashlib.md5(chunk.encode()).hexdigest()
+                if not self.client: break
+                chunk_id = hashlib.md5(chunk.encode()).hexdigest()
+                emb = cached.get(chunk_id)
+                if emb is not None:
+                    reused += 1
+                else:
+                    emb = self._get_embedding(chunk)
+                if emb is not None and len(emb):
                     ids.append(chunk_id)
                     documents.append(chunk)
-                    embeddings.append(emb)
+                    embeddings.append(list(emb))
                     metadatas.append({"source": "kb_file", "index": i})
                 else:
                     if not self.client: break
+
+            if reused:
+                utils.log_message(f"RAG: reused {reused}/{len(self.kb_chunks)} cached embeddings")
 
             if ids and self.client:
                 with self.db_lock:

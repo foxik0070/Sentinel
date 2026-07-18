@@ -7,12 +7,10 @@ import time
 import sqlite3
 from datetime import datetime, timezone, timedelta
 from flask import Blueprint, request, jsonify, g, Response
-from collections import deque
 from ..auth import requires_auth, int_param
-from .. import state, config
+from .. import state, config, utils
 
 logger = logging.getLogger("sentinel.chat")
-_joke_recent_hosts: deque = deque(maxlen=5)
 
 
 def create_blueprint(service):
@@ -106,6 +104,17 @@ def create_blueprint(service):
             ignore_btn = f"<i class='fa-solid fa-eye-slash' title='Ignorovat' style='cursor:pointer; color:var(--text-muted); font-size:1.1em; margin-right:12px;' onclick=\"triggerAction('ignore_key {kb64}');setTimeout(()=>refreshModalIssuesContent(false),300);\"></i>" if g.user_role in ['admin','superadmin'] else ""
             delete_btn = f"<i class='fa-solid fa-trash' title='Smazat' style='cursor:pointer; color:var(--error); font-size:1.1em;' onclick=\"triggerAction('delete_key {kb64}');setTimeout(()=>refreshModalIssuesContent(false),300);\"></i>" if g.user_role in ['admin','superadmin'] else ""
             fp_btn = f"<i class='fa-solid fa-ban' title='Označit jako false positive (potlačit podobné)' style='cursor:pointer; color:var(--text-muted); font-size:1.05em; margin-right:12px; transition:color .2s;' onmouseover=\"this.style.color='#fd7e14'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"_markFalsePositive('{kb64}')\"></i>" if g.user_role in ['admin','superadmin'] else ""
+            recheck_btn = f"<i class='fa-solid fa-stethoscope' title='Ověřit platnost (recheck)' style='cursor:pointer; color:var(--text-muted); font-size:1.05em; margin-right:12px; transition:color .2s;' onmouseover=\"this.style.color='#20c997'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"_recheckIssue('{kb64}');setTimeout(()=>refreshModalIssuesContent(false),1200);\"></i>" if g.user_role in ['admin','superadmin'] else ""
+            # Stale badge — issue dlouho nere-detekován (>50 % svého TTL)
+            stale_badge = ""
+            _age_lbl = utils.stale_age_label(i)
+            if _age_lbl:
+                stale_badge = (
+                    f"<span title='Naposledy detekováno před {_age_lbl} — možná už neplatí. Klikni pro ověření.' "
+                    f"onclick=\"_recheckIssue('{kb64}');setTimeout(()=>refreshModalIssuesContent(false),1200);\" "
+                    f"style='background:rgba(108,117,125,.2);color:#adb5bd;border:1px solid rgba(108,117,125,.4);"
+                    f"border-radius:4px;font-size:.72em;padding:1px 6px;margin-left:5px;cursor:pointer;'>🕓 {_age_lbl}</span>"
+                )
             similar_btn = f"<i class='fa-solid fa-magnifying-glass' title='Podobné incidenty' style='cursor:pointer; color:var(--text-muted); font-size:1.05em; margin-right:12px; transition:color .2s;' onmouseover=\"this.style.color='var(--accent)'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"_openSimilarModal('{kb64}')\"></i>"
             # Rozbalovací seznam všech záznamů per technologie (f2b/security a podobné)
             records_html = ""
@@ -169,12 +178,12 @@ def create_blueprint(service):
                         <span class='issue-drag-handle' title='Přetáhnout' style='cursor:grab; color:var(--text-muted); font-size:1.1em; flex-shrink:0; padding:0 4px 0 0; user-select:none;'>⠿</span>
                         {label_dot}
                         <div class='issue-content-area'>
-                            <small style='color:var(--text-muted); display:block; margin-bottom:3px;'>🕒 {ts} | <b>{plugin_origin}</b>{occ_badge} <i class='fa-solid fa-bell' title='Nastavení notifikací' style='cursor:pointer;font-size:.8em;opacity:.5;margin-left:3px;' onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=.5" onclick="openNotifySettingsModal()"></i></small>
+                            <small style='color:var(--text-muted); display:block; margin-bottom:3px;'>🕒 {ts} | <b>{plugin_origin}</b>{occ_badge}{stale_badge} <i class='fa-solid fa-bell' title='Nastavení notifikací' style='cursor:pointer;font-size:.8em;opacity:.5;margin-left:3px;' onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=.5" onclick="openNotifySettingsModal()"></i></small>
                             <span style='color:var(--text-main); font-size:0.93em;' title='{safe_msg_title}'><b>{safe_host}</b>: {safe_msg_short}</span>
                             {tags_html}{dep_badge}{records_html}
                         </div>
                         <div class='issue-actions'>
-                            {comment_btn}{dep_btn}{fix_btn}{ssh_btn_modal}{tag_btn}{fp_btn}{similar_btn}<i class='fa-solid fa-share-nodes issue-action-secondary' title='Sdílet' style='cursor:pointer; color:var(--text-muted); font-size:1.1em; margin-right:12px;' onclick="shareIssue('{share_text}', this)"></i>
+                            {comment_btn}{dep_btn}{fix_btn}{recheck_btn}{ssh_btn_modal}{tag_btn}{fp_btn}{similar_btn}<i class='fa-solid fa-share-nodes issue-action-secondary' title='Sdílet' style='cursor:pointer; color:var(--text-muted); font-size:1.1em; margin-right:12px;' onclick="shareIssue('{share_text}', this)"></i>
                             {ignore_btn}{delete_btn}
                         </div>
                     </div>
@@ -541,6 +550,41 @@ def create_blueprint(service):
 
     # ── Issue Triage ────────────────────────────────────────────────────────
 
+    @bp.route('/api/issues/export_csv', methods=['POST'])
+    @requires_auth
+    def api_issues_export_csv():
+        """265: Export vybraných issues do CSV."""
+        d = request.get_json(silent=True) or {}
+        keys = d.get('keys') or []
+        if not isinstance(keys, list) or not keys:
+            return jsonify({"error": "keys required"}), 400
+        decoded = []
+        for kb64 in keys[:500]:
+            try:
+                decoded.append(base64.b64decode(kb64).decode())
+            except Exception:
+                continue
+        import csv, io
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(['key', 'channel', 'host', 'plugin', 'severity', 'status',
+                    'first_seen', 'last_seen', 'occurrences', 'message'])
+        with state.db_lock:
+            conn = state._get_conn()
+            try:
+                for k in decoded:
+                    row = conn.execute(
+                        "SELECT key, channel_type, host, plugin_name, severity, status, "
+                        "first_seen, last_seen, occurrence_count, last_line "
+                        "FROM problems WHERE key=?", (k,)
+                    ).fetchone()
+                    if row:
+                        w.writerow(row)
+            finally:
+                conn.close()
+        return Response(buf.getvalue(), mimetype='text/csv',
+                        headers={'Content-Disposition': 'attachment; filename=sentinel_issues.csv'})
+
     @bp.route('/api/issues/triage', methods=['GET'])
     @requires_auth
     def api_issues_triage():
@@ -594,6 +638,83 @@ def create_blueprint(service):
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
+    @bp.route('/api/issues/<key_b64>/recheck', methods=['POST'])
+    @requires_auth
+    def api_issue_recheck(key_b64):
+        """Lifecycle: ověří, zda issue ještě platí. Deterministická pravidla:
+        zdroj se pravidelně hlásí a issue dlouho nere-detekoval → auto-resolve.
+        Body: {"force": true} vyřeší i nejistý případ, {"ai": true} přidá AI názor.
+        """
+        if g.user_role == 'viewer':
+            return jsonify({"error": "Forbidden"}), 403
+        try: key = base64.b64decode(key_b64).decode()
+        except Exception: return jsonify({"error": "bad key"}), 400
+        body = request.get_json(silent=True) or {}
+        prob = state.get_problem(key)
+        if not prob:
+            return jsonify({"verdict": "gone", "detail": "Issue už neexistuje — vyřešeno."})
+
+        det = prob.get('details') or {}
+        if isinstance(det, str):
+            try: det = json.loads(det)
+            except Exception: det = {}
+        try:
+            seen = datetime.fromisoformat(prob.get('last_seen'))
+            if seen.tzinfo is None:
+                seen = seen.replace(tzinfo=timezone.utc)
+            age_min = (datetime.now(timezone.utc) - seen).total_seconds() / 60.0
+        except (TypeError, ValueError):
+            age_min = 0.0
+
+        _fresh = int(getattr(config, 'RECHECK_FRESH_MIN', 10))
+        _agent_silence = int(getattr(config, 'RECHECK_AGENT_SILENCE_MIN', 15))
+        _source_silence = int(getattr(config, 'RECHECK_SOURCE_SILENCE_MIN', 45))
+        verdict, detail = 'uncertain', ''
+        if age_min < _fresh:
+            verdict = 'still_active'
+            detail = f"Issue byl znovu detekován před {int(age_min)} min — stále platí."
+        elif key.startswith('AGENT|'):
+            hostname = key.split('|')[1] if '|' in key else ''
+            agent = next((a for a in state.get_all_agents() if a.get('hostname') == hostname), None)
+            if agent and agent.get('status') == 'ONLINE' and age_min > _agent_silence:
+                verdict = 'resolved'
+                detail = (f"Agent {hostname} je online a issue nehlásil {int(age_min)} min "
+                          f"— problém pominul.")
+            elif agent and agent.get('status') != 'ONLINE':
+                detail = f"Agent {hostname} je offline — nelze ověřit, ponecháno aktivní."
+            else:
+                detail = "Issue je čerstvý nebo agent neznámý — ponecháno aktivní."
+        elif age_min > _source_silence:
+            # Interní detektory (telemetrie, HA, heartbeat, watcher) běží v řádu minut
+            verdict = 'resolved'
+            detail = f"Zdroj issue nere-detekoval {int(age_min)} min — problém pominul."
+        else:
+            detail = (f"Poslední detekce před {int(age_min)} min — příliš čerstvé "
+                      f"na automatické vyřešení.")
+
+        if verdict == 'uncertain' and body.get('force'):
+            verdict = 'resolved'
+            detail += " Vyřešeno ručně (force)."
+
+        ai_opinion = None
+        if body.get('ai'):
+            try:
+                p = (f"Systémový alert: [{prob.get('plugin_name', '?')}] "
+                     f"{prob.get('host', '?')}: {(prob.get('last_line') or '')[:200]}\n"
+                     f"Naposledy detekován před {int(age_min)} minutami. "
+                     f"Odpověz 1-2 větami česky: je pravděpodobné, že problém stále trvá?")
+                ai_opinion = html.escape(service.execute_ollama(p, num_ctx=1024, max_tokens=120) or '')
+            except Exception as e:
+                ai_opinion = f"AI nedostupná: {e}"
+
+        if verdict == 'resolved':
+            reason = 'recheck_forced' if body.get('force') else 'recheck_confirmed'
+            state.mark_resolved(key, reason=reason, resolved_by=g.username)
+            service.log_event("issue_recheck", f"Recheck resolved: {key}", user=g.username)
+
+        return jsonify({"verdict": verdict, "detail": detail,
+                        "age_minutes": int(age_min), "ai_opinion": ai_opinion})
+
     @bp.route('/api/issues/<key_b64>/delete', methods=['DELETE'])
     @requires_auth
     def api_issue_delete(key_b64):
@@ -603,7 +724,7 @@ def create_blueprint(service):
             k = base64.b64decode(key_b64).decode()
         except Exception:
             return jsonify({"error": "Bad key"}), 400
-        state.delete_problem(k)
+        state.delete_problem(k, resolved_by=g.username)
         service.log_event("issue_delete", f"Deleted issue: {k}", user=g.username)
         return jsonify({"status": "ok"})
 
@@ -670,16 +791,16 @@ def create_blueprint(service):
                 p_params.append(channel)
 
             sql = (
-                f"SELECT key, channel_type, host, plugin_name, last_line, last_seen, resolved_at, 'resolved' AS issue_status "
+                f"SELECT key, channel_type, host, plugin_name, last_line, last_seen, resolved_at, 'resolved' AS issue_status, resolve_reason "
                 f"FROM issue_history WHERE {' AND '.join(h_where)} "
                 f"UNION ALL "
-                f"SELECT key, channel_type, host, plugin_name, last_line, last_seen, NULL, 'active' "
+                f"SELECT key, channel_type, host, plugin_name, last_line, last_seen, NULL, 'active', NULL "
                 f"FROM problems WHERE {' AND '.join(p_where)} "
                 f"ORDER BY last_seen DESC LIMIT ?"
             )
             rows = conn.execute(sql, h_params + p_params + [limit]).fetchall()
             conn.close()
-            cols = ['key', 'channel_type', 'host', 'plugin_name', 'last_line', 'last_seen', 'resolved_at', 'issue_status']
+            cols = ['key', 'channel_type', 'host', 'plugin_name', 'last_line', 'last_seen', 'resolved_at', 'issue_status', 'resolve_reason']
             return jsonify({"items": [dict(zip(cols, r)) for r in rows], "count": len(rows)})
         except Exception as e:
             return jsonify({"error": str(e), "items": []}), 500
@@ -1409,137 +1530,39 @@ def create_blueprint(service):
     @requires_auth
     def api_infra_joke():
         """Sarkastický vtip o aktuálním stavu infrastruktury ze šablon."""
-        import random as _r
         lang = (request.get_json(silent=True) or {}).get('lang', 'cs')
-
-        TEMPLATES_ISSUE_EN = [
-            # knock-knock
-            "Knock knock.\n— Who's there?\n— {host}.\n— {host} who?\n— {host}, the one with {plugin} broken for {age} now.",
-            "Knock knock.\n— Who's there?\n— {plugin}.\n— {plugin} who?\n— {plugin} on {host}. Still. Always. Forever.",
-            "Knock knock.\n— Who's there?\n— Monitoring.\n— Monitoring who?\n— Monitoring, telling you {host} has a problem with {plugin}. Surprise.",
-            "Knock knock.\n— Who's there?\n— Alert.\n— Alert who?\n— Alert #{count} today. {host}. {plugin}. Get used to it.",
-            "Knock knock.\n— Who's there?\n— On-call.\n— On-call who?\n— On-call, who can't sleep tonight because of {host} and {plugin}.",
-            "Knock knock.\n— Who's there?\n— {host}.\n— {host} who?\n— {host}, your favorite server. The one with {plugin}. Again.",
-            # one-liners
-            "Today's weather forecast: {host} — overcast, {plugin} offline, 20% chance of fix.",
-            "Motivational quote of the day: Never give up. {host} didn't either, and look where that got it.",
-            "{host} has had {plugin} broken for {age}. Grafana knows. You know. Everyone knows. Nobody does anything.",
-            "Is it working? No. Will it be fixed? Maybe. When? {host} will reply when it feels like it.",
-            "Infrastructure status: {count} alerts. Team morale: no comment.",
-            "Good news: monitoring works. Bad news: {host} with {plugin} definitely doesn't.",
-            "{host} celebrates {age} without {plugin}. Should we send a cake?",
-            # horoscope
-            "Horoscope for {host}: Today is not a good day for {plugin}. Actually, no day is.",
-            "Horoscope for the sysadmin: The stars say {host} disappointed you today. The stars are right.",
-            # ticket style
-            "TICKET #∞ — {host}: {plugin} down for {age}. Priority: critical. Status: unresolved.",
-            "Dear customer, your server {host} has been experiencing issues with {plugin} for {age}. We apologize for the inconvenience. Your ops team.",
-            # philosophical
-            "If {host} crashes in the forest and no one sees it, the crash still gets logged. And {plugin} reports it for {age}.",
-            "Which came first: {host} or {plugin}? Neither works today, so it doesn't matter.",
-        ]
-
-        TEMPLATES_OK_EN = [
-            "Knock knock.\n— Who's there?\n— Infrastructure.\n— Infrastructure who?\n— Infrastructure that has nothing to report today. Probably broken monitoring.",
-            "Knock knock.\n— Who's there?\n— Silence.\n— Silence who?\n— Silence in the alerts. Either everything works, or monitoring is offline too.",
-            "Knock knock.\n— Who's there?\n— Calm.\n— Calm who?\n— The calm before the storm. All servers green. Backing up now.",
-            "All servers are green. This message will self-destruct once that changes.",
-            "Zero active alerts. Either everything is fine, or monitoring finally broke too.",
-            "Infrastructure is working. Write down the date — this doesn't happen often.",
-            "No issues today. Tomorrow will be worse, but we'll deal with that tomorrow.",
-            "Zero alerts. Ops team is having coffee. Enjoy this rare moment.",
-        ]
-
-        TEMPLATES_ISSUE = [
-            # klep-klep
-            "Klep klep.\n— Kdo je?\n— {host}.\n— {host} kdo?\n— {host}, ten co má {plugin} v prdeli už {age}.",
-            "Klep klep.\n— Kdo je?\n— {plugin}.\n— {plugin} kdo?\n— {plugin} na {host}. Pořád. Furt. Dokola.",
-            "Klep klep.\n— Kdo je?\n— Monitoring.\n— Monitoring kdo?\n— Monitoring, co ti hlásí že {host} má problém s {plugin}. Překvapení.",
-            "Klep klep.\n— Kdo je?\n— Alert.\n— Alert kdo?\n— Alert číslo {count} dnes. {host}. {plugin}. Zvykej si.",
-            "Klep klep.\n— Kdo je?\n— On-call.\n— On-call kdo?\n— On-call, co kvůli {host} a {plugin} dnes zas nespí.",
-            "Klep klep.\n— Kdo je?\n— {host}.\n— {host} kdo?\n— {host}, tvůj oblíbený server. Ten s {plugin}. Zase.",
-            # jednořádkový sarkazmus
-            "Dnešní předpověď počasí: {host} — zataženo, {plugin} mimo provoz, šance na opravu 20 %.",
-            "Motivační citát dne: Nevzdávej se. {host} to taky neudělal, a podívej kde je teď.",
-            "{host} má {plugin} rozbité už {age}. Grafana to ví. Ty to víš. Všichni to ví. Nikdo nic nedělá.",
-            "Funguje to? Ne. Opraví se to? Možná. Kdy? {host} odpoví jakmile bude mít chuť.",
-            "Stav infrastruktury: {count} alertů. Nálada týmu: nekomentujeme.",
-            "Dobrá zpráva: monitoring funguje. Špatná zpráva: {host} s {plugin} rozhodně ne.",
-            "{host} slaví {age} bez {plugin}. Pošleme dort?",
-            # horoskop styl
-            "Horoskop pro {host}: Dnes není vhodný den pro {plugin}. Vlastně žádný den není.",
-            "Horoskop pro správce: Hvězdy říkají, že {host} tě dnes zklamal. Hvězdy mají pravdu.",
-            # podpora / ticket styl
-            "TICKET #∞ — {host}: {plugin} nefunguje {age}. Priorita: kritická. Status: neřeší se.",
-            "Vážený zákazníku, váš server {host} eviduje problém s {plugin} od {age}. Omlováme se za komplikace. Váš tým ops.",
-            # filozofický
-            "Pokud {host} spadne do lesa a nikdo ho nevidí, pád stejně zaloguje. A {plugin} to hlásí {age}.",
-            "Co dřív? {host} nebo {plugin}? Dnes ani jedno nefunguje, takže to je jedno.",
-        ]
-
-        TEMPLATES_OK = [
-            # klep-klep ok
-            "Klep klep.\n— Kdo je?\n— Infrastruktura.\n— Infrastruktura kdo?\n— Infrastruktura, co dnes nic nehlásí. Pravděpodobně rozbitý monitoring.",
-            "Klep klep.\n— Kdo je?\n— Silence.\n— Silence kdo?\n— Silence v alertech. Buď vše funguje, nebo je monitoring taky offline.",
-            "Klep klep.\n— Kdo je?\n— Klid.\n— Klid kdo?\n— Klid před bouří. Všechny servery zelené. Zálohuji teď.",
-            # jednořádkový ok
-            "Všechny servery jsou zelené. Tato zpráva se automaticky smaže, až to přestane platit.",
-            "Žádné aktivní alerty. Buď je vše v pořádku, nebo je monitoring konečně taky rozbité.",
-            "Infrastruktura funguje. Zapište si datum — tohle se nestává často.",
-            "Dnes žádné problémy. Zítra bude hůř, ale to řešíme zítra.",
-            "Nula alertů. Tým ops si dává kafe. Vychutnávejte tento vzácný okamžik.",
-        ]
-
-        tpl_issue = TEMPLATES_ISSUE_EN if lang == 'en' else TEMPLATES_ISSUE
-        tpl_ok = TEMPLATES_OK_EN if lang == 'en' else TEMPLATES_OK
-
-        _SKIP_PLUGINS = {'detector_who', 'detector_icinga', 'agent_security_vulnerability_scan', 'agent_security_root_monitor'}
-
-        active = state.get_active_issues()
-        if active:
-            from datetime import datetime, timezone
-            candidates = [i for i in active if i.get('plugin_name') not in _SKIP_PLUGINS]
-            if not candidates:
-                candidates = active
-            # vynechej hosty co byli v posledních 5 vtipcích (in-memory)
-            fresh = [i for i in candidates if i.get('host') not in _joke_recent_hosts]
-            pool = (fresh if fresh else candidates)[:50]
-            _r.shuffle(pool)
-            issue = pool[0]
-            _joke_recent_hosts.append(issue.get('host', ''))
-            host = issue.get('host') or 'server'
-            plugin = issue.get('plugin_name') or 'monitoring'
-            try:
-                fs = issue.get('first_seen') or ''
-                if fs:
-                    dt = datetime.fromisoformat(fs.replace('Z', '+00:00'))
-                    age_sec = int((datetime.now(timezone.utc) - dt).total_seconds())
-                else:
-                    age_sec = 0
-            except Exception:
-                age_sec = 0
-            age = f"{age_sec // 3600}h" if age_sec >= 3600 else f"{max(1, age_sec // 60)}min"
-            count = len(active)
-            joke = _r.choice(tpl_issue).format(host=host, plugin=plugin, age=age, count=count)
-        else:
-            joke = _r.choice(tpl_ok)
-
-        joke = html.escape(joke)
-        if joke:
-            with state.db_lock:
-                conn = state._get_conn()
-                try:
-                    conn.execute(
-                        "INSERT INTO infra_jokes (joke, source) VALUES (?, 'manual')",
-                        (joke,)
-                    )
-                    conn.execute(
-                        "DELETE FROM infra_jokes WHERE id NOT IN (SELECT id FROM infra_jokes ORDER BY id DESC LIMIT 50)"
-                    )
-                    conn.commit()
-                finally:
-                    conn.close()
+        joke = service.pick_infra_joke(lang=lang, source='manual')
         return jsonify({"joke": joke})
+
+    @bp.route('/api/analyze/daily_digest', methods=['GET'])
+    @requires_auth
+    def api_daily_digest_get():
+        """431: Vrátí poslední AI denní digest."""
+        raw = state.get_setting('ai_daily_digest')
+        if not raw:
+            return jsonify({"digest": None})
+        try:
+            d = json.loads(raw)
+        except Exception:
+            d = {"date": "", "text": raw}
+        d["text"] = html.escape(d.get("text", ""))
+        return jsonify({"digest": d})
+
+    @bp.route('/api/analyze/daily_digest', methods=['POST'])
+    @requires_auth
+    def api_daily_digest_generate():
+        """431: Vygeneruje AI digest hned (admin)."""
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        service._generate_ai_daily_digest()
+        raw = state.get_setting('ai_daily_digest')
+        try:
+            d = json.loads(raw) if raw else None
+        except Exception:
+            d = None
+        if d:
+            d["text"] = html.escape(d.get("text", ""))
+        return jsonify({"digest": d})
 
     @bp.route('/api/analyze/infra_joke_log', methods=['GET'])
     @requires_auth

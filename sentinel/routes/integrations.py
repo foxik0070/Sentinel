@@ -499,7 +499,7 @@ def create_blueprint(service):
                 key = f"GRAFANA|{instance}|{alertname}|{fingerprint[:8] or 'x'}"
                 channel = 'security' if severity in ('critical', 'error') else 'agent'
                 if status == 'resolved':
-                    state.mark_resolved(key)
+                    state.mark_resolved(key, reason='source_recovered')
                 else:
                     state.save_problem(key, {
                         "status": "active", "channel_type": channel,
@@ -518,7 +518,7 @@ def create_blueprint(service):
             ) or rule
             key = f"GRAFANA|grafana|{rule}"
             if state_str == 'ok':
-                state.mark_resolved(key)
+                state.mark_resolved(key, reason='source_recovered')
             else:
                 state.save_problem(key, {
                     "status": "active", "channel_type": "agent",
@@ -551,7 +551,7 @@ def create_blueprint(service):
             key = f"AM|{instance}|{alertname}|{fingerprint[:8] or 'x'}"
             channel = 'security' if severity in ('critical', 'error') else 'agent'
             if status == 'resolved':
-                state.mark_resolved(key)
+                state.mark_resolved(key, reason='source_recovered')
             else:
                 state.save_problem(key, {
                     "status": "active", "channel_type": channel,
@@ -578,7 +578,7 @@ def create_blueprint(service):
         key = f"INBOUND|{host}|{plugin}"
         status = str(data.get('status', 'active')).lower()
         if status in ('resolved', 'ok', 'firing') and status == 'resolved':
-            state.mark_resolved(key)
+            state.mark_resolved(key, reason='source_recovered')
             return jsonify({"status": "ok", "action": "resolved"})
         state.save_problem(key, {
             "status": "active",
@@ -617,7 +617,7 @@ def create_blueprint(service):
         channel = 'security' if norm_sev == 'critical' else 'agent'
 
         if status in ('OK', '0', 'RESOLVED'):
-            state.mark_resolved(key)
+            state.mark_resolved(key, reason='source_recovered')
             return jsonify({"status": "ok", "action": "resolved"})
 
         state.save_problem(key, {
