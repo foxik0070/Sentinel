@@ -14,7 +14,7 @@
     <link rel="preload" as="style" href="{{ url_for('static', filename='fa.min.css') }}?v={{ subversion }}">
     <link rel="preload" as="style" href="{{ url_for('static', filename='style.css') }}?v={{ subversion }}">
     <link rel="preload" as="script" href="{{ url_for('static', filename='socket.io.js') }}?v={{ subversion }}">
-    <link rel="preload" as="script" href="{{ url_for('static', filename='script-core.js') }}?v={{ subversion }}">
+    <link rel="preload" as="script" href="{{ url_for('static', filename='script-core.min.js') }}?v={{ subversion }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='fa.min.css') }}?v={{ subversion }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ subversion }}">
 </head>
@@ -2245,11 +2245,11 @@
     <script defer src="{{ url_for('static', filename='sortable.min.js') }}?v={{ subversion }}"></script>
     <script defer src="{{ url_for('static', filename='chart.min.js') }}?v={{ subversion }}"></script>
     <script defer src="{{ url_for('static', filename='qrcode.min.js') }}?v={{ subversion }}"></script>
-    <script defer src="{{ url_for('static', filename='i18n.js') }}?v={{ subversion }}"></script>
-    <script defer src="{{ url_for('static', filename='script-core.js') }}?v={{ subversion }}"></script>
-    <script defer src="{{ url_for('static', filename='script-modals.js') }}?v={{ subversion }}"></script>
-    <script defer src="{{ url_for('static', filename='script-agents.js') }}?v={{ subversion }}"></script>
-    <script defer src="{{ url_for('static', filename='script-ui.js') }}?v={{ subversion }}"></script>
+    <script defer src="{{ url_for('static', filename='i18n.min.js') }}?v={{ subversion }}"></script>
+    <script defer src="{{ url_for('static', filename='script-core.min.js') }}?v={{ subversion }}"></script>
+    <script defer src="{{ url_for('static', filename='script-modals.min.js') }}?v={{ subversion }}"></script>
+    <script defer src="{{ url_for('static', filename='script-agents.min.js') }}?v={{ subversion }}"></script>
+    <script defer src="{{ url_for('static', filename='script-ui.min.js') }}?v={{ subversion }}"></script>
 
     <!-- Similar Incidents Modal -->
     <div id="similar-modal" class="modal-overlay" style="display:none; align-items:center; justify-content:center;" onclick="if(event.target===this)_closeSimilarModal()">
