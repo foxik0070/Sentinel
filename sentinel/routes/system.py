@@ -137,6 +137,29 @@ def create_blueprint(service):
         except Exception:
             return {}
 
+    @bp.route('/api/ai/eval/run', methods=['POST'])
+    @requires_auth
+    def api_ai_eval_run():
+        """434: Spustí AI eval suite na pozadí (admin). Výsledek v /api/ai/eval/results."""
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        from .. import ai_evals
+        if not ai_evals.start_background_run(service):
+            return jsonify({"status": "already_running", **ai_evals.status()}), 409
+        return jsonify({"status": "started", "tests": len(ai_evals.load_evals())})
+
+    @bp.route('/api/ai/eval/results', methods=['GET'])
+    @requires_auth
+    def api_ai_eval_results():
+        """434: Historie eval běhů (posledních 10) + stav běžícího."""
+        from .. import ai_evals
+        try:
+            raw = state.get_setting('ai_eval_results')
+            history = json.loads(raw) if raw else []
+        except Exception:
+            history = []
+        return jsonify({"runs": history, "running": ai_evals.status()})
+
     @bp.route('/api/ai/token_stats', methods=['GET'])
     @requires_auth
     def api_ai_token_stats():

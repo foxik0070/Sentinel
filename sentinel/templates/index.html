@@ -527,6 +527,12 @@
             <div style="padding:8px 15px; background:var(--panel); border-bottom:1px solid var(--border); display:flex; gap:8px; align-items:center; flex-wrap:wrap; position:sticky; top:0; z-index:10;">
                 <input type="text" id="issues-filter-input" placeholder="Filter by host, plugin, message, #tag…" oninput="filterIssueCards(this.value)"
                     style="flex:1; min-width:180px; padding:5px 10px; background:var(--input-bg); color:var(--text-main); border:1px solid var(--border); border-radius:4px; font-size:0.85em;">
+                <span style="position:relative; display:inline-block;">
+                    <button onclick="_savedFiltersToggle()" id="saved-filters-btn" title="Uložené filtry (380)"
+                        style="padding:4px 10px; background:transparent; border:1px solid var(--border); color:var(--text-muted); border-radius:4px; cursor:pointer; font-size:0.82em; white-space:nowrap;">
+                        <i class="fa-solid fa-bookmark"></i></button>
+                    <div id="saved-filters-menu" style="display:none; position:absolute; right:0; top:110%; z-index:60; background:var(--panel); border:1px solid var(--border); border-radius:6px; box-shadow:0 4px 16px rgba(0,0,0,.4); padding:6px; min-width:220px;"></div>
+                </span>
                 <button onclick="_batchAiAnalyze()" title="AI souhrn všech aktivních issues" id="batch-ai-btn"
                     style="padding:4px 10px; background:transparent; border:1px solid var(--border); color:#a855f7; border-radius:4px; cursor:pointer; font-size:0.82em; white-space:nowrap;">
                     <i class="fa-solid fa-robot"></i> AI Souhrn</button>

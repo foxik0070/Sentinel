@@ -1367,6 +1367,74 @@ function filterIssueCards(query) {
     });
 }
 
+// ─── 380: Uložené filtry (localStorage) ──────────────────────────────────────
+
+function _savedFiltersLoad() {
+    try { return JSON.parse(localStorage.getItem('sentinel_saved_filters') || '[]'); }
+    catch { return []; }
+}
+
+function _savedFiltersStore(list) {
+    localStorage.setItem('sentinel_saved_filters', JSON.stringify(list.slice(0, 20)));
+}
+
+function _savedFiltersToggle() {
+    const menu = document.getElementById('saved-filters-menu');
+    if (!menu) return;
+    if (menu.style.display === 'block') { menu.style.display = 'none'; return; }
+    _savedFiltersRender();
+    menu.style.display = 'block';
+}
+
+function _savedFiltersRender() {
+    const menu = document.getElementById('saved-filters-menu');
+    if (!menu) return;
+    const filters = _savedFiltersLoad();
+    const cur = document.getElementById('issues-filter-input')?.value.trim() || '';
+    const rows = filters.map((f, i) => `
+        <div style="display:flex; align-items:center; gap:6px; padding:4px 6px; border-radius:4px; cursor:pointer;"
+             onmouseover="this.style.background='rgba(255,255,255,.05)'" onmouseout="this.style.background=''">
+            <span onclick="_savedFilterApply(${i})" style="flex:1; font-size:.84em; color:var(--text-main); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${_escape(f.query)}">
+                <i class="fa-solid fa-filter" style="color:var(--accent); font-size:.8em; margin-right:5px;"></i>${_escape(f.name)}</span>
+            <i class="fa-solid fa-times" onclick="_savedFilterDelete(${i}); event.stopPropagation();" title="Smazat"
+               style="color:var(--text-muted); cursor:pointer; font-size:.78em;"></i>
+        </div>`).join('');
+    menu.innerHTML = `
+        ${rows || '<div style="color:var(--text-muted); font-size:.8em; padding:6px; font-style:italic;">Žádné uložené filtry.</div>'}
+        <div style="border-top:1px solid var(--border); margin-top:4px; padding-top:5px;">
+            <button onclick="_savedFilterAdd()" ${cur ? '' : 'disabled'}
+                style="width:100%; padding:4px; background:transparent; border:1px dashed var(--border); color:${cur ? 'var(--accent)' : 'var(--text-muted)'}; border-radius:4px; cursor:${cur ? 'pointer' : 'default'}; font-size:.8em;">
+                <i class="fa-solid fa-plus"></i> Uložit aktuální filtr${cur ? ` („${_escape(cur.slice(0, 24))}")` : ''}</button>
+        </div>`;
+}
+
+function _savedFilterAdd() {
+    const cur = document.getElementById('issues-filter-input')?.value.trim();
+    if (!cur) return;
+    const name = prompt('Název filtru:', cur.slice(0, 30));
+    if (!name) return;
+    const filters = _savedFiltersLoad().filter(f => f.name !== name);
+    filters.unshift({name, query: cur});
+    _savedFiltersStore(filters);
+    _savedFiltersRender();
+}
+
+function _savedFilterApply(idx) {
+    const f = _savedFiltersLoad()[idx];
+    if (!f) return;
+    const inp = document.getElementById('issues-filter-input');
+    if (inp) { inp.value = f.query; filterIssueCards(f.query); }
+    const menu = document.getElementById('saved-filters-menu');
+    if (menu) menu.style.display = 'none';
+}
+
+function _savedFilterDelete(idx) {
+    const filters = _savedFiltersLoad();
+    filters.splice(idx, 1);
+    _savedFiltersStore(filters);
+    _savedFiltersRender();
+}
+
 // ─── Snooze ───────────────────────────────────────────────────────────────────
 
 function toggleShowSnoozed() {
