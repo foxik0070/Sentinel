@@ -74,18 +74,32 @@ def save_telemetry_snapshot(category, data_dict):
                 )
                 conn.commit()
 
-                # Anomaly detection — check each new value against last 24h history
+                # Anomaly detection — baseline z historie stejné třídy dne
+                # (397: po-pá vs víkend zvlášť — víkendový provoz má jiný profil,
+                # jinak sobotní ráno srovnává proti pátečním hodnotám)
                 import time as _time
                 now_ts = _time.time()
+                _is_weekend = datetime.now().weekday() >= 5
+                _dow_filter = ("AND strftime('%w', timestamp) IN ('0','6')" if _is_weekend
+                               else "AND strftime('%w', timestamp) NOT IN ('0','6')")
                 for (_, cat, metric, val) in data_to_insert:
                     cooldown_key = f"{cat}|{metric}"
                     if now_ts - _anomaly_cooldown.get(cooldown_key, 0) < 3600:
                         continue
                     rows = conn.execute(
-                        "SELECT value FROM telemetry WHERE category=? AND metric=? "
-                        "AND timestamp > datetime('now','-24 hours') ORDER BY timestamp DESC LIMIT 288",
+                        f"SELECT value FROM telemetry WHERE category=? AND metric=? "
+                        f"AND timestamp > datetime('now','-7 days') {_dow_filter} "
+                        f"ORDER BY timestamp DESC LIMIT 288",
                         (cat, metric)
                     ).fetchall()
+                    if len(rows) < _ANOMALY_MIN_SAMPLES:
+                        # Fallback: málo vzorků stejné třídy dne (např. první víkend
+                        # po nasazení) → klasické 24h okno bez filtru
+                        rows = conn.execute(
+                            "SELECT value FROM telemetry WHERE category=? AND metric=? "
+                            "AND timestamp > datetime('now','-24 hours') ORDER BY timestamp DESC LIMIT 288",
+                            (cat, metric)
+                        ).fetchall()
                     if len(rows) < _ANOMALY_MIN_SAMPLES:
                         continue
                     vals = [r[0] for r in rows]

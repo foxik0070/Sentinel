@@ -4,6 +4,8 @@ let currentOpenChannel = null;
 
 async function openIssuesModal(channel) {
     currentOpenChannel = channel;
+    // 390: návrat do issues = konec breadcrumb stopy
+    if (typeof _navClear === 'function') _navClear();
     const modal = document.getElementById('dedicated-issues-modal');
     const titleEl = document.getElementById('dedicated-modal-title');
     
@@ -501,6 +503,45 @@ async function bulkExportCsv() {
         a.href = url; a.download = `sentinel_issues_${new Date().toISOString().slice(0,10)}.csv`;
         a.click(); URL.revokeObjectURL(url);
     } catch(e) { alert('Export selhal: ' + e); }
+}
+
+// ── 390: Breadcrumb — cesta zpět u vnořených modalů ──────────────────────────
+const _navStack = [];
+
+function _navPushIssues() {
+    if (!currentOpenChannel) return;
+    const ch = currentOpenChannel;
+    _navStack.push({label: `Issues (${ch.toUpperCase()})`, reopen: () => openIssuesModal(ch)});
+    _navRender();
+}
+
+function _navBack() {
+    const top = _navStack.pop();
+    _navRender();
+    if (top) top.reopen();
+}
+
+function _navClear() {
+    _navStack.length = 0;
+    _navRender();
+}
+
+function _navRender() {
+    let chip = document.getElementById('modal-nav-chip');
+    if (!_navStack.length) { if (chip) chip.remove(); return; }
+    const top = _navStack[_navStack.length - 1];
+    if (!chip) {
+        chip = document.createElement('div');
+        chip.id = 'modal-nav-chip';
+        chip.style.cssText = 'position:fixed;bottom:14px;left:14px;z-index:10050;background:var(--panel);' +
+            'border:1px solid var(--accent);border-radius:20px;padding:6px 14px;font-size:.82em;' +
+            'box-shadow:0 4px 14px rgba(0,0,0,.4);display:flex;align-items:center;gap:8px;cursor:pointer;';
+        document.body.appendChild(chip);
+    }
+    chip.innerHTML = `<span onclick="_navBack()" style="color:var(--accent);font-weight:600;">` +
+        `<i class="fa-solid fa-arrow-left" style="margin-right:5px;"></i>Zpět na ${_escape(top.label)}</span>` +
+        `<i class="fa-solid fa-times" onclick="event.stopPropagation();_navClear()" ` +
+        `style="color:var(--text-muted);font-size:.85em;" title="Zavřít"></i>`;
 }
 
 // 268: Alt+A → bulk acknowledge, Alt+E → CSV export

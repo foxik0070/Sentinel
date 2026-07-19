@@ -91,11 +91,11 @@ def create_blueprint(service):
             ssh_btn_modal = ""
             if g.user_role in ['admin', 'superadmin', 'viewer']:
                 b64_payload2 = base64.b64encode(f"{i.get('host','?')}: {i.get('last_line','')}".encode()).decode()
-                fix_btn = f"<i class='fa-solid fa-wand-magic-sparkles' title='Autofix' style='cursor:pointer; color:#a855f7; font-size:1.1em; margin-right:12px;' onclick=\"openAutofixModal('{b64_payload2}'); closeIssuesModal();\"></i>"
+                fix_btn = f"<i class='fa-solid fa-wand-magic-sparkles' title='Autofix' style='cursor:pointer; color:#a855f7; font-size:1.1em; margin-right:12px;' onclick=\"_navPushIssues(); openAutofixModal('{b64_payload2}'); closeIssuesModal();\"></i>"
             if g.user_role in ['admin', 'superadmin']:
                 _host = html.escape(i.get('host', ''))
                 if _host:
-                    ssh_btn_modal = f"<i class='fa-solid fa-terminal' title='SSH na {_host}' style='cursor:pointer; color:var(--text-muted); font-size:1.05em; margin-right:12px; transition:color 0.2s;' onmouseover=\"this.style.color='var(--accent)'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"closeIssuesModal(); openSshModal('{_host}')\"></i>"
+                    ssh_btn_modal = f"<i class='fa-solid fa-terminal' title='SSH na {_host}' style='cursor:pointer; color:var(--text-muted); font-size:1.05em; margin-right:12px; transition:color 0.2s;' onmouseover=\"this.style.color='var(--accent)'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"_navPushIssues(); closeIssuesModal(); openSshModal('{_host}')\"></i>"
             tag_btn = (
                 f"<i class='fa-solid fa-tag' title='Přidat tag' style='cursor:pointer; color:var(--text-muted); font-size:1.05em; margin-right:12px; transition:color 0.2s;' "
                 f"onmouseover=\"this.style.color='var(--accent)'\" onmouseout=\"this.style.color='var(--text-muted)'\" "
