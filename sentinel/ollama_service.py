@@ -64,9 +64,18 @@ def ollama_monitor(interval: int = 300):
 
 # --- WORKER LOGIC ---
 
+def _record_tokens(data: dict):
+    """435: Zaznamenej token usage z Ollama/OpenAI odpovědi (sdílená statistika)."""
+    try:
+        tin = data.get('prompt_eval_count') or (data.get('usage') or {}).get('prompt_tokens') or 0
+        tout = data.get('eval_count') or (data.get('usage') or {}).get('completion_tokens') or 0
+        state.record_token_usage(int(tin), int(tout))
+    except Exception:
+        pass
+
 def process_single_task(item):
-    _ai_timeout = int(getattr(config, "AI_TIMEOUT_SECONDS", 180))
     """Agnostic Task Processor. Does not care what it processes, only relies on channel config."""
+    _ai_timeout = int(getattr(config, "AI_TIMEOUT_SECONDS", 180))
     if isinstance(item, dict):
         line = item.get("text", "")
         target_channel = item.get("channel", "general")
@@ -107,6 +116,7 @@ def process_single_task(item):
                 resp.raise_for_status()
                 data = resp.json()
                 text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                _record_tokens(data)
             elif config.ARGS.get("EXTERNAL_OLLAMA"):
                 payload = {
                     "model": config.OLLAMA_MODEL,
@@ -129,6 +139,7 @@ def process_single_task(item):
                     text = data["choices"][0].get("message", {}).get("content", "")
                 else:
                     text = data.get("message", {}).get("content", "")
+                _record_tokens(data)
             else:
                 # Fallback to local subprocess
                 res = subprocess.run(["ollama", "run", config.OLLAMA_MODEL], input=prompt_text, capture_output=True, text=True, timeout=_ai_timeout)

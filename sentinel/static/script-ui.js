@@ -3893,6 +3893,7 @@ async function loadConnectionStatus() {
             ${row('cube', t('conn_ai_model'), (ai.model || '?') + (ai.hailo_enabled ? ' <span style="color:#f59e0b;font-size:.78em;font-weight:700;">NPU</span>' : ''), 'var(--accent)')}
             ${row('circle-nodes', 'AI backend', ai.backend || '?')}
             ${row('robot', 'AI requests', `${st.ai_requests ?? 0} <span style="color:var(--text-muted);font-size:.8em;font-weight:400;">chyby: ${st.ai_errors ?? 0}</span>`)}
+            ${(ai.tokens && (ai.tokens.today_in || ai.tokens.total_in_30d)) ? row('coins', 'AI tokeny dnes', `${(ai.tokens.today_in||0).toLocaleString()} in / ${(ai.tokens.today_out||0).toLocaleString()} out <span style="color:var(--text-muted);font-size:.8em;font-weight:400;" title="Součet za 30 dní">30d: ${((ai.tokens.total_in_30d||0)+(ai.tokens.total_out_30d||0)).toLocaleString()}</span>`) : ''}
             ${row('stopwatch', 'Avg latence', st.avg_latency_s ? `${st.avg_latency_s}s` : '—')}
 
             ${section(t('conn_section_integrations'))}

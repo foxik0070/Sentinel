@@ -961,3 +961,25 @@ def set_setting(key: str, value: str):
             conn.close()
         except Exception as e:
             logger.error(f"set_setting: {e}")
+
+_token_stats_lock = threading.Lock()
+
+def record_token_usage(tokens_in: int, tokens_out: int):
+    """435: Přičte AI tokeny do denní statistiky (kv_settings 'ai_token_stats', 30 dní).
+    Sdíleno mezi chat_service.execute_ollama a ollama_service queue workerem."""
+    if not (tokens_in or tokens_out):
+        return
+    with _token_stats_lock:
+        try:
+            raw = get_setting('ai_token_stats')
+            stats = json.loads(raw) if raw else {}
+            today = datetime.now().strftime('%Y-%m-%d')
+            day = stats.setdefault(today, {"in": 0, "out": 0, "requests": 0})
+            day["in"] += int(tokens_in)
+            day["out"] += int(tokens_out)
+            day["requests"] += 1
+            for k in sorted(stats)[:-30]:
+                del stats[k]
+            set_setting('ai_token_stats', json.dumps(stats))
+        except Exception as e:
+            logger.debug(f"record_token_usage: {e}")

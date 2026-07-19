@@ -196,9 +196,7 @@ def create_blueprint(service):
 
         role = getattr(g, 'user_role', 'user')
         service.log_event("chat_stream", f"[{g.username}] {msg}", user=g.username)
-        service.conversation_history.append(f"{g.username}: {msg}")
-        if len(service.conversation_history) > getattr(service, "_conv_history_limit", 100):
-            service.conversation_history.pop(0)
+        service.conv_append(g.username, f"{g.username}: {msg}")
 
         start_ts = time.time()
 
@@ -211,7 +209,7 @@ def create_blueprint(service):
             content = af['content'][:_MAX_FILE_CHARS]
             if len(af['content']) > _MAX_FILE_CHARS:
                 content += "\n\n[...zkráceno na 2048 tokenů...]"
-            history_str = "\n".join(service.conversation_history[-4:])
+            history_str = service.conv_history(g.username, -4, 0)
             system_msg = (f"You are Sentinel, a Linux infrastructure support assistant. "
                           f"The user is examining file '{fname}'. Answer concisely in ENGLISH.")
             user_msg = (f"{f'Conversation history:{chr(10)}{history_str}{chr(10)}{chr(10)}' if history_str else ''}"
@@ -228,7 +226,7 @@ def create_blueprint(service):
             context = rag.rag_system.search(msg)
             status_note = "(KB indexing) " if not rag.rag_system.is_ready else ""
             has_ctx = bool(context and context.strip() not in ("", "KB Empty.", "No text match found."))
-            history_str = "\n".join(service.conversation_history[-5:-1])
+            history_str = service.conv_history(g.username, -5, -1)
             system_msg = (f"You are Sentinel, an AI assistant for Linux infrastructure administration. "
                           f"{status_note}Answer in ENGLISH. Be concise. "
                           "If the context is irrelevant, answer from general expertise.")
@@ -391,7 +389,24 @@ def create_blueprint(service):
             finally:
                 service.llm_semaphore.release()
 
-        return Response(_stream_generator(), mimetype='text/event-stream',
+        # 430: nasbírat streamované tokeny a uložit odpověď do per-user historie
+        _username = g.username
+
+        def _capture_and_stream():
+            acc = []
+            for sse in _stream_generator():
+                try:
+                    payload = json.loads(sse[5:].strip())
+                    tok = payload.get('token')
+                    if tok:
+                        acc.append(tok)
+                except Exception:
+                    pass
+                yield sse
+            if acc:
+                service.conv_append(_username, "Sentinel: " + "".join(acc)[:300])
+
+        return Response(_capture_and_stream(), mimetype='text/event-stream',
                         headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
 
     @bp.route('/api/chat', methods=['POST'])
@@ -410,8 +425,7 @@ def create_blueprint(service):
         
         service.log_event("chat_message", f"[{g.username}] {msg}", user=g.username)
         
-        service.conversation_history.append(f"{g.username}: {msg}")
-        if len(service.conversation_history) > getattr(service, "_conv_history_limit", 100): service.conversation_history.pop(0)
+        service.conv_append(g.username, f"{g.username}: {msg}")
         
         if msg.lower() == 'clear file':
             service.get_session_data()['active_file'] = None
@@ -725,7 +739,7 @@ def create_blueprint(service):
             content = af['content'][:_MAX_FILE_CHARS]
             if len(af['content']) > _MAX_FILE_CHARS:
                 content += f"\n\n[... obsah zkrácen na 2048 tokenů z {len(af['content'])//4} tokenů celkem ...]"
-            history_str = "\n".join(service.conversation_history[-4:])
+            history_str = service.conv_history(g.username, -4, 0)
             system_content = (
                 f"You are Sentinel, a Linux infrastructure support assistant. The user is examining file '{fname}'. "
                 "Answer in ENGLISH. Be concise. Base your answer on the file content when relevant; "
@@ -746,13 +760,15 @@ def create_blueprint(service):
                 reply = service.execute_ollama(f"{system_content}\n\n{user_content}\n\nAnswer:")
             duration = time.time() - start_ts
             service.log_event("file_chat", "Answered from file context", user=g.username, duration_ms=duration*1000)
+            service.conv_append(g.username, f"Sentinel: {reply[:300]}")
             return jsonify({
                 "reply": f"<b>🤖 Sentinel ({duration:.2f}s) [File]:</b><br>{html.escape(reply).replace(chr(10), '<br>')}"
             })
 
-        reply = service.call_ai_knowledge_base(msg)
+        reply = service.call_ai_knowledge_base(msg, username=g.username)
         duration = time.time() - start_ts
         service.log_event("rag_chat", "Answered from RAG", user=g.username, duration_ms=duration*1000)
+        service.conv_append(g.username, f"Sentinel: {reply[:300]}")
         return jsonify({
             "reply": f"<b>🤖 Sentinel ({duration:.2f}s):</b><br>{html.escape(reply).replace(chr(10), '<br>')}"
         })

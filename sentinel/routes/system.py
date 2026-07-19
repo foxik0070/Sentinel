@@ -122,6 +122,33 @@ def create_blueprint(service):
             "ha_enabled": getattr(config, 'HA_ENABLED', False)
         })
 
+    def _token_stats_today() -> dict:
+        """435: Dnešní token statistika z kv_settings 'ai_token_stats'."""
+        try:
+            raw = state.get_setting('ai_token_stats')
+            stats = json.loads(raw) if raw else {}
+            today = datetime.now().strftime('%Y-%m-%d')
+            d = stats.get(today, {})
+            total_in = sum(v.get('in', 0) for v in stats.values())
+            total_out = sum(v.get('out', 0) for v in stats.values())
+            return {"today_in": d.get('in', 0), "today_out": d.get('out', 0),
+                    "today_requests": d.get('requests', 0),
+                    "total_in_30d": total_in, "total_out_30d": total_out}
+        except Exception:
+            return {}
+
+    @bp.route('/api/ai/token_stats', methods=['GET'])
+    @requires_auth
+    def api_ai_token_stats():
+        """435: Denní statistika AI tokenů (posledních 30 dní)."""
+        try:
+            raw = state.get_setting('ai_token_stats')
+            stats = json.loads(raw) if raw else {}
+        except Exception:
+            stats = {}
+        days = [{"date": k, **v} for k, v in sorted(stats.items())]
+        return jsonify({"days": days, "summary": _token_stats_today()})
+
     @bp.route('/api/connection/status', methods=['GET'])
     @requires_auth
     def api_connection_status():
@@ -206,6 +233,7 @@ def create_blueprint(service):
                 "url": ai_url,
                 "model": ai_model,
                 "hailo_enabled": hailo_enabled,
+                "tokens": _token_stats_today(),
             },
             "integrations": {
                 "mqtt": {"enabled": mqtt_enabled, "connected": mqtt_connected,

@@ -323,7 +323,10 @@ class ChatService(threading.Thread):
                 logger.warning("LDAP enabled in config but 'flask_ldap3_login' is NOT installed.")
 
         self.start_time = datetime.now()
+        # 430: per-user konverzační paměť — {username: [řádky]}; globální
+        # conversation_history zachována pro AI eventy bez uživatele
         self.conversation_history = []
+        self.user_conversations: dict = {}
         # 425: Register issue lifecycle callbacks
         from .state_base import _issue_lifecycle_callbacks
         _service_ref = self
@@ -1918,6 +1921,7 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
                     result = data.get("message", {}).get("content", "")
                     if not result:
                         result = "AI Error (No response field)"
+                    self._add_token_usage(*self._extract_token_usage(data))
                 except Exception as hailo_err:
                     utils.log_message(f"AI: hailo-ollama Error: {hailo_err}, falling back to CPU ollama")
                     # Fallback to CPU ollama — respektovat formát URL (OpenAI /v1/ vs. nativní)
@@ -1939,6 +1943,7 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
                             result = (cpu_data.get("message", {}).get("content")
                                       or _choices[0].get("message", {}).get("content")
                                       or cpu_data.get("response", "AI Error (CPU fallback no response)"))
+                            self._add_token_usage(*self._extract_token_usage(cpu_data))
                         else:
                             utils.log_message(f"AI: CPU fallback HTTP {cpu_resp.status_code}: {cpu_resp.text[:120]}")
                             result = f"Chyba spojení s AI: {hailo_err}"
@@ -1980,6 +1985,7 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
                     result = data.get("choices", [{}])[0].get("message", {}).get("content") # v1
                     if not result:
                         result = data.get("response", "AI Error (No response field)") # legacy
+                    self._add_token_usage(*self._extract_token_usage(data))
 
                 except Exception as e:
                     utils.log_message(f"AI: Critical Connection Error: {e}")
@@ -2009,13 +2015,56 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
         finally:
             self.llm_semaphore.release()
 
-    def call_ai_knowledge_base(self, query):
+    # ── 435: Token usage tracking ────────────────────────────────────────────
+
+    @staticmethod
+    def _extract_token_usage(data: dict) -> tuple:
+        """Vytáhne (input, output) tokeny z Ollama i OpenAI formátu odpovědi."""
+        if not isinstance(data, dict):
+            return 0, 0
+        # Ollama native: prompt_eval_count / eval_count
+        tin = data.get('prompt_eval_count') or 0
+        tout = data.get('eval_count') or 0
+        if not (tin or tout):
+            usage = data.get('usage') or {}
+            tin = usage.get('prompt_tokens') or 0
+            tout = usage.get('completion_tokens') or 0
+        return int(tin), int(tout)
+
+    def _add_token_usage(self, tokens_in: int, tokens_out: int):
+        """Přičte tokeny do metrik a sdílené denní statistiky (state.record_token_usage)."""
+        if not (tokens_in or tokens_out):
+            return
+        self.metrics['tokens_in'] = self.metrics.get('tokens_in', 0) + tokens_in
+        self.metrics['tokens_out'] = self.metrics.get('tokens_out', 0) + tokens_out
+        state.record_token_usage(tokens_in, tokens_out)
+
+    def conv_append(self, username: str, text: str):
+        """430: Přidá zprávu do per-user konverzační historie (+ globální pro kontext)."""
+        limit = getattr(self, "_conv_history_limit", 100)
+        hist = self.user_conversations.setdefault(username or '_anon', [])
+        hist.append(text)
+        if len(hist) > limit:
+            hist.pop(0)
+        self.conversation_history.append(text)
+        if len(self.conversation_history) > limit:
+            self.conversation_history.pop(0)
+
+    def conv_history(self, username: str, start: int = -5, end: int = -1) -> str:
+        """430: Vrátí slice per-user historie jako text; fallback na globální."""
+        hist = self.user_conversations.get(username or '_anon')
+        if hist is None:
+            hist = self.conversation_history
+        sliced = hist[start:end] if end != 0 else hist[start:]
+        return "\n".join(sliced)
+
+    def call_ai_knowledge_base(self, query, username: str = ''):
         context = rag.rag_system.search(query)
         status_note = "(KB indexing, text-search only) " if not rag.rag_system.is_ready else ""
         has_context = bool(context and context.strip() not in ("", "KB Empty.", "No text match found."))
 
         # [-5:-1] — last 4 exchanges, excluding the current message (just appended)
-        history_str = "\n".join(self.conversation_history[-5:-1])
+        history_str = self.conv_history(username, -5, -1)
 
         # Active alerts summary — top 5 by severity/recency
         alerts_note = ""
