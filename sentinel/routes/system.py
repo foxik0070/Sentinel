@@ -137,6 +137,29 @@ def create_blueprint(service):
         except Exception:
             return {}
 
+    @bp.route('/api/dns/check', methods=['POST'])
+    @requires_auth
+    def api_dns_check_now():
+        """408: Spustí DNS kontrolu hned (admin) a vrátí aktuální stav záznamů."""
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        service._check_dns_records()
+        try:
+            raw = state.get_setting('dns_records_state')
+            recs = json.loads(raw) if raw else {}
+        except Exception:
+            recs = {}
+        return jsonify({"records": recs, "checks": getattr(config, 'DNS_CHECKS', [])})
+
+    @bp.route('/api/webhooks/deliveries', methods=['GET'])
+    @requires_auth
+    def api_webhook_deliveries():
+        """406: Historie outbound webhook doručení (posledních N)."""
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        limit = int_param(request.args.get('limit'), 100, 1, 500)
+        return jsonify({"deliveries": state.get_webhook_deliveries(limit)})
+
     @bp.route('/api/ai/eval/run', methods=['POST'])
     @requires_auth
     def api_ai_eval_run():

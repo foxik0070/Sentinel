@@ -749,6 +749,102 @@ class ChatService(threading.Thread):
                 except Exception as _se:
                     logger.debug(f"ssl_expiry_check {name}: {_se}")
 
+    def _check_dns_records(self):
+        """408: Kontrola resolvability + změn A/MX záznamů klíčových domén.
+
+        Výpadek resolvingu → issue DNS_FAIL|domain (high).
+        Změna záznamů oproti minule → issue DNS_CHANGE|domain (medium) — může
+        značit legitimní migraci, ale i hijack; po potvrzení stačí resolve.
+        """
+        checks = getattr(config, 'DNS_CHECKS', [])
+        if not checks:
+            return
+        try:
+            import dns.resolver as _dnsres
+        except ImportError:
+            logger.warning("DNS_CHECKS nakonfigurováno, ale dnspython chybí — pip install dnspython")
+            return
+        try:
+            raw = state.get_setting('dns_records_state')
+            known = json.loads(raw) if raw else {}
+        except Exception:
+            known = {}
+
+        resolver = _dnsres.Resolver()
+        resolver.timeout = 5
+        resolver.lifetime = 8
+        changed = False
+
+        # Kontrolní doména — odliší "resolver nefunguje" (nehlásit domény)
+        # od "konkrétní doména SERVFAILuje" (hlásit)
+        resolver_ok = None
+        def _resolver_works():
+            nonlocal resolver_ok
+            if resolver_ok is None:
+                try:
+                    resolver.resolve('a.root-servers.net', 'A')
+                    resolver_ok = True
+                except Exception:
+                    resolver_ok = False
+            return resolver_ok
+
+        for chk in checks:
+            domain = (chk.get('domain') or '').strip() if isinstance(chk, dict) else str(chk).strip()
+            if not domain:
+                continue
+            rtypes = chk.get('types', ['A']) if isinstance(chk, dict) else ['A']
+            for rtype in rtypes:
+                rtype = str(rtype).upper()
+                key = f"DNS_FAIL|{domain}|{rtype}"
+                state_key = f"{domain}/{rtype}"
+                try:
+                    answers = resolver.resolve(domain, rtype)
+                    records = sorted(str(r).lower() for r in answers)
+                except (_dnsres.NXDOMAIN, _dnsres.NoAnswer) as e:
+                    state.save_problem(key, {
+                        "status": "active", "channel_type": "infra", "host": domain,
+                        "plugin_name": "dns_monitor", "severity": "high",
+                        "last_line": f"DNS {rtype} pro {domain} neresolvuje: {type(e).__name__}",
+                        "last_seen": datetime.now(timezone.utc).isoformat(),
+                    })
+                    continue
+                except Exception as e:
+                    # SERVFAIL/timeout: pokud kontrolní doména resolvuje, je rozbitá
+                    # tato konkrétní doména — hlásit; jinak je down resolver — mlčet
+                    if _resolver_works():
+                        state.save_problem(key, {
+                            "status": "active", "channel_type": "infra", "host": domain,
+                            "plugin_name": "dns_monitor", "severity": "high",
+                            "last_line": (f"DNS {rtype} pro {domain} selhává "
+                                          f"({type(e).__name__}), ostatní domény resolvují"),
+                            "last_seen": datetime.now(timezone.utc).isoformat(),
+                        })
+                    else:
+                        logger.debug(f"dns_check {domain}/{rtype}: resolver down ({e})")
+                    continue
+
+                # Resolvuje → případný FAIL issue vyřešit
+                state.resolve_problem(key, reason='source_recovered')
+
+                prev = known.get(state_key)
+                if prev is not None and prev != records:
+                    state.save_problem(f"DNS_CHANGE|{domain}|{rtype}", {
+                        "status": "active", "channel_type": "infra", "host": domain,
+                        "plugin_name": "dns_monitor", "severity": "medium",
+                        "last_line": (f"DNS {rtype} záznam {domain} se změnil: "
+                                      f"{', '.join(prev[:3])} → {', '.join(records[:3])}"),
+                        "last_seen": datetime.now(timezone.utc).isoformat(),
+                    })
+                if prev != records:
+                    known[state_key] = records
+                    changed = True
+
+        if changed:
+            try:
+                state.set_setting('dns_records_state', json.dumps(known))
+            except Exception as e:
+                logger.debug(f"dns_state save: {e}")
+
     def _run_self_monitor_webhook(self):
         url = getattr(config, 'SELF_MONITOR_WEBHOOK', '')
         interval = int(getattr(config, 'SELF_MONITOR_INTERVAL', 300))
@@ -1856,9 +1952,13 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
                 sig = _hmac.new(secret.encode(), payload, _hashlib.sha256).hexdigest()
                 headers['X-Sentinel-Signature'] = f'sha256={sig}'
                 headers['X-Sentinel-Event'] = event
-            requests.post(wh_url, data=payload, headers=headers, timeout=8)
+            _t0 = time.time()
+            resp = requests.post(wh_url, data=payload, headers=headers, timeout=8)
+            state.log_webhook_delivery(wh_url, event, resp.status_code, resp.ok,
+                                       int((time.time() - _t0) * 1000))
         except Exception as e:
             logger.debug(f"lifecycle_webhook {event}: {e}")
+            state.log_webhook_delivery(wh_url, event, None, False, None, str(e))
 
     def _sync_gitea_issue(self, issue: dict):
         """415: Sync critical issue to Gitea as a new issue."""

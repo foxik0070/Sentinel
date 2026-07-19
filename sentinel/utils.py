@@ -123,6 +123,8 @@ def send_webhook(payload: dict):
         return
     if getattr(config, 'ARGS', {}).get('DEBUG_MODE'):
         return
+    _t0 = time.time()
+    _event = str(payload.get('event', ''))
     try:
         body = json.dumps(payload, default=str).encode()
         headers = {'Content-Type': 'application/json'}
@@ -130,9 +132,21 @@ def send_webhook(payload: dict):
         if secret:
             sig = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
             headers['X-Sentinel-Signature'] = f'sha256={sig}'
-        requests.post(config.WEBHOOK_URL, data=body, headers=headers, timeout=8)
+        resp = requests.post(config.WEBHOOK_URL, data=body, headers=headers, timeout=8)
+        _log_delivery(config.WEBHOOK_URL, _event, resp.status_code,
+                      resp.ok, int((time.time() - _t0) * 1000))
     except Exception as e:
         log_message(f"[!] Webhook error: {e}")
+        _log_delivery(config.WEBHOOK_URL, _event, None, False,
+                      int((time.time() - _t0) * 1000), str(e))
+
+def _log_delivery(url, event, status_code, ok, latency_ms, error=''):
+    """406: lazy import — utils nesmí importovat state na module úrovni (cyklus)."""
+    try:
+        from . import state
+        state.log_webhook_delivery(url, event, status_code, ok, latency_ms, error)
+    except Exception:
+        pass
 
 # --- HOME ASSISTANT NOTIFICATIONS ---
 def send_ha_alert(message, title="🚨 Sentinel Alert"):

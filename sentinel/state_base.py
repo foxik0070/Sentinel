@@ -488,6 +488,17 @@ def init_db():
                           enabled INTEGER DEFAULT 0,
                           created_at TEXT DEFAULT (datetime('now')))''')
 
+            # 406: log outbound webhook doručení
+            c.execute('''CREATE TABLE IF NOT EXISTS webhook_deliveries
+                         (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                          url TEXT NOT NULL,
+                          event TEXT DEFAULT '',
+                          status_code INTEGER,
+                          ok INTEGER DEFAULT 0,
+                          latency_ms INTEGER,
+                          error TEXT DEFAULT '',
+                          created_at TEXT DEFAULT (datetime('now')))''')
+
             # infra_jokes: log vtipu generovaného AI (dvouklik logo + hodinový)
             c.execute('''CREATE TABLE IF NOT EXISTS infra_jokes
                          (id INTEGER PRIMARY KEY AUTOINCREMENT,

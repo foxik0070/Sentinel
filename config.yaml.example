@@ -325,3 +325,8 @@ prompts:
 
     '
   remediation: 'SysAdmin. Node: {node} Error: {raw_line} Output ONLY JSON: {"description":"one sentence fix","command":"exact bash command or N/A"}'
+
+# 408: DNS monitoring — hodinová kontrola resolvability a změn záznamů
+# dns_checks:
+#   - domain: example.com
+#     types: [A, MX]

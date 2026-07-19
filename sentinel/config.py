@@ -354,6 +354,8 @@ RAG_LEARN_RESOLVED: bool = True
 DISPLAY_TZ: str = ""
 # 407: Heartbeat URL monitoring (list of {name, url, timeout_s})
 HEARTBEAT_URLS: list = []
+# 408: DNS monitoring — [{domain: "example.com", types: ["A","MX"]}]; kontrola hodinově
+DNS_CHECKS: list = []
 # 415: Gitea issue sync
 GITEA_URL: str = ""
 GITEA_TOKEN: str = ""
@@ -684,6 +686,10 @@ def load_config():
     _hb = data.get("heartbeat_urls")
     if isinstance(_hb, list):
         HEARTBEAT_URLS = _hb
+    global DNS_CHECKS
+    _dns = data.get("dns_checks")
+    if isinstance(_dns, list):
+        DNS_CHECKS = _dns
     gitea_conf = data.get("gitea", {})
     if isinstance(gitea_conf, dict) and gitea_conf:
         GITEA_URL = str(gitea_conf.get("url", GITEA_URL))
@@ -779,7 +785,8 @@ _KNOWN_KEYS = {
     'syslog_receiver', 'ntfy', 'gotify', 'smtp', 'matrix', 'discord', 'telegram', 'opsgenie',
     'grafana_annotations',
     'issue_history_retention_days', 'display_tz', 'heartbeat_urls', 'gitea',
-    'windows_ingest_key',
+    'windows_ingest_key', 'dns_checks', 'lifecycle', 'ai_digest_hour',
+    'rag_learn_resolved', 'ai_timeout_seconds',
 }
 
 VALIDATION_WARNINGS: list = []   # populated by _validate_config(), readable via API

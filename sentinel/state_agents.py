@@ -962,6 +962,40 @@ def set_setting(key: str, value: str):
         except Exception as e:
             logger.error(f"set_setting: {e}")
 
+def log_webhook_delivery(url: str, event: str, status_code=None, ok: bool = False,
+                         latency_ms=None, error: str = ''):
+    """406: Zaznamená outbound webhook doručení (max 500 záznamů)."""
+    with db_lock:
+        try:
+            conn = _get_conn()
+            conn.execute(
+                "INSERT INTO webhook_deliveries (url, event, status_code, ok, latency_ms, error) "
+                "VALUES (?,?,?,?,?,?)",
+                (url[:300], event[:60], status_code, 1 if ok else 0, latency_ms, error[:200])
+            )
+            conn.execute(
+                "DELETE FROM webhook_deliveries WHERE id NOT IN "
+                "(SELECT id FROM webhook_deliveries ORDER BY id DESC LIMIT 500)"
+            )
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.debug(f"log_webhook_delivery: {e}")
+
+def get_webhook_deliveries(limit: int = 100) -> list:
+    try:
+        conn = _get_conn()
+        rows = conn.execute(
+            "SELECT url, event, status_code, ok, latency_ms, error, created_at "
+            "FROM webhook_deliveries ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+        conn.close()
+        cols = ['url', 'event', 'status_code', 'ok', 'latency_ms', 'error', 'created_at']
+        return [dict(zip(cols, r)) for r in rows]
+    except Exception as e:
+        logger.error(f"get_webhook_deliveries: {e}")
+        return []
+
 _token_stats_lock = threading.Lock()
 
 def record_token_usage(tokens_in: int, tokens_out: int):

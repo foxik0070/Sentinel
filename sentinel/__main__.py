@@ -230,7 +230,8 @@ def main():
     WEB_CHECK_INTERVAL = 30
     STALE_CHECK_INTERVAL = 3600  # resolve stale problems once per hour
     stale_counter = STALE_CHECK_INTERVAL - 60  # první sweep ~minutu po startu
-    WEB_URL = f"http://127.0.0.1:{config.WEB_PORT}/api/status_check"
+    _scheme = "https" if getattr(config, 'HTTPS_ENABLED', False) else "http"
+    WEB_URL = f"{_scheme}://127.0.0.1:{config.WEB_PORT}/api/status_check"
 
     # --- Main Loop ---
     running = True
@@ -316,7 +317,8 @@ def main():
                     # HTTP check běží v separátním vlákně s tvrdým wall-clock limitem.
                     # Zabraňuje zablokování main threadu při zavěšeném TCP spojení.
                     def _do_check():
-                        return requests.get(WEB_URL, headers=hdrs, timeout=10)
+                        # verify=False — self-signed cert na localhost
+                        return requests.get(WEB_URL, headers=hdrs, timeout=10, verify=False)
                     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _ex:
                         _fut = _ex.submit(_do_check)
                         resp = _fut.result(timeout=20)
