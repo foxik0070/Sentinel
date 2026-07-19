@@ -254,6 +254,9 @@ HA_THRESHOLDS = {}  # runtime override from config.yaml ha_thresholds section
 SSH_KEY_PATH = "/opt/Sentinel/conf/.id_ed25519"
 SSH_USER = "root"
 SSH_JUMP_HOST = ""  # Prázdný = bez jump hostu; "user@bastion.example.com" = ProxyJump
+# 352: cesta k socketu ssh-agenta — umožní šifrovaný SSH klíč (klíč se odemkne
+# v agentovi, Sentinel jen předá SSH_AUTH_SOCK do prostředí ssh procesu)
+SSH_AUTH_SOCK: str = ""
 
 # 010: Přizpůsobitelné barvy kanálů {channel_upper: hex_color}
 CHANNEL_COLORS: dict = {
@@ -610,6 +613,8 @@ def load_config():
     SSH_KEY_PATH = ssh_conf.get("key_path", SSH_KEY_PATH)
     SSH_USER = ssh_conf.get("user", SSH_USER)
     SSH_JUMP_HOST = ssh_conf.get("jump_host", SSH_JUMP_HOST)
+    global SSH_AUTH_SOCK
+    SSH_AUTH_SOCK = str(ssh_conf.get("auth_sock", SSH_AUTH_SOCK))
     global AUTO_TAGS, ESCALATION_RULES
     AUTO_TAGS = data.get("auto_tags", [])
     ESCALATION_RULES = data.get("escalation_rules", [])

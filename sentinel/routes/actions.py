@@ -262,13 +262,13 @@ def create_blueprint(service):
             ssh_key = getattr(config, 'SSH_KEY_PATH', '')
             jump = getattr(config, 'SSH_JUMP_HOST', '')
 
-            from ..ssh_utils import build_ssh_cmd
+            from ..ssh_utils import build_ssh_cmd, ssh_env
             ssh_cmd = build_ssh_cmd(host, command, user=ssh_user, key=ssh_key, jump=jump)
 
             yield f"data: {json.dumps({'line': f'$ {command}', 'type': 'cmd'})}\n\n"
             try:
                 proc = subprocess.Popen(ssh_cmd, stdout=subprocess.PIPE,
-                                        stderr=subprocess.STDOUT, text=True)
+                                        stderr=subprocess.STDOUT, text=True, env=ssh_env())
                 for line in proc.stdout:
                     yield f"data: {json.dumps({'line': line.rstrip(), 'type': 'out'})}\n\n"
                 proc.wait()

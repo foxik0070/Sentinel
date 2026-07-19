@@ -47,6 +47,16 @@ def build_ssh_cmd(host: str, command: str, timeout: int = 10,
     return cmd
 
 
+def ssh_env() -> dict:
+    """352: Prostředí pro ssh procesy — s SSH_AUTH_SOCK umožňuje šifrovaný klíč
+    odemčený v ssh-agentovi (config ssh_execution.auth_sock)."""
+    env = dict(os.environ)
+    sock = getattr(config, 'SSH_AUTH_SOCK', '')
+    if sock:
+        env['SSH_AUTH_SOCK'] = sock
+    return env
+
+
 def scan_host_key(hostname: str) -> bool:
     """Spustí ssh-keyscan a přidá klíč do known_hosts. Vrátí True pokud úspěšné."""
     try:

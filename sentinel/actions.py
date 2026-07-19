@@ -316,9 +316,9 @@ def run_ssh_command_real(cluster, command, action_id=None, timeout: int = 30, in
 
     utils.log_message(f"Executing via {mgmt_node}: {command}")
     try:
-        from .ssh_utils import build_ssh_cmd
+        from .ssh_utils import build_ssh_cmd, ssh_env
         ssh_cmd = build_ssh_cmd(mgmt_node, command)
-        result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=timeout, env=ssh_env())
 
         if result.returncode == 0:
             out = f"STDOUT: {result.stdout.strip()}"
