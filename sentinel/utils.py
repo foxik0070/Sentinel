@@ -5,6 +5,7 @@ import hashlib
 import logging
 import requests
 import json
+import tempfile
 import time
 import mmap
 import urllib.request
@@ -14,18 +15,23 @@ from collections import defaultdict, deque
 from . import config
 
 # --- Logging Setup ---
-main_log_dir = os.path.dirname(config.MAIN_LOG_FILE)
-if main_log_dir: 
-    os.makedirs(main_log_dir, exist_ok=True)
+def _writable_log_file(path: str) -> str:
+    """Non-root běh (CI, testy): /var/log/sentinel nemusí být zapisovatelný —
+    spadni zpět do systémového tempu místo pádu při importu."""
+    log_dir = os.path.dirname(path)
+    try:
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+        with open(path, "a"):
+            pass
+        return path
+    except (PermissionError, OSError):
+        return os.path.join(tempfile.gettempdir(), os.path.basename(path))
 
-logging.basicConfig(filename=config.MAIN_LOG_FILE, level=logging.INFO, format='[%(asctime)s] %(message)s')
-
-ollama_log_dir = os.path.dirname(config.OLLAMA_LOG_FILE)
-if ollama_log_dir: 
-    os.makedirs(ollama_log_dir, exist_ok=True)
+logging.basicConfig(filename=_writable_log_file(config.MAIN_LOG_FILE), level=logging.INFO, format='[%(asctime)s] %(message)s')
 
 ollama_logger = logging.getLogger("ollama")
-ollama_handler = logging.FileHandler(config.OLLAMA_LOG_FILE)
+ollama_handler = logging.FileHandler(_writable_log_file(config.OLLAMA_LOG_FILE))
 ollama_handler.setFormatter(logging.Formatter('[%(asctime)s] %(message)s'))
 ollama_logger.addHandler(ollama_handler)
 ollama_logger.setLevel(logging.INFO)
