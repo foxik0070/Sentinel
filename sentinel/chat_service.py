@@ -1566,6 +1566,13 @@ class ChatService(threading.Thread):
                 )
             return rows_html
 
+        # py<3.12: backslash nesmí být uvnitř {výrazu} f-stringu — link předpočítat
+        err_link = (
+            "<a href='javascript:void(0)' onclick=\"openSystemErrorsModal()\" "
+            "style='color:var(--error);margin-left:10px;font-size:.9em;'>"
+            "<i class='fa-solid fa-triangle-exclamation'></i> Chyby systému</a>"
+        ) if role in ('admin', 'superadmin') else ""
+
         return f"""<style>
 .pb-ok{{background:var(--success);}}.pb-warn{{background:var(--warning);}}.pb-crit{{background:var(--error);}}
 @keyframes blinker{{50%{{opacity:0.3;}}}}
@@ -1674,7 +1681,7 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
 </script>
 <div style='text-align:right;font-size:.7em;color:var(--text-muted);margin-top:8px;border-top:1px solid var(--border);padding-top:4px;'>
   <i class='fa-solid fa-sync fa-spin' style='font-size:.9em;'></i> {datetime.now().strftime('%H:%M:%S')}
-  {f"<a href='javascript:void(0)' onclick=\"openSystemErrorsModal()\" style='color:var(--error);margin-left:10px;font-size:.9em;'><i class='fa-solid fa-triangle-exclamation'></i> Chyby systému</a>" if role in ('admin','superadmin') else ""}
+  {err_link}
 </div>"""
 
     def get_session_data(self):
