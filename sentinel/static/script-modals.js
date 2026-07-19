@@ -69,7 +69,9 @@ async function refreshModalIssuesContent(isAuto = false) {
         const focusedInput = bodyEl && bodyEl.contains(document.activeElement) && ['INPUT','TEXTAREA'].includes(document.activeElement.tagName);
         const anyInputWithText = bodyEl && [...bodyEl.querySelectorAll('input[type="text"],input:not([type]),textarea')].some(el => el.value.trim().length > 0);
         const openPicker = bodyEl && bodyEl.querySelector('[id^="lc-picker-"][style*="flex"], [id^="snooze-dropdown"]');
-        if (focusedInput || anyInputWithText || openPicker) return;
+        // 395: rozbalený inline detail — nepřepisovat, uživatel čte
+        const openDetail = bodyEl && bodyEl.querySelector('[id^="inline-detail-"][style*="display: block"], [id^="inline-detail-"][style*="display:block"]');
+        if (focusedInput || anyInputWithText || openPicker || openDetail) return;
     }
 
     if (!isAuto) {
@@ -503,6 +505,45 @@ async function bulkExportCsv() {
         a.href = url; a.download = `sentinel_issues_${new Date().toISOString().slice(0,10)}.csv`;
         a.click(); URL.revokeObjectURL(url);
     } catch(e) { alert('Export selhal: ' + e); }
+}
+
+// ── 395: Inline expandace issue karty — detail bez modalu ────────────────────
+async function _toggleInlineDetail(kb64) {
+    const el = document.getElementById(`inline-detail-${kb64}`);
+    if (!el) return;
+    if (el.style.display !== 'none') { el.style.display = 'none'; return; }
+    el.style.display = 'block';
+    if (el.dataset.loaded) return;
+    el.dataset.loaded = '1';
+
+    const fullMsg = el.dataset.fullMsg || '';
+    const firstSeen = (el.dataset.firstSeen || '').replace('T', ' ').split('.')[0];
+    const occ = el.dataset.occ || '1';
+    el.innerHTML = `
+        <div style="word-break:break-word; white-space:pre-wrap; color:var(--text-main); margin-bottom:8px;">${fullMsg}</div>
+        <div style="color:var(--text-muted); font-size:.9em; margin-bottom:6px;">
+            První výskyt: <b>${firstSeen || '—'}</b> · Výskytů: <b>×${occ}</b></div>
+        <div id="inline-tl-${kb64}" style="color:var(--text-muted);"><i class="fa-solid fa-spinner fa-spin"></i> Načítám timeline…</div>`;
+
+    try {
+        const r = await fetch(`/api/issues/${kb64}/timeline`);
+        const d = await r.json();
+        const tl = (d.timeline || []).slice(-6);
+        const tlEl = document.getElementById(`inline-tl-${kb64}`);
+        if (!tlEl) return;
+        const typeIcon = {comment: 'fa-comment', auto_remediation: 'fa-robot', action: 'fa-terminal'};
+        tlEl.innerHTML = tl.length
+            ? `<div style="font-size:.78em; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); margin-bottom:4px;">Timeline</div>` +
+              tl.map(e => `<div style="display:flex; gap:7px; padding:2px 0; align-items:baseline;">
+                    <i class="fa-solid ${typeIcon[e.type] || 'fa-circle-info'}" style="font-size:.72em; width:12px; color:var(--accent);"></i>
+                    <span style="font-size:.82em; color:var(--text-muted); flex-shrink:0;">${(e.at || '').replace('T', ' ').slice(5, 16)}</span>
+                    <span style="font-size:.85em; word-break:break-word;"><b>${_escape(e.actor || '')}</b> ${_escape((e.detail || '').slice(0, 140))}</span>
+                </div>`).join('')
+            : '<span style="font-size:.82em; font-style:italic;">Žádné události v timeline.</span>';
+    } catch (e) {
+        const tlEl = document.getElementById(`inline-tl-${kb64}`);
+        if (tlEl) tlEl.innerHTML = '<span style="color:var(--error); font-size:.82em;">Timeline se nepodařilo načíst.</span>';
+    }
 }
 
 // ── 390: Breadcrumb — cesta zpět u vnořených modalů ──────────────────────────

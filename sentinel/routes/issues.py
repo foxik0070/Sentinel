@@ -179,8 +179,9 @@ def create_blueprint(service):
                         {label_dot}
                         <div class='issue-content-area'>
                             <small style='color:var(--text-muted); display:block; margin-bottom:3px;'>🕒 {ts} | <b>{plugin_origin}</b>{occ_badge}{stale_badge} <i class='fa-solid fa-bell' title='Nastavení notifikací' style='cursor:pointer;font-size:.8em;opacity:.5;margin-left:3px;' onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=.5" onclick="openNotifySettingsModal()"></i></small>
-                            <span style='color:var(--text-main); font-size:0.93em;' title='{safe_msg_title}'><b>{safe_host}</b>: {safe_msg_short}</span>
+                            <span style='color:var(--text-main); font-size:0.93em; cursor:pointer;' title='395: Kliknutím rozbalit detail' onclick="_toggleInlineDetail('{kb64}')"><b>{safe_host}</b>: {safe_msg_short}</span>
                             {tags_html}{dep_badge}{records_html}
+                            <div id='inline-detail-{kb64}' data-full-msg='{safe_msg_title}' data-first-seen='{html.escape(i.get('first_seen') or '')}' data-occ='{occ}' style='display:none; margin-top:8px; padding:10px; background:rgba(0,0,0,.15); border:1px solid var(--border); border-radius:5px; font-size:.85em;'></div>
                         </div>
                         <div class='issue-actions'>
                             {comment_btn}{dep_btn}{fix_btn}{recheck_btn}{ssh_btn_modal}{tag_btn}{fp_btn}{similar_btn}<i class='fa-solid fa-share-nodes issue-action-secondary' title='Sdílet' style='cursor:pointer; color:var(--text-muted); font-size:1.1em; margin-right:12px;' onclick="shareIssue('{share_text}', this)"></i>

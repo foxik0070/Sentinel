@@ -5008,6 +5008,79 @@ function exportChatToMarkdown() {
 })();
 
 // 280: Agent deployment helper — vygeneruje one-liner install příkaz
+// ── 329: Hromadné nasazení agentů ────────────────────────────────────────────
+function _openBulkDeployModal() {
+    document.getElementById('bulk-deploy-overlay')?.remove();
+    const ov = document.createElement('div');
+    ov.id = 'bulk-deploy-overlay';
+    ov.className = 'modal-overlay';
+    ov.style.cssText = 'display:flex;align-items:center;justify-content:center;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10010;';
+    ov.onclick = e => { if (e.target === ov) ov.remove(); };
+    ov.innerHTML = `
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;width:680px;max-width:94%;max-height:88vh;display:flex;flex-direction:column;">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 18px;border-bottom:1px solid var(--border);">
+            <b><i class="fa-solid fa-boxes-stacked" style="color:var(--accent);margin-right:7px;"></i>Hromadné nasazení agentů</b>
+            <i class="fa-solid fa-times" style="cursor:pointer;" onclick="document.getElementById('bulk-deploy-overlay').remove()"></i>
+        </div>
+        <div style="padding:16px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;">
+            <div style="font-size:.84em;color:var(--text-muted);">Hostnames — jeden na řádek, nebo CSV (první sloupec = hostname):</div>
+            <textarea id="bd-hosts" rows="6" placeholder="server1&#10;server2&#10;server3.domena.cz" spellcheck="false"
+                style="width:100%;padding:8px 10px;background:var(--input-bg);color:var(--text-main);border:1px solid var(--border);border-radius:4px;font-family:monospace;font-size:.85em;resize:vertical;"></textarea>
+            <div style="display:flex;gap:8px;align-items:center;">
+                <button onclick="_bulkDeployGenerate('bash')" style="padding:6px 14px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:.85em;"><i class="fa-solid fa-terminal"></i> SSH skript</button>
+                <button onclick="_bulkDeployGenerate('ansible')" style="padding:6px 14px;background:transparent;border:1px solid var(--accent);color:var(--accent);border-radius:4px;cursor:pointer;font-size:.85em;"><i class="fa-solid fa-cubes"></i> Ansible playbook</button>
+                <span id="bd-status" style="font-size:.8em;color:var(--text-muted);"></span>
+            </div>
+            <pre id="bd-output" style="display:none;background:#111;color:#50fa7b;padding:12px;border-radius:5px;font-size:.78em;overflow-x:auto;max-height:320px;white-space:pre;"></pre>
+            <button id="bd-copy" style="display:none;align-self:flex-end;padding:5px 14px;background:transparent;border:1px solid var(--border);color:var(--text-muted);border-radius:4px;cursor:pointer;font-size:.82em;"
+                onclick="navigator.clipboard.writeText(document.getElementById('bd-output').textContent).then(()=>{this.textContent='✓ Zkopírováno';setTimeout(()=>this.innerHTML='<i class=\\'fa-solid fa-copy\\'></i> Kopírovat',1500)})">
+                <i class="fa-solid fa-copy"></i> Kopírovat</button>
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+}
+
+async function _bulkDeployGenerate(format) {
+    const raw = document.getElementById('bd-hosts')?.value || '';
+    const hosts = [...new Set(raw.split(/[\n,;]+/)
+        .map(l => l.split(/[,;\t]/)[0].trim())
+        .filter(h => /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,253}$/.test(h)))];
+    const status = document.getElementById('bd-status');
+    if (!hosts.length) { if (status) status.textContent = 'Žádné platné hostnames.'; return; }
+    if (status) status.textContent = `Registruji ${hosts.length} agentů…`;
+
+    // Registrace každého hosta → token
+    const entries = [];
+    for (const h of hosts) {
+        try {
+            const r = await fetch('/api/agents/register', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({hostname: h})
+            });
+            const d = await r.json();
+            if (d.status === 'ok' && d.token) entries.push({host: h, token: d.token});
+            else if (status) status.textContent = `⚠ ${h}: ${d.message || 'registrace selhala'}`;
+        } catch (e) { if (status) status.textContent = `⚠ ${h}: ${e}`; }
+    }
+    if (!entries.length) { if (status) status.textContent = 'Registrace selhala pro všechny hosty.'; return; }
+    if (status) status.textContent = `✓ ${entries.length}/${hosts.length} zaregistrováno`;
+
+    const server = window.location.host;
+    let out;
+    if (format === 'ansible') {
+        out = `---\n# Sentinel agent bulk deploy — vygenerováno ${new Date().toISOString().slice(0,10)}\n- name: Deploy Sentinel agents\n  hosts: sentinel_agents\n  become: true\n  tasks:\n    - name: Install Sentinel agent\n      shell: curl -fsSL http://${server}/install-agent.sh | bash -s -- --token {{ sentinel_token }} --host {{ inventory_hostname }}\n\n# inventory.ini:\n# [sentinel_agents]\n` +
+            entries.map(e => `# ${e.host} sentinel_token=${e.token}`).join('\n');
+    } else {
+        out = `#!/bin/bash\n# Sentinel agent bulk deploy — vygenerováno ${new Date().toISOString().slice(0,10)}\nset -e\n\ndeclare -A TOKENS=(\n` +
+            entries.map(e => `  ["${e.host}"]="${e.token}"`).join('\n') +
+            `\n)\n\nfor H in "\${!TOKENS[@]}"; do\n  echo "=== \$H ==="\n  ssh "\$H" "curl -fsSL http://${server}/install-agent.sh | bash -s -- --token \${TOKENS[\$H]} --host \$H" \\\n    && echo "✓ \$H OK" || echo "✗ \$H SELHAL"\ndone`;
+    }
+    const pre = document.getElementById('bd-output');
+    const copyBtn = document.getElementById('bd-copy');
+    if (pre) { pre.textContent = out; pre.style.display = 'block'; }
+    if (copyBtn) copyBtn.style.display = 'inline-block';
+}
+
 async function _showDeployHelper(hostname) {
     try {
         const r = await fetch('/api/agents/register', {
