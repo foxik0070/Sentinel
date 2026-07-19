@@ -375,10 +375,21 @@
                 <!-- Agenti tab -->
                 <div id="sat-panel-agents" style="padding:15px; flex:1;">
                     <div id="agent-token-display" style="display:none; margin-bottom:12px; padding:10px; background:#111; border:1px dashed var(--success); color:var(--code-text); font-family:monospace; font-size:.85em; word-break:break-all; border-radius:4px;"></div>
+                    <!-- 385: bulk lišta hromadných operací -->
+                    <div id="agent-bulk-bar" style="display:none; margin-bottom:10px; padding:7px 12px; background:rgba(0,120,212,.08); border:1px solid rgba(0,120,212,.3); border-radius:6px; align-items:center; gap:8px; flex-wrap:wrap; font-size:.84em;">
+                        <b id="agent-bulk-count">0 vybráno</b>
+                        <button onclick="_agentBulkGroup()" style="padding:3px 10px; background:transparent; border:1px solid var(--accent); color:var(--accent); border-radius:4px; cursor:pointer; font-size:.9em;"><i class="fa-solid fa-layer-group"></i> Skupina</button>
+                        <button onclick="_agentBulkMaintenance(true)" style="padding:3px 10px; background:transparent; border:1px solid #f0ad4e; color:#f0ad4e; border-radius:4px; cursor:pointer; font-size:.9em;"><i class="fa-solid fa-wrench"></i> Maintenance ON</button>
+                        <button onclick="_agentBulkMaintenance(false)" style="padding:3px 10px; background:transparent; border:1px solid var(--border); color:var(--text-muted); border-radius:4px; cursor:pointer; font-size:.9em;">Maintenance OFF</button>
+                        <button onclick="_agentBulkIgnore()" style="padding:3px 10px; background:transparent; border:1px solid var(--border); color:var(--text-muted); border-radius:4px; cursor:pointer; font-size:.9em;"><i class="fa-solid fa-bell-slash"></i> Ignorovat offline</button>
+                        <button onclick="_agentBulkDelete()" style="padding:3px 10px; background:transparent; border:1px solid var(--error); color:var(--error); border-radius:4px; cursor:pointer; font-size:.9em;"><i class="fa-solid fa-trash"></i> Smazat</button>
+                        <span onclick="_agentBulkClear()" style="margin-left:auto; cursor:pointer; color:var(--text-muted); text-decoration:underline;">zrušit výběr</span>
+                    </div>
                     <div style="overflow-x:auto;">
                         <table style="width:100%; border-collapse:collapse; font-size:.88em; text-align:left;">
                             <thead>
                                 <tr style="border-bottom:2px solid var(--border); color:var(--text-muted);">
+                                    <th style="padding:8px; width:26px;"><input type="checkbox" id="agent-bulk-all" onchange="_agentBulkAll(this.checked)" title="Vybrat vše" style="cursor:pointer;"></th>
                                     <th style="padding:8px;">Hostname</th>
                                     <th style="padding:8px;">Status</th>
                                     <th style="padding:8px;" data-i18n="last_heartbeat">Poslední odezva</th>

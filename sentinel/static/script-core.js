@@ -1893,9 +1893,13 @@ async function loadAgentsList(isAutoRefresh = false) {
 
                 // 264: Mini CPU/RAM sparkline v řádku
                 const sparkId = `sp-${agent.hostname.replace(/[^a-z0-9]/gi, '-')}`;
+                const bulkChecked = _agentBulkSel.has(agent.hostname) ? 'checked' : '';
                 newHtml += `
                     <tr style="border-bottom:1px solid var(--border); ${ignored ? 'opacity:0.65;' : ''} cursor:pointer;"
                         onclick="openDeviceDetailModal('${agent.hostname}', 'agent')">
+                        <td style="padding:6px 8px;" onclick="event.stopPropagation()">
+                            <input type="checkbox" data-agent-cb="${agent.hostname}" ${bulkChecked}
+                                onchange="_agentBulkToggle('${agent.hostname}', this.checked)" style="cursor:pointer;"></td>
                         <td style="padding:10px; font-weight:bold;">${agent.hostname}</td>
                         <td style="padding:10px;"><span style="color:${statusColor}; font-weight:bold;">● ${agent.status}</span>${ignored && agent.status !== 'ONLINE' ? ' <span style="font-size:0.75em;color:var(--text-muted);">(ignorováno)</span>' : ''}</td>
                         <td style="padding:10px; font-family:monospace; color:#aaa;">${formattedTime}</td>
@@ -1921,6 +1925,88 @@ async function loadAgentsList(isAutoRefresh = false) {
             tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:20px; color:var(--error);">${t('api_load_error')}</td></tr>`;
         }
     }
+}
+
+// ── 385: Multi-select agentů — hromadné operace ──────────────────────────────
+const _agentBulkSel = new Set();
+
+function _agentBulkToggle(hostname, checked) {
+    if (checked) _agentBulkSel.add(hostname); else _agentBulkSel.delete(hostname);
+    _agentBulkRender();
+}
+
+function _agentBulkAll(checked) {
+    document.querySelectorAll('[data-agent-cb]').forEach(cb => {
+        cb.checked = checked;
+        if (checked) _agentBulkSel.add(cb.dataset.agentCb); else _agentBulkSel.delete(cb.dataset.agentCb);
+    });
+    _agentBulkRender();
+}
+
+function _agentBulkClear() {
+    _agentBulkSel.clear();
+    document.querySelectorAll('[data-agent-cb]').forEach(cb => cb.checked = false);
+    const all = document.getElementById('agent-bulk-all');
+    if (all) all.checked = false;
+    _agentBulkRender();
+}
+
+function _agentBulkRender() {
+    const bar = document.getElementById('agent-bulk-bar');
+    const cnt = document.getElementById('agent-bulk-count');
+    if (!bar) return;
+    bar.style.display = _agentBulkSel.size ? 'flex' : 'none';
+    if (cnt) cnt.textContent = `${_agentBulkSel.size} vybráno`;
+}
+
+async function _agentBulkRun(label, fn) {
+    const hosts = [..._agentBulkSel];
+    if (!hosts.length) return;
+    let ok = 0, fail = 0;
+    for (const h of hosts) {
+        try { const r = await fn(h); (r && r.ok) ? ok++ : fail++; }
+        catch { fail++; }
+    }
+    alert(`${label}: ${ok} OK${fail ? `, ${fail} selhalo` : ''}`);
+    _agentBulkClear();
+    loadAgentsList(false);
+}
+
+function _agentBulkGroup() {
+    const group = prompt('Název skupiny (prázdné = odebrat ze skupiny):', '');
+    if (group === null) return;
+    _agentBulkRun('Skupina', h => fetch(`/api/agents/${encodeURIComponent(h)}/group`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({group: group.trim()})
+    }));
+}
+
+function _agentBulkMaintenance(enable) {
+    let minutes = 240;
+    if (enable) {
+        const v = prompt('Maintenance na kolik hodin?', '4');
+        if (v === null) return;
+        minutes = Math.round((parseFloat(v) || 4) * 60);
+    }
+    _agentBulkRun(`Maintenance ${enable ? 'ON' : 'OFF'}`, h => fetch(`/api/agents/${encodeURIComponent(h)}/maintenance`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(enable ? {minutes} : {clear: true})
+    }));
+}
+
+function _agentBulkIgnore() {
+    _agentBulkRun('Ignorovat offline', h => fetch('/api/agents/ignore_offline', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({hostname: h, ignore: true})
+    }));
+}
+
+function _agentBulkDelete() {
+    if (!confirm(`Opravdu smazat ${_agentBulkSel.size} agentů? Tato akce je nevratná.`)) return;
+    _agentBulkRun('Smazání', h => fetch('/api/agents/delete', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({hostname: h})
+    }));
 }
 
 async function _drawAgentListSparklines(agents) {

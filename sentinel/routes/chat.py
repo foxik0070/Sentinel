@@ -543,9 +543,11 @@ def create_blueprint(service):
 
                 default_autofix_sys = (
                     'You are a Linux SysAdmin expert. Analyze the given issue and respond ONLY with valid JSON:\n'
-                    '{"description": "one-sentence explanation of the problem and fix", "command": "exact bash command to fix or diagnose the issue"}\n'
+                    '{"description": "one-sentence explanation of the problem and fix", "command": "exact bash command to fix or diagnose the issue", "confidence": 0-100}\n'
                     'The "command" field MUST always contain a real, runnable bash command — never "N/A". '
                     'If a direct fix is not possible, provide a diagnostic command (e.g. sinfo, scontrol, systemctl status, journalctl, ps, top, pdsh).\n'
+                    '"confidence" is an integer 0-100: how certain you are that the command addresses the root cause '
+                    '(100 = certain fix, 50 = plausible, below 40 = just a diagnostic step).\n'
                     'No markdown, no extra text — just the JSON object.'
                 )
                 cfg_autofix = config.PROMPTS.get("chat_autofix", "")
@@ -563,6 +565,7 @@ def create_blueprint(service):
                 # JSON parsing (preferovaný formát)
                 description = raw_response
                 command = "N/A"
+                confidence = None  # 429: self-assessment modelu 0-100
                 try:
                     clean_json = raw_response.replace("```json", "").replace("```", "").strip()
                     json_match = re.search(r'\{[^{}]+\}', clean_json, re.DOTALL)
@@ -571,6 +574,10 @@ def create_blueprint(service):
                     parsed = json.loads(clean_json)
                     description = parsed.get("description", raw_response)
                     command = parsed.get("command", "N/A")
+                    try:
+                        confidence = max(0, min(100, int(parsed.get("confidence"))))
+                    except (TypeError, ValueError):
+                        confidence = None
                 except (json.JSONDecodeError, Exception):
                     cmd_match = re.search(r'`([^`\n]+)`', raw_response)
                     if cmd_match:
@@ -595,6 +602,17 @@ def create_blueprint(service):
                         risk_html = f"<div style='font-size:0.78em;color:{risk_color};margin-top:4px;'>Risk: {risk_label} ({risk_score}/100) — {html.escape(reasons_text)}</div>"
                     except Exception:
                         pass
+
+                # 429: confidence badge — jistota modelu, že příkaz řeší root cause
+                confidence_html = ""
+                if confidence is not None:
+                    c_color = "#28a745" if confidence >= 75 else ("#ffc107" if confidence >= 50 else "#fd7e14")
+                    c_label = "vysoká" if confidence >= 75 else ("střední" if confidence >= 50 else "nízká — spíš diagnostika")
+                    confidence_html = (
+                        f"<div style='font-size:0.78em;color:{c_color};margin-top:4px;' "
+                        f"title='Self-assessment modelu — orientační, ne záruka'>"
+                        f"Jistota AI: {confidence}/100 ({c_label})</div>"
+                    )
 
                 ts_key = str(int(time.time() * 1000))[-7:]
                 b64_payload = base64.b64encode(json.dumps({
@@ -623,7 +641,7 @@ def create_blueprint(service):
                     f"style='position:absolute;top:5px;right:5px;background:transparent;border:1px solid var(--card-border);"
                     f"border-radius:3px;color:var(--text-muted);cursor:pointer;padding:2px 7px;font-size:0.72em;' "
                     f"title='Copy'>📋</button></div>"
-                    f"{risk_html}"
+                    f"{risk_html}{confidence_html}"
                     f"<div style='display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;'>"
                     f"{queue_btn}"
                     f"<button onclick='triggerAction(\"autofix_text \"+atob(\"{reanalyze_b64}\"))' "
