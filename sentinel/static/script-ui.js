@@ -67,15 +67,38 @@ function _barPct(pct) {
 function _dashWidget(id, icon, title, content, style) {
     if (localStorage.getItem(`dash_hide_${id}`) === '1') return '';
     const collapsed = localStorage.getItem(`dash_w_${id}`) === '1';
-    return `<div style="background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:12px;${style||''}">
+    return `<div data-dash-widget="${id}" style="background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:12px;${style||''}">
         <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;${collapsed?'':'margin-bottom:8px;'}" onclick="_toggleDashWidget('${id}')">
             <div style="font-size:.72em;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;user-select:none;">
-                <i class="fa-solid fa-${icon}" style="margin-right:4px;opacity:.7;"></i>${title}
+                <span class="dash-drag-handle" title="Přetáhnout widget" style="cursor:grab;color:var(--text-muted);opacity:.4;margin-right:6px;user-select:none;">⠿</span><i class="fa-solid fa-${icon}" style="margin-right:4px;opacity:.7;"></i>${title}
             </div>
             <i id="dash-chev-${id}" class="fa-solid fa-chevron-${collapsed?'down':'up'}" style="font-size:.65em;color:var(--text-muted);transition:transform .2s;"></i>
         </div>
         <div id="dash-wb-${id}" style="display:${collapsed?'none':''};">${content}</div>
     </div>`;
+}
+
+// 378: Drag-drop pořadí widgetů — per-user v localStorage
+function _dashApplyWidgetOrder(container) {
+    if (!container) return;
+    let order = [];
+    try { order = JSON.parse(localStorage.getItem('dash_widget_order') || '[]'); } catch {}
+    if (order.length) {
+        order.forEach(id => {
+            const el = container.querySelector(`:scope > [data-dash-widget="${id}"]`);
+            if (el) container.appendChild(el);
+        });
+    }
+    if (typeof Sortable !== 'undefined' && !container._dashSortable) {
+        container._dashSortable = new Sortable(container, {
+            handle: '.dash-drag-handle',
+            animation: 150,
+            onEnd: () => {
+                const ids = [...container.querySelectorAll(':scope > [data-dash-widget]')].map(el => el.dataset.dashWidget);
+                localStorage.setItem('dash_widget_order', JSON.stringify(ids));
+            },
+        });
+    }
 }
 // 9: Nastavení viditelnosti widgetů dashboardu
 const _DASH_WIDGETS_DASH = [
@@ -217,15 +240,19 @@ function _renderDashboard(d, tl) {
 
     body.innerHTML = `
         <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;">${cards.join('')}</div>
+        <div id="dash-widgets-container">
         ${_dashWidget('sys', 'microchip', 'Systém', `<div style="display:flex;gap:10px;">${sysCards}</div>`, 'margin-bottom:12px;')}
         ${sparks.length ? _dashWidget('temp', 'temperature-half', t('dash_temp_sparklines')||'Teploty hostů', `<div style="display:flex;gap:8px;flex-wrap:wrap;">${sparks.map(s=>{const temp=s.latest;const color=temp>=75?'#dc3545':temp>=60?'#ffc107':'#4da6ff';return`<div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;min-width:120px;flex:1;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;"><div style="font-size:.78em;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%;" title="${_escape(s.host)}">${_escape(s.host)}</div><div style="font-size:.9em;font-weight:700;color:${color};">${temp}°</div></div>${_sparklineSvg(s.history,100,28,color)}</div>`;}).join('')}</div>`, 'margin-bottom:12px;') : ''}
         ${_dashWidget('charts', 'chart-line', t('dash_trend'), `<div style="display:grid;grid-template-columns:2fr 1fr;gap:12px;"><div style="position:relative;height:140px;"><canvas id="dash-chart-trend"></canvas></div><div style="position:relative;height:140px;"><canvas id="dash-chart-donut"></canvas></div></div>`, 'margin-bottom:12px;')}
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div data-dash-widget="bottom" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
             ${_dashWidget('plugins', 'puzzle-piece', t('dash_top_plugins'), pluginsHtml)}
             ${_dashWidget('recent', 'clock-rotate-left', t('dash_recent'), recentHtml)}
         </div>
+        </div>
         <div id="dash-flapping-widget" style="margin-top:12px;"></div>
         <div id="dash-health-trend" style="margin-top:12px;"></div>`;
+    // 378: aplikovat uložené pořadí + aktivovat drag-drop
+    _dashApplyWidgetOrder(document.getElementById('dash-widgets-container'));
     // 302: Async načtení flapping issues widgetu
     _loadFlappingWidget();
     // 318: Health snapshot trend
@@ -4866,6 +4893,88 @@ async function _regenDigest(btn) {
     } finally {
         if (btn) btn.classList.remove('fa-spin');
     }
+}
+
+// ── 386: Pojmenované konverzace (localStorage per prohlížeč) ─────────────────
+
+function _convLoad() {
+    try { return JSON.parse(localStorage.getItem('sentinel_conversations') || '[]'); }
+    catch { return []; }
+}
+
+function _convStore(list) {
+    // max 10 konverzací, každá max ~200 kB — localStorage limit ~5 MB
+    try { localStorage.setItem('sentinel_conversations', JSON.stringify(list.slice(0, 10))); }
+    catch (e) { alert('Uložení selhalo — konverzace je příliš velká.'); }
+}
+
+function _convMenuToggle() {
+    const menu = document.getElementById('conv-menu');
+    if (!menu) return;
+    if (menu.style.display === 'block') { menu.style.display = 'none'; return; }
+    _convMenuRender();
+    menu.style.display = 'block';
+}
+
+function _convMenuRender() {
+    const menu = document.getElementById('conv-menu');
+    if (!menu) return;
+    const convs = _convLoad();
+    const hasChat = !!document.querySelector('#chat-history .message, #chat-history div');
+    const rows = convs.map((c, i) => `
+        <div style="display:flex; align-items:center; gap:6px; padding:4px 6px; border-radius:4px;"
+             onmouseover="this.style.background='rgba(255,255,255,.05)'" onmouseout="this.style.background=''">
+            <span onclick="_convOpen(${i})" style="flex:1; font-size:.84em; cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${_escape(c.name)} (${c.date})">
+                <i class="fa-solid fa-comments" style="color:var(--accent); font-size:.8em; margin-right:5px;"></i>${_escape(c.name)}
+                <span style="color:var(--text-muted); font-size:.78em;">${c.date}</span></span>
+            <i class="fa-solid fa-times" onclick="_convDelete(${i})" title="Smazat" style="color:var(--text-muted); cursor:pointer; font-size:.78em;"></i>
+        </div>`).join('');
+    menu.innerHTML = `
+        ${rows || '<div style="color:var(--text-muted); font-size:.8em; padding:6px; font-style:italic;">Žádné uložené konverzace.</div>'}
+        <div style="border-top:1px solid var(--border); margin-top:4px; padding-top:5px; display:flex; gap:5px;">
+            <button onclick="_convSave()" ${hasChat ? '' : 'disabled'}
+                style="flex:1; padding:4px; background:transparent; border:1px dashed var(--border); color:${hasChat ? 'var(--accent)' : 'var(--text-muted)'}; border-radius:4px; cursor:${hasChat ? 'pointer' : 'default'}; font-size:.8em;">
+                <i class="fa-solid fa-floppy-disk"></i> Uložit aktuální</button>
+            <button onclick="_convNew()" style="flex:1; padding:4px; background:transparent; border:1px dashed var(--border); color:var(--text-muted); border-radius:4px; cursor:pointer; font-size:.8em;">
+                <i class="fa-solid fa-plus"></i> Nová konverzace</button>
+        </div>`;
+}
+
+function _convSave() {
+    const ch = document.getElementById('chat-history');
+    if (!ch || !ch.innerHTML.trim()) return;
+    const name = prompt('Název konverzace:', new Date().toLocaleString('cs-CZ'));
+    if (!name) return;
+    const convs = _convLoad().filter(c => c.name !== name);
+    convs.unshift({name, date: new Date().toLocaleDateString('cs-CZ'), html: ch.innerHTML.slice(0, 200000)});
+    _convStore(convs);
+    _convMenuRender();
+}
+
+function _convOpen(idx) {
+    const c = _convLoad()[idx];
+    const ch = document.getElementById('chat-history');
+    if (!c || !ch) return;
+    if (ch.innerHTML.trim() && !confirm('Nahradit aktuální chat uloženou konverzací?')) return;
+    ch.innerHTML = c.html;
+    ch.scrollTop = ch.scrollHeight;
+    const menu = document.getElementById('conv-menu');
+    if (menu) menu.style.display = 'none';
+}
+
+function _convNew() {
+    const ch = document.getElementById('chat-history');
+    if (ch && ch.innerHTML.trim() && !confirm('Vymazat aktuální chat? (Nezapomeň případně uložit.)')) return;
+    if (ch) ch.innerHTML = '';
+    const menu = document.getElementById('conv-menu');
+    if (menu) menu.style.display = 'none';
+}
+
+function _convDelete(idx) {
+    const convs = _convLoad();
+    convs.splice(idx, 1);
+    _convStore(convs);
+    _convMenuRender();
 }
 
 // 266: Export chatu do Markdown

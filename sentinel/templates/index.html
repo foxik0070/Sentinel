@@ -210,6 +210,12 @@
                 <button onclick="exportChatToMarkdown()" title="266: Export chatu do Markdown" style="background:transparent; border:1px solid var(--border); color:var(--text-muted); padding:8px 10px; border-radius:4px; cursor:pointer; font-size:0.9em; flex-shrink:0;">
                     <i class="fa-solid fa-file-export"></i>
                 </button>
+                <span style="position:relative; flex-shrink:0;">
+                    <button onclick="_convMenuToggle()" title="386: Uložené konverzace" style="background:transparent; border:1px solid var(--border); color:var(--text-muted); padding:8px 10px; border-radius:4px; cursor:pointer; font-size:0.9em;">
+                        <i class="fa-solid fa-folder-open"></i>
+                    </button>
+                    <div id="conv-menu" style="display:none; position:absolute; right:0; bottom:110%; z-index:80; background:var(--panel); border:1px solid var(--border); border-radius:6px; box-shadow:0 4px 16px rgba(0,0,0,.4); padding:6px; min-width:240px;"></div>
+                </span>
                 {% else %}
                 <div style="flex:1; padding:8px 12px; font-size:0.85em; color:var(--text-muted); font-style:italic; background:var(--panel); border-radius:4px; border:1px solid var(--border);">
                     <i class="fa-solid fa-eye" style="margin-right:6px;"></i><span data-i18n="viewer_chat_disabled">Chat v režimu prohlížeče není dostupný</span>
