@@ -1318,11 +1318,44 @@ async function _toolsAnalyticsLoad() {
     const days = document.getElementById('analytics-days')?.value || 30;
     const slaBody = document.getElementById('analytics-sla-body');
     if (slaBody) slaBody.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+    const sloBody = document.getElementById('analytics-slo-body');
+    if (sloBody) sloBody.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
     try {
-        const [resR, fatR] = await Promise.all([
+        const [resR, fatR, sloR] = await Promise.all([
             fetch(`/api/analytics/resolution_time?days=${days}`).then(r => r.json()),
             fetch(`/api/analytics/alert_fatigue?days=${days}`).then(r => r.json()),
+            fetch(`/api/analytics/slo?days=${days}`).then(r => r.json()),
         ]);
+        // 404: SLO error budget
+        const slo = sloR.slo || [];
+        if (sloBody) {
+            const stColor = {ok: 'var(--success)', warning: '#f0ad4e', exhausted: 'var(--error)'};
+            sloBody.innerHTML = slo.length
+                ? `<table style="width:100%;border-collapse:collapse;font-size:.85em;">
+                    <tr style="color:var(--text-muted);font-size:.72em;">
+                        <th style="text-align:left;padding:3px 6px;">Host</th><th>Cíl</th><th>Uptime</th>
+                        <th>Výpadky</th><th style="text-align:left;padding-left:10px;">Error budget</th></tr>
+                    ${slo.map(s => {
+                        const usedPct = Math.min(100, s.budget_used_pct);
+                        const barColor = stColor[s.status] || '#888';
+                        const downFmt = s.downtime_min >= 60 ? (s.downtime_min/60).toFixed(1)+' h' : s.downtime_min.toFixed(0)+' min';
+                        const remFmt = Math.abs(s.budget_remaining_min) >= 60 ? (s.budget_remaining_min/60).toFixed(1)+' h' : s.budget_remaining_min.toFixed(0)+' min';
+                        return `<tr style="border-bottom:1px solid var(--border);">
+                            <td style="padding:4px 6px;font-weight:600;">${_escape(s.host)}</td>
+                            <td style="text-align:right;padding:4px 6px;color:var(--text-muted);">${s.target_pct}%</td>
+                            <td style="text-align:right;padding:4px 6px;color:${s.uptime_pct >= s.target_pct ? 'var(--success)' : 'var(--error)'};font-weight:700;">${s.uptime_pct}%</td>
+                            <td style="text-align:right;padding:4px 6px;">${downFmt}</td>
+                            <td style="padding:4px 6px 4px 10px;min-width:140px;">
+                                <div style="display:flex;align-items:center;gap:8px;">
+                                    <div style="flex:1;height:7px;background:rgba(255,255,255,.07);border-radius:4px;overflow:hidden;">
+                                        <div style="width:${usedPct}%;height:100%;background:${barColor};"></div></div>
+                                    <span style="font-size:.78em;color:${barColor};white-space:nowrap;" title="Zbývající error budget">${remFmt}</span>
+                                </div></td>
+                        </tr>`;
+                    }).join('')}
+                   </table>`
+                : '<span style="color:var(--text-muted);">Žádní hosté.</span>';
+        }
         // 301: SLA resolution time table
         const stats = resR.stats || [];
         if (slaBody) slaBody.innerHTML = stats.length

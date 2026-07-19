@@ -1765,6 +1765,84 @@ def create_blueprint(service):
         days = int_param(request.args.get('days', 30), 30, 1, 365)
         return jsonify({"stats": state.get_resolution_time_stats(days), "days": days})
 
+    @bp.route('/api/analytics/slo', methods=['GET'])
+    @requires_auth
+    def api_analytics_slo():
+        """404: SLO tracking — uptime a error budget per host za N dní.
+
+        Výpadek = trvání DOWN|* issues (availability_detector) z issue_history
+        + aktivní DOWN problémy. Hosty bez výpadku = 100 %."""
+        days = int_param(request.args.get('days'), 30, 1, 90)
+        window_min = days * 24 * 60
+        targets = getattr(config, 'SLO_TARGETS', {}) or {}
+        default_target = float(targets.get('default', 99.9))
+        now = datetime.now(timezone.utc)
+        window_start = now - timedelta(days=days)
+
+        def _minutes(start_str, end_str):
+            try:
+                s = datetime.fromisoformat((start_str or '').replace('Z', '+00:00'))
+                if s.tzinfo is None:
+                    s = s.replace(tzinfo=timezone.utc)
+            except (TypeError, ValueError):
+                return 0.0
+            try:
+                e = datetime.fromisoformat((end_str or '').replace('Z', '+00:00'))
+                if e.tzinfo is None:
+                    e = e.replace(tzinfo=timezone.utc)
+            except (TypeError, ValueError):
+                e = now
+            s = max(s, window_start)
+            e = min(e, now)
+            return max(0.0, (e - s).total_seconds() / 60)
+
+        downtime: dict = {}
+        with state.db_lock:
+            conn = state._get_conn()
+            try:
+                hist = conn.execute(
+                    "SELECT host, COALESCE(first_seen, last_seen), resolved_at FROM issue_history "
+                    "WHERE key LIKE 'DOWN|%' AND resolved_at > ?",
+                    (window_start.isoformat(),)
+                ).fetchall()
+                active = conn.execute(
+                    "SELECT host, COALESCE(first_seen, last_seen), NULL FROM problems "
+                    "WHERE key LIKE 'DOWN|%' AND status IN ('active','validating','acknowledged')"
+                ).fetchall()
+            finally:
+                conn.close()
+        for host, start, end in list(hist) + list(active):
+            if host:
+                downtime[host] = downtime.get(host, 0.0) + _minutes(start, end)
+
+        # Hosty: agenti + hosty s výpadky + explicitní SLO cíle
+        hosts = {a.get('hostname') for a in state.get_all_agents() if a.get('hostname')}
+        hosts |= set(downtime.keys())
+        hosts |= {h for h in targets.keys() if h != 'default'}
+
+        results = []
+        for host in sorted(hosts):
+            target = float(targets.get(host, default_target))
+            down_min = round(downtime.get(host, 0.0), 1)
+            uptime_pct = round(max(0.0, (window_min - down_min) / window_min * 100), 3)
+            budget_min = round(window_min * (100 - target) / 100, 1)
+            remaining_min = round(budget_min - down_min, 1)
+            used_pct = round(min(999, down_min / budget_min * 100), 1) if budget_min > 0 else 0
+            status = 'ok'
+            if remaining_min < 0:
+                status = 'exhausted'
+            elif used_pct >= 75:
+                status = 'warning'
+            results.append({
+                "host": host, "target_pct": target, "uptime_pct": uptime_pct,
+                "downtime_min": down_min, "budget_min": budget_min,
+                "budget_remaining_min": remaining_min, "budget_used_pct": used_pct,
+                "status": status,
+            })
+        # Nejhorší nahoru
+        results.sort(key=lambda r: r["budget_remaining_min"])
+        return jsonify({"days": days, "slo": results})
+
     @bp.route('/api/analytics/flapping', methods=['GET'])
     @requires_auth
     def api_flapping_issues():

@@ -356,6 +356,8 @@ DISPLAY_TZ: str = ""
 HEARTBEAT_URLS: list = []
 # 408: DNS monitoring — [{domain: "example.com", types: ["A","MX"]}]; kontrola hodinově
 DNS_CHECKS: list = []
+# 404: SLO cíle — {"default": 99.9, "hostname": 99.0} (% uptime za 30 dní)
+SLO_TARGETS: dict = {"default": 99.9}
 # 415: Gitea issue sync
 GITEA_URL: str = ""
 GITEA_TOKEN: str = ""
@@ -690,6 +692,16 @@ def load_config():
     _dns = data.get("dns_checks")
     if isinstance(_dns, list):
         DNS_CHECKS = _dns
+    global SLO_TARGETS
+    _slo = data.get("slo_targets")
+    if isinstance(_slo, dict) and _slo:
+        merged_slo = dict(SLO_TARGETS)
+        for k, v in _slo.items():
+            try:
+                merged_slo[str(k)] = float(v)
+            except (TypeError, ValueError):
+                pass
+        SLO_TARGETS = merged_slo
     gitea_conf = data.get("gitea", {})
     if isinstance(gitea_conf, dict) and gitea_conf:
         GITEA_URL = str(gitea_conf.get("url", GITEA_URL))
@@ -786,7 +798,7 @@ _KNOWN_KEYS = {
     'grafana_annotations',
     'issue_history_retention_days', 'display_tz', 'heartbeat_urls', 'gitea',
     'windows_ingest_key', 'dns_checks', 'lifecycle', 'ai_digest_hour',
-    'rag_learn_resolved', 'ai_timeout_seconds',
+    'rag_learn_resolved', 'ai_timeout_seconds', 'slo_targets',
 }
 
 VALIDATION_WARNINGS: list = []   # populated by _validate_config(), readable via API
