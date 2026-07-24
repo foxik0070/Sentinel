@@ -4,6 +4,7 @@ M1-1 + M1-4: SSH hardening — known_hosts management, shlex escaping, centráln
 Všechny SSH volání v projektu by měly používat `build_ssh_cmd()` místo ručního skládání.
 """
 import os
+import re
 import shlex
 import subprocess
 import logging
@@ -25,6 +26,49 @@ def _ssh_options() -> list:
     return opts
 
 
+# 352b: least-privilege remediace — prefixy příkazů, které na hostu vyžadují
+# root přes `sudo -n`. Vše ostatní (df, systemctl status/--failed, …) běží jako
+# neprivilegovaný uživatel bez sudo. Sudoers na hostech MUSÍ být podmnožinou
+# aplikačního whitelistu allowed_commands; co sudoers nepovolí → `sudo -n` selže.
+_SUDO_PREFIXES = (
+    "systemctl restart", "systemctl start", "systemctl stop",
+    "systemctl mask", "systemctl unmask", "systemctl enable",
+    "systemctl disable", "systemctl reload", "systemctl daemon-reload",
+    "mount", "umount",
+    "apt-get", "apt ", "dpkg",
+    "journalctl --rotate", "journalctl --vacuum",
+    "proxmox-backup-client garbage-collect",
+    "reboot", "shutdown", "poweroff",
+    # read-only diagnostika, ale root pro plný výstup (rozhodnutí 2026-07-24)
+    "ss ", "du ",
+)
+
+
+def _needs_sudo(segment: str) -> bool:
+    """True pokud segment příkazu vyžaduje root. Match na úvodní tokeny —
+    'systemctl restart x' ano, 'systemctl status x' ne."""
+    s = segment.strip()
+    return any(s == p.strip() or s.startswith(p) for p in _SUDO_PREFIXES)
+
+
+def _apply_sudo(command: str) -> str:
+    """Prefixne `sudo -n ` jen root-vyžadující segmenty (rozdělené &&/||/;/|).
+
+    Compound příkazy (`journalctl --rotate && journalctl --vacuum`) dostanou sudo
+    na každém root-segmentu; pipeliny (`du … | sort | head`) jen na du.
+    NEobaluje celé do `sudo sh -c` — to by v sudoers znamenalo neomezený root."""
+    parts = re.split(r'(\s*(?:&&|\|\||;|\|)\s*)', command)
+    out = []
+    for i, part in enumerate(parts):
+        if i % 2 == 1:            # oddělovač (&&, |, ;, ||) — beze změny
+            out.append(part)
+        elif part.strip() and _needs_sudo(part):
+            out.append("sudo -n " + part.lstrip())
+        else:
+            out.append(part)
+    return "".join(out)
+
+
 def build_ssh_cmd(host: str, command: str, timeout: int = 10,
                   user: str = None, key: str = None, jump: str = None) -> list:
     """Sestaví bezpečný SSH příkaz.
@@ -32,6 +76,8 @@ def build_ssh_cmd(host: str, command: str, timeout: int = 10,
     - UserKnownHostsFile místo StrictHostKeyChecking=no
     - StrictHostKeyChecking=accept-new: první připojení přijme klíč, pak ho ověřuje
     - shlex.quote() na command
+    - 352b: při neprivilegovaném uživateli (user != root) prefixne root-příkazy
+      `sudo -n `; jako root se nechává beze změny (zpětná kompatibilita)
     """
     ssh_user = user or getattr(config, 'SSH_USER', 'root')
     ssh_key = key or getattr(config, 'SSH_KEY_PATH', '/opt/Sentinel/conf/.id_ed25519')
@@ -43,7 +89,8 @@ def build_ssh_cmd(host: str, command: str, timeout: int = 10,
         cmd += ["-i", ssh_key]
     if ssh_jump:
         cmd += ["-J", ssh_jump]
-    cmd += [f"{ssh_user}@{host}", command]
+    final_command = command if ssh_user == 'root' else _apply_sudo(command)
+    cmd += [f"{ssh_user}@{host}", final_command]
     return cmd
 
 
