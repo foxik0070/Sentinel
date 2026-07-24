@@ -361,6 +361,8 @@ HEARTBEAT_URLS: list = []
 DNS_CHECKS: list = []
 # 404: SLO cíle — {"default": 99.9, "hostname": 99.0} (% uptime za 30 dní)
 SLO_TARGETS: dict = {"default": 99.9}
+# 292: při startu zpracovat čerstvé (.log.1/.log.1.gz) archivy po logrotaci
+PROCESS_ROTATED_LOGS: bool = False
 # 415: Gitea issue sync
 GITEA_URL: str = ""
 GITEA_TOKEN: str = ""
@@ -697,6 +699,8 @@ def load_config():
     _dns = data.get("dns_checks")
     if isinstance(_dns, list):
         DNS_CHECKS = _dns
+    global PROCESS_ROTATED_LOGS
+    PROCESS_ROTATED_LOGS = bool(data.get("process_rotated_logs", PROCESS_ROTATED_LOGS))
     global SLO_TARGETS
     _slo = data.get("slo_targets")
     if isinstance(_slo, dict) and _slo:
@@ -804,6 +808,7 @@ _KNOWN_KEYS = {
     'issue_history_retention_days', 'display_tz', 'heartbeat_urls', 'gitea',
     'windows_ingest_key', 'dns_checks', 'lifecycle', 'ai_digest_hour',
     'rag_learn_resolved', 'ai_timeout_seconds', 'slo_targets',
+    'process_rotated_logs',
 }
 
 VALIDATION_WARNINGS: list = []   # populated by _validate_config(), readable via API

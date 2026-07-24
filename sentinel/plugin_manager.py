@@ -48,14 +48,26 @@ def load_plugins():
             # ---> KLÍČOVÁ OPRAVA: Simulace oficiálního balíčku
             # Přinutíme Python věřit, že plugin je součástí "sentinel.plugins"
             full_module_name = f"sentinel.plugins.{p_name}"
-            
+
             spec = importlib.util.spec_from_file_location(full_module_name, plugin_path)
             module = importlib.util.module_from_spec(spec)
-            
+
             # Zaregistrování do globálního slovníku – DÍKY TOMU FUNGUJÍ RELATIVNÍ IMPORTY (from . import base)
             sys.modules[full_module_name] = module
-            
+
             spec.loader.exec_module(module)
+
+            # 334: kontrola deklarovaných závislostí — plugin může mít
+            # REQUIREMENTS = ["psutil", ...]; chybějící modul = plugin se nenačte
+            # s jasnou hláškou místo ImportError někde za běhu
+            missing = [req for req in getattr(module, 'REQUIREMENTS', [])
+                       if importlib.util.find_spec(str(req)) is None]
+            if missing:
+                utils.log_message(
+                    f"[!] PluginManager: '{p_name}' vyžaduje chybějící moduly: "
+                    f"{', '.join(missing)} — pip install {' '.join(missing)}; plugin přeskočen"
+                )
+                continue
 
             plugin_class = getattr(module, "Detector")
             instance = plugin_class(name=p_name, config_params=det_conf.get("params", {}))

@@ -200,9 +200,30 @@ def main():
 
     # Initial scan — zpracuj poslední řádky existujících log souborů při startu
     def _initial_scan():
-        import glob, time as _t
+        import glob, gzip, time as _t
         _t.sleep(2)  # počkat na inicializaci plugin manageru
         from . import plugin_manager as _pm
+        # 292: volitelně zpracovat čerstvě zrotované archivy (.log.1 / .log.1.gz)
+        # — řádky zapsané mezi rotací a startem služby by jinak zapadly.
+        # Issue klíče jsou idempotentní, duplicitní dispatch jen zvýší occurrence.
+        if getattr(config, 'PROCESS_ROTATED_LOGS', False):
+            _max_age = 24 * 3600
+            for rpath in (glob.glob(os.path.join(config.LOG_DIR, "*.log.1"))
+                          + glob.glob(os.path.join(config.LOG_DIR, "*.log.1.gz"))):
+                try:
+                    if _t.time() - os.path.getmtime(rpath) > _max_age:
+                        continue
+                    opener = gzip.open if rpath.endswith('.gz') else open
+                    with opener(rpath, 'rt', errors='replace') as f:
+                        rlines = f.readlines()[-500:]
+                    if rlines:
+                        # dispatch pod jménem původního logu, ať matchují patterny
+                        orig = rpath[:-3] if rpath.endswith('.gz') else rpath
+                        orig = orig[:-2]  # odřízne ".1"
+                        _pm.dispatch(orig, rlines)
+                        utils.log_message(f"[292] Zpracován rotovaný log {os.path.basename(rpath)} ({len(rlines)} řádků)")
+                except Exception as e:
+                    utils.log_message(f"[!] Rotated log {rpath}: {e}")
         for fpath in glob.glob(os.path.join(config.LOG_DIR, "*.log")):
             try:
                 with open(fpath, "r", errors="replace") as f:
