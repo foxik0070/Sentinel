@@ -2,10 +2,10 @@
 
 ![Sentinel Commander](sentinel_master.png)
 
-![Version](https://img.shields.io/badge/version-v2026.06.024-blue)
+![Version](https://img.shields.io/badge/version-v2026.06.031-blue)
 ![License: MIT](https://img.shields.io/badge/License-MIT-cyan.svg)
 ![Python](https://img.shields.io/badge/python-3.13%2B-blue)
-![Tests](https://img.shields.io/badge/tests-181%20passing-green)
+![Tests](https://img.shields.io/badge/tests-192%20passing-green)
 
 **Hybrid AI Log Monitor & Analyzer for Linux Infrastructure**
 
@@ -19,12 +19,14 @@ Sentinel Commander is an advanced AI-powered monitoring system for Linux and ent
 |---|---|
 | **Log monitoring** | inotify tailing, plugin system (hot-reload), pattern matching |
 | **AI analysis** | Ollama LLM integration, Hailo NPU (hailo-ollama), ChromaDB RAG |
-| **AI Autofix** | SSH-based remediation with safety classifier, modal approval |
+| **AI Autofix** | SSH-based remediation with safety classifier, modal approval, AI confidence score |
+| **AI insights** | RAG learning from resolved issues, daily digest, eval suite, per-user chat memory, token tracking |
 | **Push agents** | REST ingest: sentinel-agent nodes (`/api/v1/agent/ingest`), Windows agents (`/api/ingest/windows`) |
 | **Alerts** | 13 channels — Teams, Slack, ntfy, SMTP, Telegram, Matrix, HA, Gotify, PagerDuty, MQTT, Syslog, Webhook, SMS |
-| **Security** | LDAP/AD auth, 2FA TOTP, bcrypt passwords, CSRF, API keys, audit trail |
-| **Observability** | Prometheus `/metrics`, Swagger UI `/api/docs`, health `/healthz` |
-| **Dashboard** | Real-time Socket.IO web UI, topology map, analytics, runbooks |
+| **Security** | LDAP/AD auth, 2FA TOTP, bcrypt passwords, CSRF, API keys, audit trail, **least-privilege SSH remediation** (dedicated `sentinel` user + sudo whitelist) |
+| **Observability** | Prometheus `/metrics`, Swagger UI `/api/docs`, health `/healthz`, SLO error budgets, DNS/webhook delivery monitoring |
+| **Dashboard** | Real-time Socket.IO web UI, topology map, analytics, runbooks, drag-drop widgets |
+| **CLI** | `sentinel-cli` — stdlib-only client (status, issues, ack/resolve, agents, digest, slo) via REST API |
 
 ---
 
@@ -127,7 +129,7 @@ sentinel/
 ## Testing
 
 ```bash
-make test   # ruff + pytest (181 tests)
+make test   # ruff + pytest (192 tests)
 make build  # minify JS/CSS
 ```
 

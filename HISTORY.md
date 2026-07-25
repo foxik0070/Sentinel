@@ -1,5 +1,55 @@
 # Historie změn
 
+## [2026.06.031] - 2026-07-25
+
+**Souhrn:** Velký červencový milestone — least-privilege SSH remediace, dokončení AI sekce (426–435), monitoring (DNS/SLO/webhook log), CLI klient, řada UI/UX vylepšení a issue lifecycle. 192 testů OK.
+
+### Bezpečnost — least-privilege remediace
+- **352b** — Sentinel už NESSHuje jako root. `ssh_utils._needs_sudo()`/`_apply_sudo()`: root-vyžadující příkazy (systemctl restart/start/stop/mask, mount, apt-get, journalctl --rotate/--vacuum, reboot, proxmox GC) dostanou `sudo -n` per-segment (compound `a && b`, pipeline `du | sort | head`), diagnostika (df, systemctl status) bez sudo. Aktivní jen při `ssh_execution.user != root`. Dedikovaný klíč `sentinel` + `/etc/sudoers.d/sentinel` whitelist (podmnožina `allowed_commands`) nasazeno přes Ansible. `tests/test_ssh_sudo.py` (11 testů).
+- **352** — SSH passphrase přes ssh-agent: `ssh_execution.auth_sock` → `SSH_AUTH_SOCK` v prostředí ssh procesů (šifrovaný klíč místo plaintextu na disku).
+- **334** — Plugin dependency check: `modul.REQUIREMENTS = [...]` ověřeno přes `importlib.util.find_spec` — chybějící závislost → plugin skip s hláškou místo runtime ImportError.
+
+### AI & RAG (dokončení sekce 426–435)
+- **428** — RAG auto-learning z vyřešených issues: `mark_resolved` → `_rag_learn_resolved` (jen s komentáři) → inkrementální chroma index + `learned_kb.txt`.
+- **429** — AI confidence skóre u autofixu: JSON `"confidence"` 0-100 + barevný badge „Jistota AI".
+- **430** — Per-user konverzační paměť chatu: `conv_append`/`conv_history` per uživatel místo globální historie.
+- **431** — AI denní digest: scheduler v `ai_digest_hour`, `GET/POST /api/analyze/daily_digest`, Centrum událostí v UI.
+- **433** — Embeddings cache: reindex reuse vektorů z Chroma dle md5 ID (275 chunků: ~100 ms).
+- **434** — AI eval suite: `sentinel/ai_evals.py` — 6 doménových testů, keyword scoring, `POST /api/ai/eval/run`, custom testy v `/var/lib/sentinel/ai_evals.json`.
+- **435** — Token usage tracking: `state.record_token_usage()`, denní statistika, `GET /api/ai/token_stats`, řádek v Connection modalu.
+
+### Monitoring & Analytics
+- **404** — SLO tracking s error budgetem: `GET /api/analytics/slo`, config `slo_targets`, UI v Tools → Analytics (uptime %, výpadky, error budget bary).
+- **406** — Webhook delivery log: tabulka `webhook_deliveries` (url, event, status, latence), `GET /api/webhooks/deliveries`.
+- **408** — DNS monitoring: config `dns_checks`, hodinová kontrola resolvability + změn A/MX (DNS_FAIL/DNS_CHANGE issues), kontrolní doména odliší výpadek resolveru, `POST /api/dns/check`.
+- **397** — Per-day-of-week anomaly baseline: σ počítáno zvlášť pro po-pá vs víkend (7denní okno, fallback 24h) — méně false positives.
+
+### Issue lifecycle
+- Per-severity stale TTL (`lifecycle.stale_ttl_by_severity`), `resolve_stale_problems()` zahrnuje validating+acknowledged.
+- `resolve_reason`/`resolved_by` v `issue_history`; recheck endpoint `POST /api/issues/<key>/recheck` (deterministické ověření platnosti).
+- Stale badge „🕓 Xh bez detekce" + recheck tlačítko na kartách.
+
+### UI/UX
+- **378** — Drag-drop pořadí dashboard widgetů (localStorage).
+- **380** — Uložené filtry issues (localStorage, rychlé přepínání).
+- **385** — Multi-select agentů: checkboxy + bulk lišta (skupina/maintenance/ignore/delete).
+- **386** — Pojmenované konverzace chatu (uložit/otevřít/nová).
+- **390** — Breadcrumb v modálech (chip „← Zpět na Issues").
+- **392** — Loading skeletons místo spinnerů v issues modalu.
+- **395** — Inline expandace issue karet: klik rozbalí plnou zprávu + timeline bez modalu.
+
+### Integrace & Ops
+- **424** — CLI klient `sentinel-cli` (stdlib-only): `status`, `issues`, `ack`/`resolve`, `agents`, `digest`, `slo`; X-API-Key auth, config přes env / `~/.config/sentinel-cli.conf`.
+- **329** — Hromadné nasazení agentů: seznam/CSV hostnames → registrace → SSH for-loop nebo Ansible playbook.
+- **292** — Volitelné zpracování zrotovaných logů (`process_rotated_logs`): `.log.1`/`.log.1.gz` (<24h) při startu.
+
+### Opravy
+- Interní watchdog používal `http://` i při zapnutém HTTPS → falešné „Web UI unresponsive" (nyní respektuje `HTTPS_ENABLED` + `verify=False`).
+- AI task watchdog: naive-local vs UTC `processed_at` → na UTC+2 resetoval běžící tasky (duplicitní zpracování); sjednoceno na UTC.
+- Stored XSS: hodinový vtip vkládal host/plugin z agentů bez `html.escape`.
+- CPU ollama fallback: špatný payload formát na `/v1/` URL + neparsoval `choices[]`.
+- AI timeout 90 s hardcoded → config `ai_timeout_seconds` (default 180).
+
 ## [2026.06.022] - 2026-06-11
 
 **Souhrn:** Masivní milestone — zbývající ~50 TODO položek, nové testy (security + integration), aktualizace dokumentace.
