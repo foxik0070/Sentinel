@@ -980,8 +980,11 @@ def _try_auto_remediate(key: str, host: str, plugin: str, msg: str, data: dict):
         if not command:
             return
 
-        # Zkontrolovat allowlist — musí existovat povolený vzor
-        allowed = check_command_allowed(command)
+        # Zkontrolovat allowlist — musí existovat povolený vzor.
+        # check_command_allowed žije ve state_agents (lazy import jako _actions/_safety výše);
+        # nekvalifikované volání shazovalo celou auto-remediaci na NameError.
+        from .state_agents import check_command_allowed as _check_command_allowed
+        allowed = _check_command_allowed(command)
         if not allowed or not allowed.get('auto_execute'):
             logger.debug(f"AutoRem: příkaz '{command}' není v allowlistu s auto_execute=1, přeskakuji")
             return

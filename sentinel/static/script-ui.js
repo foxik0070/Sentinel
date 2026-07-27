@@ -4655,8 +4655,20 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
         const overlay = document.getElementById('shortcuts-overlay');
         if (overlay) { overlay.remove(); return; }
-        const openModal = document.querySelector('.modal[style*="flex"], .modal[style*="block"]');
-        if (openModal) openModal.style.display = 'none';
+        // Pozor: `.modal` je vnitřní box a 26 z nich má display:flex natvrdo
+        // v inline stylu — starý selektor trefil první z nich v DOM bez ohledu
+        // na to, zda je jeho overlay otevřený: skryl obsah a nechal viset
+        // overlay (uživatel uvězněn). Řešíme přes viditelný .modal-overlay.
+        const openOverlays = [...document.querySelectorAll('.modal-overlay')]
+            .filter(m => getComputedStyle(m).display !== 'none');
+        const top = openOverlays[openOverlays.length - 1];   // poslední v DOM = navrchu
+        if (top) {
+            // Preferuj vlastní zavírací tlačítko modalu — uklidí i refresh intervaly
+            const closer = top.querySelector('.modal-header [onclick*="close"]')
+                        || top.querySelector('[onclick*="close"]');
+            if (closer) closer.click();
+            else top.style.display = 'none';
+        }
         return;
     }
     if (inInput) return;

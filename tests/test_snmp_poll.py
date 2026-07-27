@@ -146,10 +146,12 @@ class TestPollOnce(unittest.TestCase):
             {"host": "bad", "oids": [{"oid": "1.1", "metric": "m"}]},
             {"host": "good", "name": "g", "oids": [{"oid": "1.1", "metric": "m"}]},
         ]}
-        with patch.object(snmp_poll, "_snmpget", return_value="1"):
-            with patch.object(snmp_poll.state, "save_telemetry_snapshot",
-                              side_effect=[RuntimeError("db down"), None]) as save:
-                n = snmp_poll.poll_once(cfg)
+        # logger je napojen na DB handler — bez ztlumení by test psal do sentinel_errors
+        with patch.object(snmp_poll, "logger"):
+            with patch.object(snmp_poll, "_snmpget", return_value="1"):
+                with patch.object(snmp_poll.state, "save_telemetry_snapshot",
+                                  side_effect=[RuntimeError("db down"), None]) as save:
+                    n = snmp_poll.poll_once(cfg)
         self.assertEqual(n, 1)                # druhý cíl prošel
         self.assertEqual(save.call_count, 2)
 

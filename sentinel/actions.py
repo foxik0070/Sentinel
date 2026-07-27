@@ -11,17 +11,15 @@ from . import safety
 def _pre_validate_ssh_command(command: str) -> bool:
     """244: Ověří SSH příkaz oproti DB allowlistu před odesláním. Vrátí False pokud není povolen."""
     try:
-        allowed = state.list_allowed_commands()  # [{command, ...}]
+        allowed = state.list_allowed_commands()
         if not allowed:
             return True  # Prázdný allowlist = vše povoleno (zachová zpětnou kompatibilitu)
-        cmd = command.strip()
-        for entry in allowed:
-            pattern = (entry.get('command') or '').strip()
-            if not pattern:
-                continue
-            if fnmatch.fnmatch(cmd, pattern) or cmd == pattern or cmd.startswith(pattern.rstrip('*')):
-                return True
-        return False
+        # Deleguj na state.check_command_allowed — jeden zdroj pravdy.
+        # Dřív se tu četl klíč 'command', ale řádky mají 'pattern' → pattern byl
+        # vždy prázdný, smyčka vše přeskočila a funkce vracela False, takže
+        # KAŽDÝ legitimní SSH příkaz končil na [BLOCKED-244]. Navíc
+        # `cmd.startswith(pattern.rstrip('*'))` propouštěl 'systemctl restart x && evil'.
+        return state.check_command_allowed(command) is not None
     except Exception:
         return True  # Při chybě DB neblokuj (fail-open pro zachování funkce)
 
