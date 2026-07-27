@@ -1673,6 +1673,8 @@ function bulkIgnore() {
 
 function bulkDelete() {
     if (_bulkSelected.size === 0) return;
+    // nevratná hromadná akce — deleteAllInChannel() potvrzení má, tohle ne
+    if (!confirm(`Opravdu smazat ${_bulkSelected.size} vybraných záznamů? Akce je nevratná.`)) return;
     _bulkSelected.forEach(kb64 => triggerAction(`delete_key ${kb64}`));
     _bulkSelected.clear();
     toggleBulkMode();

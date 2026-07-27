@@ -2814,10 +2814,12 @@ async function _toolsPatternsLoad() {
     try {
         const [pr, logR] = await Promise.all([
             fetch('/api/patterns').then(r=>r.json()).catch(()=>({patterns:[]})),
-            fetch('/api/logs').then(r=>r.json()).catch(()=>({logs:[]})),
+            // endpoint je /api/logs/list a vrací {files: [...]}; '/api/logs'
+            // vracelo 404 → catch spolkl chybu a select logů zůstal prázdný
+            fetch('/api/logs/list').then(r=>r.ok?r.json():{files:[]}).catch(()=>({files:[]})),
         ]);
         const patterns = pr.patterns || [];
-        const logs = (logR.logs||[]).map(l=>l.name||l).filter(Boolean);
+        const logs = (logR.files||logR.logs||[]).map(l=>l.name||l).filter(Boolean);
         const channelOpts = ['infra','security','agent','root'].map(c=>`<option value="${c}">${c}</option>`).join('');
         const patRows = patterns.length
             ? patterns.map(p => `<tr style="border-bottom:1px solid var(--border);">
@@ -2839,6 +2841,8 @@ async function _toolsPatternsLoad() {
                     <input id="pt-name" type="text" placeholder="disk_full" style="width:100%;padding:7px;background:var(--input-bg);color:var(--text-main);border:1px solid var(--border);border-radius:4px;font-size:.83em;box-sizing:border-box;"></div>
                 <div style="flex:2;min-width:180px;"><label style="display:block;font-size:.75em;color:var(--text-muted);margin-bottom:3px;">Regex pattern</label>
                     <input id="pt-pattern" type="text" placeholder="disk.*full|no space" style="width:100%;padding:7px;background:var(--input-bg);color:var(--text-main);border:1px solid var(--border);border-radius:4px;font-family:monospace;font-size:.83em;box-sizing:border-box;"></div>
+                <div style="flex:1;min-width:120px;"><label style="display:block;font-size:.75em;color:var(--text-muted);margin-bottom:3px;">Plugin</label>
+                    <input id="pt-plugin" type="text" placeholder="storage_detector" style="width:100%;padding:7px;background:var(--input-bg);color:var(--text-main);border:1px solid var(--border);border-radius:4px;font-size:.83em;box-sizing:border-box;"></div>
                 <div style="min-width:100px;"><label style="display:block;font-size:.75em;color:var(--text-muted);margin-bottom:3px;">Kanál</label>
                     <select id="pt-channel" style="width:100%;padding:7px;background:var(--input-bg);color:var(--text-main);border:1px solid var(--border);border-radius:4px;font-size:.83em;">${channelOpts}</select></div>
                 <div style="min-width:90px;"><label style="display:block;font-size:.75em;color:var(--text-muted);margin-bottom:3px;">Závažnost</label>
@@ -2871,12 +2875,15 @@ async function _ptAdd() {
     const pattern = document.getElementById('pt-pattern')?.value.trim();
     const channel = document.getElementById('pt-channel')?.value || 'infra';
     const severity = document.getElementById('pt-severity')?.value || 'medium';
-    if (!name || !pattern) { alert('Vyplňte název a pattern.'); return; }
+    // backend (routes/system.py) vyžaduje neprázdný 'plugin' — chybějící pole
+    // znamenalo, že přidání patternu z Tools vždy skončilo HTTP 400
+    const plugin = document.getElementById('pt-plugin')?.value.trim();
+    if (!name || !pattern || !plugin) { alert('Vyplňte název, plugin a pattern.'); return; }
     try {
-        const r = await fetch('/api/patterns', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name, pattern, channel, severity, enabled: true})});
+        const r = await fetch('/api/patterns', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name, plugin, pattern, channel, severity, enabled: true})});
         const d = await r.json();
         if (d.status === 'ok') { _toolsTabLoaded.delete('patterns'); _toolsPatternsLoad(); }
-        else alert(d.message || 'Chyba');
+        else alert(d.error || d.message || 'Chyba');   // backend vrací 'error', ne 'message'
     } catch(e) { alert(e.message); }
 }
 
@@ -4675,7 +4682,9 @@ document.addEventListener('keydown', (e) => {
     switch(e.key) {
         case '?': openShortcutsOverlay(); break;
         case 'r': if (typeof updateStatus === 'function') updateStatus(); break;
-        case 's': if (typeof openSettings === 'function') openSettings(); break;
+        // funkce se jmenuje openSettingsModal — 'openSettings' neexistuje,
+        // takže typeof guard zkratku potichu vypínal
+        case 's': if (typeof openSettingsModal === 'function') openSettingsModal(); break;
         case 'a': if (typeof openToolsModal === 'function') openToolsModal(); break;
         case 'n': document.getElementById('user-input')?.focus(); break;
         case '1': if (typeof openIssuesModal === 'function') openIssuesModal('infra'); break;

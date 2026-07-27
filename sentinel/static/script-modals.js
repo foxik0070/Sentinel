@@ -1417,6 +1417,115 @@ async function _correlateAiAnalyze() {
     }
 }
 
+// 168: Auto-clustering issues — tlačítko "Clustery" v hlavičce issues modalu.
+// Funkce chyběla (onclick volal neexistující _autoClusterAnalyze → ReferenceError),
+// přestože backend /api/analyze/auto_clusters existoval.
+async function _autoClusterAnalyze() {
+    const btn = document.getElementById('auto-cluster-btn');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; }
+    const body = document.getElementById('dedicated-modal-body');
+    document.getElementById('auto-cluster-result')?.remove();
+    const box = document.createElement('div');
+    box.id = 'auto-cluster-result';
+    box.style.cssText = 'background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.3);border-radius:6px;padding:12px;margin-bottom:10px;font-size:.85em;';
+    box.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Hledám clustery…';
+    if (body) body.insertAdjacentElement('afterbegin', box);
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 180000);
+    try {
+        const r = await fetch('/api/analyze/auto_clusters', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({channel: currentOpenChannel}), signal: ctrl.signal
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const d = await r.json();
+        const clusters = d.clusters || [];
+        if (!clusters.length) {
+            box.innerHTML = `<span style="color:var(--text-muted);">${_escape(d.message || 'Žádné clustery nenalezeny.')}</span>`;
+            return;
+        }
+        box.innerHTML =
+            `<div style="margin-bottom:8px;font-size:.72em;text-transform:uppercase;color:rgba(16,185,129,.9);letter-spacing:.07em;">
+                <i class="fa-solid fa-object-group"></i> Clustery (${clusters.length})</div>` +
+            clusters.map(c => `
+                <div style="padding:7px 10px;margin-bottom:6px;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:4px;">
+                    <b>${_escape(c.label || c.id || '?')}</b>
+                    <span style="color:var(--text-muted);font-size:.85em;"> · ${(c.issues || []).length} issues</span>
+                    ${c.ai_summary ? `<div style="margin-top:4px;color:var(--text-muted);">${_escape(c.ai_summary)}</div>` : ''}
+                    <div style="margin-top:4px;font-size:.85em;color:var(--text-muted);word-break:break-word;">
+                        ${(c.issues || []).slice(0, 4).map(i => `${_escape(i.host || '?')}: ${_escape((i.last_line || '').slice(0, 70))}`).join('<br>')}
+                        ${(c.issues || []).length > 4 ? `<br><i>+${(c.issues || []).length - 4} dalších</i>` : ''}
+                    </div>
+                </div>`).join('');
+    } catch (e) {
+        const msg = e.name === 'AbortError' ? 'Časový limit vypršel (3 min)' : `Chyba: ${e.message || e}`;
+        box.innerHTML = `<span style="color:var(--error);">${_escape(msg)}</span>`;
+    } finally {
+        clearTimeout(timer);
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-object-group"></i> Clustery'; }
+    }
+}
+
+// 055: AI návrh custom patternů — tlačítko "Navrhnout" v Patterns modalu.
+// Stejný případ: onclick volal neexistující _suggestPatterns.
+async function _suggestPatterns() {
+    const btn = document.getElementById('pat-suggest-btn');
+    const out = document.getElementById('pat-suggestions');
+    if (!out) return;
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; }
+    out.style.display = 'flex';
+    out.innerHTML = '<span style="color:var(--text-muted);"><i class="fa-solid fa-spinner fa-spin"></i> AI analyzuje historické issues…</span>';
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 180000);
+    try {
+        const r = await fetch('/api/patterns/suggest', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: '{}', signal: ctrl.signal
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const d = await r.json();
+        const sug = d.suggestions || [];
+        if (!sug.length) {
+            out.innerHTML = `<span style="color:var(--text-muted);">${_escape(d.message || d.error || 'Žádné návrhy.')}</span>`;
+            return;
+        }
+        out.innerHTML = sug.map((s, idx) => `
+            <div style="padding:8px 10px;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:4px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                    <b>${_escape(s.name || 'Návrh ' + (idx + 1))}</b>
+                    <button onclick="_applySuggestedPattern(${idx})" style="padding:3px 10px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:.8em;white-space:nowrap;">
+                        <i class="fa-solid fa-plus"></i> Použít</button>
+                </div>
+                <code style="display:block;margin-top:4px;font-size:.8em;color:var(--code-text);word-break:break-all;">${_escape(s.pattern || '')}</code>
+                <div style="margin-top:3px;font-size:.8em;color:var(--text-muted);">
+                    plugin: ${_escape(s.plugin || '?')} · kanál: ${_escape(s.channel || 'agent')}
+                    ${s.reason ? `<br>${_escape(s.reason)}` : ''}
+                </div>
+            </div>`).join('');
+        window._patSuggestions = sug;   // pro _applySuggestedPattern
+    } catch (e) {
+        const msg = e.name === 'AbortError' ? 'Časový limit vypršel (3 min)' : `Chyba: ${e.message || e}`;
+        out.innerHTML = `<span style="color:var(--error);">${_escape(msg)}</span>`;
+    } finally {
+        clearTimeout(timer);
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Navrhnout'; }
+    }
+}
+
+/** Předvyplní formulář patternu návrhem od AI (uživatel potvrdí ručně). */
+function _applySuggestedPattern(idx) {
+    const s = (window._patSuggestions || [])[idx];
+    if (!s) return;
+    const set = (id, val) => { const el = document.getElementById(id); if (el && val != null) el.value = val; };
+    set('pat-name', s.name);
+    set('pat-plugin', s.plugin);
+    set('pat-pattern', s.pattern);
+    set('pat-channel', s.channel || 'agent');
+    document.getElementById('pat-name')?.scrollIntoView({behavior: 'smooth', block: 'center'});
+}
+
 // ---- Action Audit Log Modal ----
 let _auditData = [];
 

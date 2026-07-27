@@ -1784,6 +1784,10 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
         if 'uid' not in session: session['uid'] = str(uuid.uuid4())
         uid = session['uid']
         if uid not in self.user_sessions: self.user_sessions[uid] = {'active_file': None}
+        # 'last_seen' čte session GC ve scheduleru; bez zápisu byl default 0,
+        # takže podmínka (now - 0 > 24h) platila vždy a GC každou hodinu smazal
+        # VŠECHNY session včetně aktivních (ztráta nahraného souboru).
+        self.user_sessions[uid]['last_seen'] = time.time()
         return self.user_sessions[uid]
 
     def read_file_content(self, path):

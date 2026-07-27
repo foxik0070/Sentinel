@@ -1188,7 +1188,11 @@ def get_queue_items(limit=50) -> list:
                 (limit,)
             ).fetchall()
             conn.close()
-            now = datetime.now()
+            # created_at se zapisuje jako aware UTC (state_base.DBQueueAdapter.put).
+            # Dřív se tu bralo naive datetime.now() (lokální) a z created_at se
+            # timezone odřízla → age_s nafouklé o offset (v létě +7200 s), takže
+            # každá položka fronty svítila červeně a tvářila se 2 h stará.
+            now = datetime.now(timezone.utc)
             result = []
             for row in rows:
                 try:
@@ -1199,8 +1203,10 @@ def get_queue_items(limit=50) -> list:
                 # Výpočet stáří položky v sekundách
                 age_s = None
                 try:
-                    ts = datetime.fromisoformat(row["created_at"].replace("Z","").split("+")[0])
-                    age_s = int((now - ts).total_seconds())
+                    ts = datetime.fromisoformat(str(row["created_at"]).replace("Z", "+00:00"))
+                    if ts.tzinfo is None:      # starší naive záznamy bereme jako UTC
+                        ts = ts.replace(tzinfo=timezone.utc)
+                    age_s = max(0, int((now - ts).total_seconds()))
                 except Exception:
                     pass
                 result.append({
