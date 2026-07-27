@@ -1,0 +1,146 @@
+# Sentinel — AI roadmap (446–545)
+
+Stavy: `[ ]` nový · `[A]` schváleno · `[X]` hotovo · `[N]` zamítnuto
+
+Navazuje na dokončenou sekci 426–435. Zaměření: **jak AI pracuje, hledá problémy,
+chápe souvislosti a řeší je.** Kontext architektury: Hailo NPU (qwen2.5-coder:1.5b)
++ CPU ollama fallback, ChromaDB RAG, `ai_evals.py`, autofix se safety klasifikátorem,
+allowed_commands, DRY-RUN remediace, per-user chat paměť, token tracking.
+
+Priorita: 🔴 vysoká (řeší dnešní bolest) · 🟡 střední · 🟢 nice-to-have
+
+---
+
+## A. Root cause & souvislosti (446–465)
+
+- [ ] 446 🔴 **Incident grouping napříč hosty** — issues ze stejného časového okna (±2 min) na různých hostech sloučit do jednoho "incidentu" s vlastním ID; AI dostane celou skupinu místo izolovaných alertů
+- [ ] 447 🔴 **Kauzální řetěz místo seznamu** — AI má vrátit strukturu `{příčina → následek → následek}`, ne odstavec; UI vykreslí jako strom
+- [ ] 448 🔴 **Rozlišení příčina vs. symptom** — u skupiny alertů označit, který je kořen (např. disk full → služba spadla → healthcheck selhal); symptomy sbalit pod příčinu
+- [ ] 449 🔴 **Korelace s telemetrií** — k issue automaticky přiložit průběh CPU/RAM/disk/teploty ±30 min a nechat AI hledat souběh (dnes AI vidí jen text alertu)
+- [ ] 450 🔴 **Korelace se změnami** — spojit issue s tím, co se před ním změnilo: config_history, deploy (Gitea webhook), apt upgrade, restart služby
+- [ ] 451 🟡 **Topologická korelace** — využít `topology.py` (CDP/LLDP sousedi) k dohledání, zda výpadky sdílí switch/uplink/hypervizor
+- [ ] 452 🟡 **Závislostní graf služeb** — z `depends_on` + systemd `After=/Requires=` (přes SSH) postavit graf a potlačit alerty následných služeb
+- [ ] 453 🟡 **Detekce společného jmenovatele** — u N alertů najít sdílený atribut (stejný balíček, kernel, mountpoint, VLAN) a nabídnout ho jako hypotézu
+- [ ] 454 🟡 **Časová osa incidentu** — chronologie ze všech zdrojů (logy, telemetrie, akce, notifikace) jako podklad pro AI i postmortem
+- [ ] 455 🟡 **"Co se změnilo od posledně"** — u opakujícího se issue diff proti minulému výskytu (jiná zpráva? jiný host? jiná hodnota?)
+- [ ] 456 🟡 **Cross-host pattern** — stejný alert na >30 % hostů = systémový problém, ne lokální; eskalovat jinak a nespamovat per-host
+- [ ] 457 🟢 **Korelace s externími vlivy** — teplota v místnosti (HA senzory) vs. throttling; výpadek proudu vs. restart hostů
+- [ ] 458 🟡 **Blast radius** — AI odhadne, koho ještě problém zasáhne (závislé služby, uživatelé) a to řídí prioritu
+- [ ] 459 🟡 **Detekce kaskád** — rozpoznat lavinu (1 příčina → 20 alertů do 60 s) a poslat JEDNU notifikaci se souhrnem
+- [ ] 460 🟢 **Korelace s SLO** — spojit issue s dopadem na error budget (404) a podle toho řadit
+- [ ] 461 🟡 **Hypotézy s pravděpodobností** — místo jedné odpovědi vrátit 2–3 hypotézy s odhadem jistoty a návrhem, čím je ověřit
+- [ ] 462 🔴 **Diagnostický plán** — AI navrhne posloupnost read-only příkazů k potvrzení hypotézy; spustí se jedním kliknutím a výsledek se vrátí modelu
+- [ ] 463 🟡 **Iterativní vyšetřování** — smyčka hypotéza → diagnostika → vyhodnocení → další krok (max N kol, s rozpočtem tokenů)
+- [ ] 464 🟢 **Graf incidentu v UI** — vizualizace vztahů mezi issues (příčina/následek/duplicita)
+- [ ] 465 🟡 **Zpětná korelace při vyřešení** — když issue zmizí, ověřit, zda zmizely i navázané, a potvrdit tím správnost hypotézy
+
+## B. Hledání problémů & prevence (466–485)
+
+- [ ] 466 🔴 **AI čte nezachycené logy** — periodicky nechat model projít vzorek řádků, které NEmatchnul žádný detektor, a navrhnout nové patterny (endpoint `/api/patterns/suggest` existuje, ale nemá volající — viz bug)
+- [ ] 467 🔴 **Detekce tiché degradace** — pomalý růst latence/chyb, který nepřekročí práh, ale trend je jasný; AI hlásí dřív než threshold
+- [ ] 468 🔴 **Chybějící signál** — alert na to, co PŘESTALO chodit (log se přestal plnit, metrika zmizela, cron nedoběhl) — dnes se detekuje jen přítomnost problému
+- [ ] 469 🟡 **Baseline profil hosta** — AI si drží popis "jak vypadá normální den" per host a hlásí odchylky od profilu, ne od σ
+- [ ] 470 🟡 **Sezónnost nad rámec 397** — kromě po-pá/víkend i denní doba, konec měsíce, backup okna
+- [ ] 471 🔴 **Prediktivní kapacita s AI kontextem** — k lineární regresi (`/api/predictions/capacity`) přidat vysvětlení, co růst způsobuje, a doporučení
+- [ ] 472 🟡 **Detekce konfiguračního driftu** — porovnat config/balíčky/kernel napříč podobnými hosty a hlásit odchylky
+- [ ] 473 🟡 **AI audit bezpečnostních logů** — vzory v auth.log/fail2ban, které jednotlivě neprojdou prahem (pomalý brute-force, distribuovaný sken)
+- [ ] 474 🔴 **Proaktivní kontrola zdraví** — týdenní AI průchod stavem infrastruktury s otázkou „co se pravděpodobně pokazí příště"
+- [ ] 475 🟡 **Detekce flappingu s příčinou** — `/api/analytics/flapping` říká CO flapuje; AI má říct PROČ
+- [ ] 476 🟡 **Anomálie ve vztazích metrik** — CPU roste, ale requests ne; disk I/O bez růstu dat — porušení očekávaných korelací
+- [ ] 477 🟢 **Detekce zombie zdrojů** — služby/kontejnery/VM, které běží a nikdo je nepoužívá (žádný provoz, žádné logy)
+- [ ] 478 🟡 **Kontrola konzistence záloh** — AI ověří, že zálohy reálně běží a rostou (PBS), ne jen že job skončil OK
+- [ ] 479 🟡 **Certifikáty a expirace v kontextu** — kromě data expirace i kdo cert používá a co spadne, když vyprší
+- [ ] 480 🔴 **Rozpoznání falešných poplachů** — AI označí alerty, které historicky vždy samy zmizely, a navrhne úpravu prahu/patternu místo notifikace
+- [ ] 481 🟡 **Detekce chybějícího monitoringu** — které hosty/služby nikdo nesleduje (běží, ale nemá agenta ani detektor)
+- [ ] 482 🟢 **Analýza logů po restartu** — po každém rebootu nechat AI porovnat, zda vše naběhlo jako minule
+- [ ] 483 🟡 **Detekce hardware degradace** — SMART, teploty, ECC chyby → trend a odhad zbývající životnosti (dnes je jen prahový alert)
+- [ ] 484 🟡 **Analýza dopadu aktualizací** — po apt upgrade porovnat chování před/po a hlásit regrese
+- [ ] 485 🟢 **Kontrola dokumentace vs. realita** — AI porovná runbooky/wiki se skutečným stavem a hlásí zastaralé postupy
+
+## C. Řešení & remediace (486–505)
+
+- [ ] 486 🔴 **Ověření, že oprava fungovala** — po remediaci AI zkontroluje, zda problém opravdu zmizel (dnes se jen přepne na `validating`)
+- [ ] 487 🔴 **Vysvětlení odmítnutí** — když safety klasifikátor/allowlist zablokuje příkaz, AI vysvětlí proč a navrhne povolenou alternativu
+- [ ] 488 🔴 **Postupná remediace** — nejdřív nejmenší zásah (restart služby), teprve při neúspěchu větší; ne rovnou reboot
+- [ ] 489 🟡 **Rollback plán** — ke každému návrhu i postup, jak změnu vrátit, pokud nepomůže
+- [ ] 490 🔴 **Návrh pravidla do allowlistu** — když AI opakovaně navrhuje stejný bezpečný příkaz, nabídnout jeho přidání (s diffem sudoers dopadu)
+- [ ] 491 🟡 **Odhad rizika v kontextu** — riziko `systemctl restart` závisí na tom, co ta služba dělá; AI zohlední kritičnost hosta
+- [ ] 492 🟡 **Dry-run diff** — u příkazů, které to umí (`apt -s`, `mount --fake`), ukázat, co by se stalo, ještě před schválením
+- [ ] 493 🔴 **Učení z ručních zásahů** — když admin problém vyřeší přes SSH sám, AI z historie příkazů odvodí postup a nabídne ho příště
+- [ ] 494 🟡 **Runbook generátor z incidentu** — z vyřešeného incidentu vygenerovat runbook a navázat na typ issue (tabulka `runbooks` existuje)
+- [ ] 495 🟡 **Odhad doby řešení** — na základě historie podobných issues predikovat, jak dlouho to zabere
+- [ ] 496 🟡 **Návrh preventivního opatření** — po vyřešení: co udělat, aby se to nestalo znovu (cron, logrotate, alert, kvóta)
+- [ ] 497 🟢 **Batch remediace** — stejný problém na N hostech vyřešit jedním schváleným plánem místo N kliknutí
+- [ ] 498 🟡 **Kontrola maintenance okna** — AI nenavrhne restart produkce v pracovní době, pokud problém není kritický
+- [ ] 499 🔴 **Eskalace s kontextem** — když AI neví, sestavit shrnutí pro člověka: co zkusila, co vyloučila, co doporučuje ověřit
+- [ ] 500 🟡 **Rozpoznání "neřešitelného"** — odlišit problém vyžadující fyzický zásah (výměna disku) a nenabízet SSH příkazy
+- [ ] 501 🟢 **Koordinace s Ansible** — u opakovaného problému navrhnout trvalou opravu jako Ansible task, ne jednorázový příkaz
+- [ ] 502 🟡 **Prioritizace fronty práce** — AI seřadí otevřené issues podle dopadu × jistoty řešení a navrhne, čím začít
+- [ ] 503 🟡 **Detekce protichůdných akcí** — varovat, když by nová akce zrušila předchozí (restart služby, kterou někdo právě maskoval)
+- [ ] 504 🟢 **Simulace dopadu** — „co se stane, když tenhle host vypnu" na základě topologie a závislostí
+- [ ] 505 🔴 **Auto-remediace s postupným rozšiřováním důvěry** — příkaz, který 10× uspěl bez následného problému, navrhnout k povýšení na `auto_execute`
+
+## D. Kvalita odpovědí, kontext & RAG (506–525)
+
+- [ ] 506 🔴 **Strukturovaný výstup místo textu** — přechod na JSON schema pro analýzy (dnes se parsuje volný text regexem a `_ai_reply_ok` čichá k prefixům)
+- [ ] 507 🔴 **execute_ollama vrací (ok, text)** — místo chybové hlášky jako obsahu; odstraní prefix-sniffing napříč kódem *(známý accepted-risk)*
+- [ ] 508 🔴 **Kontextové okno podle úlohy** — krátký prompt pro klasifikaci severity, velký pro korelaci; dnes se posílá stejně velký kontext
+- [ ] 509 🟡 **Komprese kontextu** — před odesláním zkrátit opakující se log řádky (`... 47× stejný řádek`) místo ořezu na N znaků
+- [ ] 510 🔴 **RAG relevance filtr** — zahodit chunky pod prahem podobnosti (dnes se vrací top-N i když nesouvisí a model se jimi nechá zmást)
+- [ ] 511 🟡 **Hybridní vyhledávání** — kombinovat vektory s klíčovými slovy (hostname, kód chyby); dnes je fallback jen textový
+- [ ] 512 🟡 **Citace zdroje v odpovědi** — u AI odpovědi ukázat, ze kterého KB chunku/incidentu čerpá
+- [ ] 513 🟡 **RAG čistota** — deduplikace a expirace naučených chunků (`learned_kb.txt` roste bez limitu)
+- [ ] 514 🟡 **Chunking podle struktury** — dělit KB podle sekcí, ne po pevných blocích
+- [ ] 515 🟢 **Reranking** — druhý průchod nad top-20 pro lepší pořadí
+- [ ] 516 🔴 **Detekce halucinace** — ověřit, že hostnamy/služby/cesty v odpovědi reálně existují v DB; jinak označit
+- [ ] 517 🟡 **Odmítnutí bez dat** — model má říct „nevím, chybí mi X" místo pravděpodobné smyšlenky (eval 434 to už částečně testuje)
+- [ ] 518 🟡 **Konzistence napříč dotazy** — stejná otázka nemá dávat protichůdné odpovědi; cache + kontrola
+- [ ] 519 🟡 **Jazyk odpovědi dle uživatele** — dnes prompty míchají češtinu a angličtinu podle místa v kódu
+- [ ] 520 🟡 **Prompt verzování** — prompty v `PROMPTS`/prompt_library verzovat a měřit dopad změny přes eval suite
+- [ ] 521 🟢 **Few-shot z reálných incidentů** — do promptu přidat 2–3 vyřešené příklady ze stejné kategorie
+- [ ] 522 🟡 **Routing podle složitosti** — triviální klasifikace na malý rychlý model, korelace na velký (fallback chain 426 rozšířit o volbu dle úlohy)
+- [ ] 523 🟡 **Rozpočet tokenů per úloha** — limit a měření (435 sbírá data, chybí strop)
+- [ ] 524 🟢 **Streamování dlouhých analýz** — postmortem/digest streamovat do UI, ne čekat na celek
+- [ ] 525 🟡 **Cache odpovědí** — stejný alert do X minut neanalyzovat znovu (šetří NPU i čas)
+
+## E. Učení, zpětná vazba & evaluace (526–545)
+
+- [ ] 526 🔴 **Palec nahoru/dolů u AI odpovědi** — sbírat hodnocení a ukládat s kontextem; bez zpětné vazby se kvalita neměří
+- [ ] 527 🔴 **Učení z odmítnutých návrhů** — když admin autofix zamítne, zaznamenat proč a nenabízet totéž znovu
+- [ ] 528 🟡 **Sledování úspěšnosti návrhů** — poměr „návrh → provedeno → problém zmizel" per typ issue
+- [ ] 529 🔴 **Eval suite z reálných incidentů** — generovat testy z vyřešených incidentů, ne jen 6 ručních (434)
+- [ ] 530 🟡 **Regresní brána při změně modelu** — nedovolit přepnutí modelu, pokud skóre klesne pod baseline (dnes 5/6)
+- [ ] 531 🟡 **A/B porovnání modelů** — pustit stejný dotaz přes 2 modely a porovnat (benchmark UI už umí měřit rychlost, chybí kvalita)
+- [ ] 532 🟡 **Kalibrace confidence** — porovnat deklarovanou jistotu (429) se skutečnou úspěšností a korigovat
+- [ ] 533 🟡 **Detekce driftu kvality** — sledovat skóre evalů v čase a hlásit zhoršení
+- [ ] 534 🟢 **Anotace pro fine-tuning** — sbírat dvojice (incident → správné řešení) v exportovatelném formátu
+- [ ] 535 🟡 **Metrika falešných poplachů AI** — kolik AI-generovaných issues bylo označeno jako FP
+- [ ] 536 🟡 **Srovnání AI vs. člověk** — u incidentů řešených ručně porovnat, zda AI navrhla totéž
+- [ ] 537 🟢 **Kvalita per kategorie** — skóre zvlášť pro disk/síť/služby/bezpečnost, ať je vidět slabina
+- [ ] 538 🟡 **Auto-tuning prahů** — z historie FP/FN navrhnout lepší prahy detektorů
+- [ ] 539 🟡 **Vysvětlitelnost** — u každé AI akce logovat, jaký kontext dostala (pro audit i ladění)
+- [ ] 540 🟢 **Denní přehled kvality AI** — kolik dotazů, jaká úspěšnost, kolik tokenů, kde to selhalo
+- [ ] 541 🟡 **Detekce zacyklení** — AI navrhuje stále totéž bez efektu → zastavit a eskalovat
+- [ ] 542 🟢 **Sdílení znalostí mezi instancemi** — export/import naučené KB pro víc Sentinelů
+- [ ] 543 🟡 **Ochrana proti prompt injection z logů** — obsah logu je nedůvěryhodný vstup; oddělit ho od instrukcí a testovat evalem
+- [ ] 544 🟡 **Limit dopadu AI** — strop akcí za hodinu (AI nesmí spustit lavinu remediací)
+- [ ] 545 🔴 **Audit stopa AI rozhodnutí** — co model dostal, co vrátil, co se z toho vykonalo — dohledatelné zpětně
+
+---
+
+## Doporučené pořadí (první vlna)
+
+Největší efekt na „AI reálně pomáhá řešit problémy":
+
+1. **506 + 507** — strukturovaný výstup a `(ok, text)`; všechno ostatní na tom staví
+2. **446 + 448 + 449** — seskupení incidentů, příčina vs. symptom, korelace s telemetrií
+3. **462** — diagnostický plán (AI si sama dojde pro data místo hádání)
+4. **486 + 499** — ověření opravy a smysluplná eskalace
+5. **526 + 527** — zpětná vazba, bez ní se kvalita neposune
+6. **516 + 543** — halucinace a prompt injection z logů (bezpečnostní minimum)
+
+## Známé blokátory
+
+- `/api/patterns/suggest` a `/api/analyze/auto_clusters` existují, ale **nemají volající v UI** (`_suggestPatterns`, `_autoClusterAnalyze` nejsou definované) — opravit před 466
+- Hailo NPU nevrací `prompt_eval_count` → vstupní tokeny se neměří (435)
+- Dlouhý prompt na RPi5 CPU trvá >90 s (`ai_timeout_seconds` = 180) — 508/509 tím dostávají výkonnostní smysl
