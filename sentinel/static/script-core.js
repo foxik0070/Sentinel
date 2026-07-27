@@ -1200,7 +1200,7 @@ async function _loadPredictions() {
                          style="${item.hidden ? 'opacity:0.5;' : ''}">
                         <div style="flex:1;">
                             <div class="metric-name">${metricEsc}</div>
-                            <div class="metric-msg">${icon} ${item.message}</div>
+                            <div class="metric-msg">${icon} ${_escape(item.message ?? '')}</div>
                         </div>
                         <div style="display:flex;align-items:center;gap:8px;">
                             <div style="text-align:right;">

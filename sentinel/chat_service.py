@@ -2218,7 +2218,9 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
         kb64 = base64.b64encode(i['key'].encode()).decode()
         ts = i.get('last_seen', 'N/A').replace('T', ' ').split('.')[0]
         channel = i.get('channel_type', 'general').upper()
-        plugin_origin = i.get('plugin_name', 'unknown').upper()
+        # plugin_name pochází z agent reportů/syslogu → escapovat (jediné pole
+        # karty, které escape nemělo — stored XSS přes <img onerror=...>)
+        plugin_origin = html.escape(str(i.get('plugin_name', 'unknown')).upper())
 
         _ch_colors = getattr(config, 'CHANNEL_COLORS', {})
         border = _ch_colors.get(channel, _ch_colors.get('INFRA', '#aaa'))
@@ -2296,7 +2298,13 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
             _ll_b64 = base64.b64encode((i.get('last_line', '') or '').encode()).decode()
             runbook_btn = f"<i class='fa-solid fa-book-open' title='Runbook' style='cursor:pointer; color:var(--text-muted); font-size:1.05em; margin-right:12px; transition:color 0.2s;' onmouseover=\"this.style.color='#fd7e14'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"openRunbookModal('{_plugin}','{_channel}','{_ll_b64}')\"></i>"
 
-        share_text = f"[{ts}] [{plugin_origin}] {safe_host}: {safe_msg}".replace("'", "\\'")
+        # JS argument v HTML atributu: json.dumps udělá platný JS literál,
+        # html.escape ho bezpečně vloží do atributu (parser entity dekóduje zpět).
+        # Dřív se skládal už escapovaný text + .replace("'", "\\'") — html.escape
+        # ale apostrof převedl na &#x27;, takže replace neměl co escapovat a
+        # parser ho dekódoval zpět → únik z JS řetězce v onclick.
+        share_arg = html.escape(json.dumps(
+            f"[{ts}] [{i.get('plugin_name', 'unknown')}] {i.get('host', '?')}: {i.get('last_line', '')}"))
         comment_btn = (
             f"<span id='cbadge-{kb64}' onclick=\"openIssueCommentsModal('{kb64}')\" "
             f"title='Komentáře' style='cursor:pointer; color:var(--text-muted); font-size:1.15em; margin-right:12px; "
@@ -2304,7 +2312,7 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
             f"onmouseover=\"this.style.color='var(--text-main)'\" onmouseout=\"this.style.color='var(--text-muted)'\">"
             f"<i class='fa-regular fa-comment-dots'></i></span>"
         )
-        share_btn = f"<i class='fa-solid fa-share-nodes' title='Sdílet' style='cursor:pointer; color:var(--text-muted); font-size:1.15em; margin-right:12px; transition:color 0.2s;' onmouseover=\"this.style.color='var(--text-main)'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"shareIssue('{share_text}', this)\"></i>"
+        share_btn = f"<i class='fa-solid fa-share-nodes' title='Sdílet' style='cursor:pointer; color:var(--text-muted); font-size:1.15em; margin-right:12px; transition:color 0.2s;' onmouseover=\"this.style.color='var(--text-main)'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"shareIssue({share_arg}, this)\"></i>"
         ignore_html = f"<i class='fa-solid fa-eye-slash' title='Ignorovat' style='cursor:pointer; color:var(--text-muted); font-size:1.15em; margin-right:12px; transition:color 0.2s;' onmouseover=\"this.style.color='var(--text-main)'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"triggerAction('ignore_key {kb64}')\"></i>" if role in ['admin', 'superadmin'] else ""
         delete_html = f"<i class='fa-solid fa-trash' title='Smazat' style='cursor:pointer; color:#c50f1f; font-size:1.15em; transition:opacity 0.2s;' onmouseover=\"this.style.opacity='0.7'\" onmouseout=\"this.style.opacity='1'\" onclick=\"triggerAction('delete_key {kb64}')\"></i>" if role in ['admin', 'superadmin'] else ""
 

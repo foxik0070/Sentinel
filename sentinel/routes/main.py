@@ -61,13 +61,24 @@ def create_blueprint(service, socketio):
         pending = session.get(_TOTP_PENDING_KEY)
         if not pending:
             return redirect(url_for('main.login'))
+        # 346: brute-force ochrana — bez ní šlo 6místný kód hádat neomezeně
+        # (valid_window=1 navíc dělá platné 3 kódy). /login tuhle ochranu má.
+        client_ip = get_real_ip()
+        if utils.security.is_ip_banned(client_ip):
+            service.log_event("auth_banned", f"Banned IP {client_ip} zkouší TOTP",
+                              level=logging.WARNING)
+            session.pop(_TOTP_PENDING_KEY, None)
+            return render_template('login.html', error="Příliš mnoho pokusů. Zkuste to později."), 429
         code = (request.form.get('totp_code') or '').strip()
         u, role = pending['user'], pending['role']
         if state.totp_verify(u, code):
             session.pop(_TOTP_PENDING_KEY, None)
             _complete_login(u, role, service)
             return redirect(url_for('main.index'))
-        # Špatný kód — zůstat na TOTP formuláři
+        # Špatný kód — započítat pokus a zůstat na TOTP formuláři
+        utils.security.register_failed_login(client_ip)
+        service.log_event("auth_totp_fail", f"Neplatný TOTP kód pro '{u}' z {client_ip}",
+                          level=logging.WARNING)
         return render_template('login.html', totp_required=True, error="Neplatný kód. Zkuste znovu.")
 
     def _complete_login(u, role, svc):

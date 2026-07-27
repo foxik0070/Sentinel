@@ -2180,7 +2180,7 @@ function _openDependsModal(kb64) {
             let html = `<div style="font-size:0.85em; color:var(--text-muted); margin-bottom:6px; font-weight:600;">Blokuje (${bl.length}):</div>`;
             html += bl.map(d => `
                 <div style="padding:6px 10px; background:rgba(220,53,69,.07); border:1px solid rgba(220,53,69,.2); border-radius:6px; margin-bottom:4px; font-size:0.85em;">
-                    <b>${d.host||'?'}</b>: <span style="color:var(--text-muted);">${(d.last_line||'').substring(0,60)}</span>
+                    <b>${_escape(d.host||'?')}</b>: <span style="color:var(--text-muted);">${_escape((d.last_line||'').substring(0,60))}</span>
                 </div>`).join('');
             document.getElementById('depends-blocked-by').innerHTML = html;
         })

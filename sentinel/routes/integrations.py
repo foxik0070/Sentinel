@@ -9,13 +9,25 @@ from datetime import datetime, timezone
 
 
 _used_nonces: dict = {}  # 243: replay ochrana
+_WARNED_NO_TOKEN = False  # varování o chybějícím inbound tokenu logovat jen jednou
 
 def _verify_webhook_auth() -> bool:
     """237+243: Token/HMAC auth + replay ochrana přes timestamp."""
     import time as _t
     expected_token = getattr(config, 'INBOUND_WEBHOOK_TOKEN', '')
     if not expected_token:
-        return True
+        # BEZPEČNOST: dřív se vracelo True → 4 inbound endpointy (/api/inbound/
+        # webhook|grafana|alertmanager|zabbix) byly bez tokenu ZCELA otevřené a
+        # kdokoli mohl vkládat plně řízená data do tabulky problems (vstup pro
+        # stored XSS). Bez nastaveného tokenu je příjem zakázán.
+        global _WARNED_NO_TOKEN
+        if not _WARNED_NO_TOKEN:
+            logger.warning(
+                "Inbound webhooky odmítnuty: 'inbound_webhook_token' není v config.yaml. "
+                "Nastav token (a stejný pošli v X-Webhook-Token) pro povolení příjmu."
+            )
+            _WARNED_NO_TOKEN = True
+        return False
 
     # 243: Replay ochrana — X-Webhook-Timestamp nesmí být starší než 5 min
     ts_header = request.headers.get('X-Webhook-Timestamp', '')

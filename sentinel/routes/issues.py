@@ -62,13 +62,18 @@ def create_blueprint(service):
         def _render_issue_card(i):
             kb64 = base64.b64encode(i['key'].encode()).decode()
             ts = (i.get('last_seen') or 'N/A').replace('T', ' ').split('.')[0]
-            plugin_origin = (i.get('plugin_name') or i.get('channel_type') or '?').upper()
+            # escape — plugin_name jde z agent reportů/syslogu (stored XSS)
+            plugin_origin = html.escape((i.get('plugin_name') or i.get('channel_type') or '?').upper())
             safe_host = html.escape(i.get('host') or '?')
             raw_msg = i.get('last_line') or ''
             safe_msg = html.escape(raw_msg)
             safe_msg_short = html.escape(raw_msg[:120] + ('…' if len(raw_msg) > 120 else ''))
             safe_msg_title = safe_msg.replace("'", "&#39;")
-            share_text = f"[{ts}] [{plugin_origin}] {safe_host}: {safe_msg}".replace("'", "\\'")
+            # viz chat_service._render_issue_card — json.dumps (JS literál)
+            # + html.escape (atribut); starý .replace("'","\\'") na už escapovaném
+            # textu byl neúčinný a umožňoval únik z onclick
+            share_arg = html.escape(json.dumps(
+                f"[{ts}] [{i.get('plugin_name') or '?'}] {i.get('host') or '?'}: {raw_msg}"))
             occ = i.get('occurrence_count', 1) or 1
             occ_badge = (
                 f"<span style='background:#555; color:#fff; border-radius:10px; font-size:0.7em; padding:1px 5px; margin-left:4px;'>×{occ}</span>"
@@ -184,7 +189,7 @@ def create_blueprint(service):
                             <div id='inline-detail-{kb64}' data-full-msg='{safe_msg_title}' data-first-seen='{html.escape(i.get('first_seen') or '')}' data-occ='{occ}' style='display:none; margin-top:8px; padding:10px; background:rgba(0,0,0,.15); border:1px solid var(--border); border-radius:5px; font-size:.85em;'></div>
                         </div>
                         <div class='issue-actions'>
-                            {comment_btn}{dep_btn}{fix_btn}{recheck_btn}{ssh_btn_modal}{tag_btn}{fp_btn}{similar_btn}<i class='fa-solid fa-share-nodes issue-action-secondary' title='Sdílet' style='cursor:pointer; color:var(--text-muted); font-size:1.1em; margin-right:12px;' onclick="shareIssue('{share_text}', this)"></i>
+                            {comment_btn}{dep_btn}{fix_btn}{recheck_btn}{ssh_btn_modal}{tag_btn}{fp_btn}{similar_btn}<i class='fa-solid fa-share-nodes issue-action-secondary' title='Sdílet' style='cursor:pointer; color:var(--text-muted); font-size:1.1em; margin-right:12px;' onclick="shareIssue({share_arg}, this)"></i>
                             {ignore_btn}{delete_btn}
                         </div>
                     </div>

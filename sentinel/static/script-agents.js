@@ -255,7 +255,7 @@ async function openAgentDetailModal(hostname) {
         const sc = sevColors[sev] || 'var(--accent)';
         const occ = iss.occurrence_count > 1 ? ` <span style="background:#555;color:#fff;border-radius:10px;font-size:.7em;padding:1px 5px;">×${iss.occurrence_count}</span>` : '';
         return `<div style="padding:7px 10px;margin-bottom:4px;background:var(--bg);border:1px solid var(--border);border-left:3px solid ${sc};border-radius:4px;font-size:.83em;">
-            <div style="color:var(--text-muted);font-size:.8em;">${iss.plugin_name?.toUpperCase()||'?'} · ${iss.last_seen?.slice(0,16)||''} ${occ}</div>
+            <div style="color:var(--text-muted);font-size:.8em;">${_escape(iss.plugin_name?.toUpperCase()||'?')} · ${_escape(iss.last_seen?.slice(0,16)||'')} ${occ}</div>
             <div>${_escape(iss.last_line||'')}</div>
         </div>`;
     }).join('') : `<div style="color:var(--success);text-align:center;padding:12px;"><i class="fa-solid fa-check-circle"></i> Žádné aktivní issues</div>`;
@@ -1035,9 +1035,9 @@ async function _fetchDeviceIssues(hostname) {
             const ts  = i.last_seen ? i.last_seen.slice(0,16) : '—';
             return `<div style="border-left:3px solid ${col}; padding:6px 10px; margin-bottom:6px; background:rgba(255,255,255,.02); border-radius:0 4px 4px 0;">
                 <span style="color:${col}; font-weight:700; font-size:.8rem; margin-right:6px;">${catLabel}</span>
-                <b style="font-size:.9rem;">${i.host || '?'}</b>
+                <b style="font-size:.9rem;">${_escape(i.host || '?')}</b>
                 <span style="color:#888; font-size:.8rem; margin-left:6px;">${ts}</span>
-                <div style="color:#aaa; font-size:.82rem; margin-top:2px;">${(i.last_line||'').slice(0,80)}</div>
+                <div style="color:#aaa; font-size:.82rem; margin-top:2px;">${_escape((i.last_line||'').slice(0,80))}</div>
             </div>`;
         }).join('');
     } catch(e) {

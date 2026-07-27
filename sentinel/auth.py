@@ -211,8 +211,14 @@ def validate_csrf() -> bool:
         return True
     if request.authorization:
         return True
-    # Agent paths → bez CSRF
-    _agent_paths = ('/api/v1/', '/api/sentinel-hw/', '/api/sentinel-alert', '/ingest')
+    # Agent paths → bez CSRF.
+    # POZOR: dřív tu byl celý prefix '/api/v1/', jenže pod ním žijí i admin
+    # state-changing endpointy (/api/v1/actions/<id>/execute,
+    # /api/v1/allowed-commands, .../import) — ty byly bez CSRF ochrany
+    # dosažitelné cross-site jen se session cookie. Výjimka nyní pokrývá
+    # pouze skutečné agent ingest cesty.
+    _agent_paths = ('/api/v1/agent/ingest', '/api/v1/ingest',
+                    '/api/sentinel-hw/', '/api/sentinel-alert', '/ingest')
     if any(request.path.startswith(p) for p in _agent_paths):
         return True
     token = request.headers.get('X-CSRF-Token') or request.form.get('csrf_token') or ''
@@ -308,6 +314,18 @@ def requires_auth(f):
             if not auth or not check_auth(auth.username, auth.password):
                 if auth: utils.security.register_failed_login(client_ip)
                 return authenticate()
+
+            # 346: Basic auth neumí interaktivní druhý faktor — pokud má uživatel
+            # zapnuté 2FA, nesmí ho tahle cesta obejít (jinak chrání jen /login).
+            try:
+                _totp = state.totp_get(auth.username)
+                if _totp and _totp.get('enabled'):
+                    logger.warning(f"Basic auth odmítnut pro '{auth.username}': má zapnuté 2FA")
+                    return Response(
+                        "2FA je zapnuté — použij přihlášení přes web nebo API klíč.",
+                        401, {'WWW-Authenticate': 'Basic realm="Sentinel"'})
+            except Exception as _e:
+                logger.debug(f"Basic auth TOTP check: {_e}")
 
             g.user_role = check_auth(auth.username, auth.password)
             g.username = auth.username
