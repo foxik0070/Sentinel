@@ -296,6 +296,9 @@ SNMP_TRAP_CFG: dict = {"port": 1162, "host": "0.0.0.0", "community": "", "channe
 # Network topology (120)
 TOPOLOGY_CFG: dict = {"manual_links": [], "snmp_targets": [], "snmp_poll_interval": 300}
 
+# 327: Aktivní SNMP polling OID hodnot → telemetrie (viz sentinel/snmp_poll.py)
+SNMP_POLL_CFG: dict = {"enabled": False, "interval": 300, "targets": []}
+
 # HTTPS / HTTP2 (129)
 HTTPS_ENABLED: bool = False
 HTTPS_CERT_FILE: str = ""
@@ -667,6 +670,11 @@ def load_config():
     if isinstance(_topo, dict) and _topo:
         TOPOLOGY_CFG = {**TOPOLOGY_CFG, **_topo}
 
+    global SNMP_POLL_CFG
+    _snmp_poll = data.get("snmp_poll", {})
+    if isinstance(_snmp_poll, dict) and _snmp_poll:
+        SNMP_POLL_CFG = {**SNMP_POLL_CFG, **_snmp_poll}
+
     global HTTPS_ENABLED, HTTPS_CERT_FILE, HTTPS_KEY_FILE, HTTPS_USE_HTTP2
     _https = data.get("https", {})
     if isinstance(_https, dict) and _https:
@@ -808,7 +816,7 @@ _KNOWN_KEYS = {
     'issue_history_retention_days', 'display_tz', 'heartbeat_urls', 'gitea',
     'windows_ingest_key', 'dns_checks', 'lifecycle', 'ai_digest_hour',
     'rag_learn_resolved', 'ai_timeout_seconds', 'slo_targets',
-    'process_rotated_logs',
+    'process_rotated_logs', 'snmp_poll',
 }
 
 VALIDATION_WARNINGS: list = []   # populated by _validate_config(), readable via API

@@ -27,6 +27,7 @@ Tento dokument zaznamenává breaking changes a nové endpointy mezi verzemi.
 - `ssh_execution.user` — při hodnotě jiné než `root` se remediační příkazy automaticky prefixují `sudo -n` (least-privilege; whitelist řeší `/etc/sudoers.d/sentinel` na hostech). Diagnostika (df, systemctl status) běží bez sudo.
 - `ssh_execution.auth_sock` — cesta k ssh-agent socketu (šifrovaný SSH klíč).
 - Nové klíče: `dns_checks`, `slo_targets`, `lifecycle.*` (stale TTL / recheck prahy), `ai_digest_hour`, `ai_timeout_seconds`, `rag_learn_resolved`, `process_rotated_logs`.
+- `snmp_poll` — aktivní SNMP polling OID → telemetrie (`enabled`, `interval`, `targets[].{host,name,community,version,category,oids[]}`; `delta: true` pro countery, v3 přes `secname`/`auth_*`/`priv_*`). Vyžaduje net-snmp (`apt install snmp`).
 
 ### Změny chování
 - `issue_history` má nové sloupce `resolve_reason`, `resolved_by` (migrace při startu).

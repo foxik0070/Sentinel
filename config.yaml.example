@@ -330,3 +330,30 @@ prompts:
 # dns_checks:
 #   - domain: example.com
 #     types: [A, MX]
+
+# 327: Aktivní SNMP polling — dotazování OID hodnot → telemetrie
+# (doplněk k pasivnímu snmp_trap; vyžaduje `apt install snmp`)
+# Hodnoty projdou anomaly detekcí i telemetry_alerts jako ostatní metriky.
+# snmp_poll:
+#   enabled: true
+#   interval: 300              # sekundy mezi cykly (min 30)
+#   targets:
+#     - host: 192.168.2.1
+#       name: gateway          # prefix metriky → gateway.load1 (default = host)
+#       community: public      # v1/v2c; lze i "{SECRET:SNMP_COMMUNITY}"
+#       version: "2c"          # 1 | 2c | 3
+#       category: SNMP         # telemetry kategorie
+#       oids:
+#         - { oid: 1.3.6.1.4.1.2021.10.1.3.1, metric: load1 }
+#         - { oid: 1.3.6.1.2.1.1.3.0,         metric: uptime_ticks }
+#         # delta: true → uloží přírůstek/s místo surového counteru
+#         - { oid: 1.3.6.1.2.1.2.2.1.10.1, metric: if1_in_bytes, delta: true }
+#     # SNMPv3 (bezpečnější než community string):
+#     # - host: 192.168.2.50
+#     #   version: "3"
+#     #   secname: monitor
+#     #   auth_protocol: SHA
+#     #   auth_pass: "{SECRET:SNMP_AUTH_PASS}"
+#     #   priv_protocol: AES
+#     #   priv_pass: "{SECRET:SNMP_PRIV_PASS}"
+#     #   oids: [{ oid: 1.3.6.1.2.1.1.3.0, metric: uptime_ticks }]

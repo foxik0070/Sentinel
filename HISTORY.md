@@ -23,6 +23,7 @@
 - **406** — Webhook delivery log: tabulka `webhook_deliveries` (url, event, status, latence), `GET /api/webhooks/deliveries`.
 - **408** — DNS monitoring: config `dns_checks`, hodinová kontrola resolvability + změn A/MX (DNS_FAIL/DNS_CHANGE issues), kontrolní doména odliší výpadek resolveru, `POST /api/dns/check`.
 - **397** — Per-day-of-week anomaly baseline: σ počítáno zvlášť pro po-pá vs víkend (7denní okno, fallback 24h) — méně false positives.
+- **327** — Aktivní SNMP polling (`sentinel/snmp_poll.py`): config `snmp_poll` (enabled/interval/targets), dotazování OID přes `snmpget` → `save_telemetry_snapshot()`, takže hodnoty projdou anomaly detekcí i `telemetry_alerts`. Podpora v1/v2c/v3 (authPriv), `delta: true` pro countery (přírůstek/s místo surové hodnoty, ošetřeno přetečení), přerušitelné čekání na shutdown, tichá degradace bez net-snmp. Doplněk k pasivnímu trap receiveru.
 
 ### Issue lifecycle
 - Per-severity stale TTL (`lifecycle.stale_ttl_by_severity`), `resolve_stale_problems()` zahrnuje validating+acknowledged.

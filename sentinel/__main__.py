@@ -189,6 +189,9 @@ def main():
     # 120: Network topology SNMP poller
     from . import topology as _topology
     _topology.start_snmp_poller(config.TOPOLOGY_CFG)
+    # 327: Aktivní SNMP polling OID → telemetrie
+    from . import snmp_poll as _snmp_poll
+    _snmp_poll.start_snmp_poll(config.SNMP_POLL_CFG)
     ollama_thread, monitor_thread = ollama_service.start_threads()
     chat_svc = chat_service.start_chat_service()
 
