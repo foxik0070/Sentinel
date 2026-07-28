@@ -194,6 +194,84 @@ def _write_influxdb(records: list):
     except Exception as e:
         logger.debug(f"InfluxDB write: {e}")
 
+def get_telemetry_context(host: str, at_iso: str = None, window_min: int = 30,
+                          max_metrics: int = 8) -> list:
+    """449: Telemetrie kolem incidentu — podklad pro AI korelaci.
+
+    Pro každou metriku vázanou na `host` vrátí porovnání okna incidentu proti
+    předchozímu (stejně dlouhému) baseline oknu, takže je vidět SOUBĚH:
+    „teplota +12 °C oproti předchozí půlhodině" je pro diagnostiku užitečnější
+    než absolutní číslo.
+
+    Metriky se na hosta párují dvěma způsoby (podle toho, co reálně chodí):
+      * category = hostname          — metriky posílané agentem
+      * metric obsahuje hostname     — temp.<host>, sensor.disk_<host>_…
+
+    Vrací [{metric, category, during_avg, baseline_avg, delta, delta_pct,
+            min, max, samples}] seřazeno dle velikosti změny.
+    """
+    if not host:
+        return []
+    try:
+        at = datetime.fromisoformat(str(at_iso).replace('Z', '+00:00')) if at_iso \
+            else datetime.now(timezone.utc)
+        if at.tzinfo is None:
+            at = at.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        at = datetime.now(timezone.utc)
+
+    win_start = (at - timedelta(minutes=window_min)).isoformat()
+    win_end = (at + timedelta(minutes=window_min)).isoformat()
+    base_start = (at - timedelta(minutes=window_min * 3)).isoformat()
+
+    out = []
+    try:
+        conn = _get_conn()
+        try:
+            rows = conn.execute(
+                """
+                SELECT category, metric,
+                       AVG(CASE WHEN timestamp >= ? AND timestamp <= ? THEN value END),
+                       MIN(CASE WHEN timestamp >= ? AND timestamp <= ? THEN value END),
+                       MAX(CASE WHEN timestamp >= ? AND timestamp <= ? THEN value END),
+                       COUNT(CASE WHEN timestamp >= ? AND timestamp <= ? THEN 1 END),
+                       AVG(CASE WHEN timestamp >= ? AND timestamp < ? THEN value END)
+                FROM telemetry
+                WHERE timestamp >= ? AND timestamp <= ?
+                  AND (category = ? OR metric LIKE ?)
+                GROUP BY category, metric
+                """,
+                (win_start, win_end, win_start, win_end, win_start, win_end,
+                 win_start, win_end, base_start, win_start,
+                 base_start, win_end, host, f'%{host}%')
+            ).fetchall()
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.debug(f"get_telemetry_context({host}): {e}")
+        return []
+
+    for cat, metric, during, mn, mx, cnt, baseline in rows:
+        if during is None or not cnt:
+            continue
+        delta = None if baseline is None else round(during - baseline, 2)
+        delta_pct = None
+        if baseline not in (None, 0):
+            delta_pct = round((during - baseline) / abs(baseline) * 100, 1)
+        out.append({
+            "metric": metric, "category": cat,
+            "during_avg": round(during, 2),
+            "baseline_avg": None if baseline is None else round(baseline, 2),
+            "delta": delta, "delta_pct": delta_pct,
+            "min": round(mn, 2) if mn is not None else None,
+            "max": round(mx, 2) if mx is not None else None,
+            "samples": cnt,
+        })
+    # největší odchylky první — to je to, co má AI vidět
+    out.sort(key=lambda m: abs(m["delta_pct"] or 0), reverse=True)
+    return out[:max_metrics]
+
+
 def get_metric_history(metric_name, limit=288):
     try:
         conn = _get_conn()

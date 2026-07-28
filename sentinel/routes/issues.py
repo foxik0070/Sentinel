@@ -624,25 +624,60 @@ def create_blueprint(service):
         try:
             conn = state._get_conn()
             row = conn.execute(
-                "SELECT plugin_name, host, last_line, channel_type FROM problems WHERE key=?", (key,)
+                "SELECT plugin_name, host, last_line, channel_type, first_seen FROM problems WHERE key=?", (key,)
             ).fetchone()
             conn.close()
         except Exception as e:
             return jsonify({"error": str(e)}), 500
         if not row:
             return jsonify({"error": "Issue nenalezena"}), 404
-        plugin, host, last_line, channel = row
+        plugin, host, last_line, channel, first_seen = row
         context = service.call_ai_knowledge_base(last_line or '')
         prompt_template = config.PROMPTS.get(channel or 'default', config.PROMPTS.get('default', '{line}'))
         prompt = prompt_template.replace('{line}', f"[{plugin}] {host}: {last_line or ''}")
         if context:
             prompt += f"\n\nKontext z knowledge base:\n{context}"
+        # 449: telemetrie kolem vzniku incidentu — AI dosud viděla jen text
+        # alertu a neměla šanci najít souběh (např. teplota +12 °C v tu chvíli)
+        telemetry = state.get_telemetry_context(host, first_seen, window_min=30)
+        if telemetry:
+            prompt += (
+                "\n\nTELEMETRIE hosta v okně ±30 min kolem incidentu "
+                "(průměr v okně vs. předchozí období):\n"
+                + "\n".join(
+                    f"- {m['metric']}: {m['during_avg']}"
+                    + (f" (dříve {m['baseline_avg']}, změna {m['delta']:+} = {m['delta_pct']:+}%)"
+                       if m['delta_pct'] is not None else "")
+                    for m in telemetry)
+                + "\nPokud některá metrika s incidentem časově souvisí, zmiň to; "
+                  "pokud ne, telemetrii neuváděj."
+            )
         try:
             reply = service.execute_ollama(prompt, num_ctx=2048, max_tokens=400)
             return jsonify({"reply": html.escape(reply).replace('\n', '<br>'),
-                            "host": host, "plugin": plugin})
+                            "host": host, "plugin": plugin,
+                            "telemetry": telemetry})
         except Exception as e:
             return jsonify({"error": str(e)}), 500
+
+    @bp.route('/api/issues/<key_b64>/telemetry_context', methods=['GET'])
+    @requires_auth
+    def api_issue_telemetry_context(key_b64):
+        """449: Telemetrie kolem incidentu — bez AI, okamžitě a zadarmo."""
+        try:
+            key = base64.b64decode(key_b64).decode()
+        except Exception:
+            return jsonify({"error": "bad key"}), 400
+        window = int_param(request.args.get('window'), 30, 5, 240)
+        prob = state.get_problem(key)
+        if not prob:
+            return jsonify({"error": "Issue nenalezena"}), 404
+        host = prob.get('host') or ''
+        at = prob.get('first_seen') or prob.get('last_seen')
+        return jsonify({
+            "host": host, "at": at, "window_min": window,
+            "metrics": state.get_telemetry_context(host, at, window_min=window),
+        })
 
     @bp.route('/api/issues/<key_b64>/recheck', methods=['POST'])
     @requires_auth
