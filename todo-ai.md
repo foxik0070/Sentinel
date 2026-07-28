@@ -13,7 +13,7 @@ Priorita: 🔴 vysoká (řeší dnešní bolest) · 🟡 střední · 🟢 nice-
 
 ## A. Root cause & souvislosti (446–465)
 
-- [ ] 446 🔴 **Incident grouping napříč hosty** — issues ze stejného časového okna (±2 min) na různých hostech sloučit do jednoho "incidentu" s vlastním ID; AI dostane celou skupinu místo izolovaných alertů
+- [X] 446 🔴 **Incident grouping napříč hosty** — HOTOVO: analytics.group_incidents + GET /api/incidents — issues ze stejného časového okna (±2 min) na různých hostech sloučit do jednoho "incidentu" s vlastním ID; AI dostane celou skupinu místo izolovaných alertů
 - [ ] 447 🔴 **Kauzální řetěz místo seznamu** — AI má vrátit strukturu `{příčina → následek → následek}`, ne odstavec; UI vykreslí jako strom
 - [ ] 448 🔴 **Rozlišení příčina vs. symptom** — u skupiny alertů označit, který je kořen (např. disk full → služba spadla → healthcheck selhal); symptomy sbalit pod příčinu
 - [X] 449 🔴 **Korelace s telemetrií** — HOTOVO: get_telemetry_context + prompt v reanalyze + GET /api/issues/<k>/telemetry_context — k issue automaticky přiložit průběh CPU/RAM/disk/teploty ±30 min a nechat AI hledat souběh (dnes AI vidí jen text alertu)

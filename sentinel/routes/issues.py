@@ -8,7 +8,7 @@ import sqlite3
 from datetime import datetime, timezone, timedelta
 from flask import Blueprint, request, jsonify, g, Response
 from ..auth import requires_auth, int_param
-from .. import state, config, utils
+from .. import state, config, utils, analytics
 
 logger = logging.getLogger("sentinel.chat")
 
@@ -659,6 +659,29 @@ def create_blueprint(service):
                             "telemetry": telemetry})
         except Exception as e:
             return jsonify({"error": str(e)}), 500
+
+    @bp.route('/api/incidents', methods=['GET'])
+    @requires_auth
+    def api_incidents():
+        """446: Aktivní issues seskupené do incidentů podle času vzniku.
+
+        Dashboard ukazuje desítky izolovaných alertů, i když jde často o jeden
+        incident (výpadek uplinku → 5 hostů → 12 alertů). Bez AI, deterministicky.
+        """
+        window = int_param(request.args.get('window'), 2, 1, 60)
+        min_size = int_param(request.args.get('min_size'), 2, 1, 50)
+        issues = state.get_active_issues()
+        if g.user_role != 'superadmin':
+            issues = [i for i in issues if (i.get('channel_type') or '').lower() != 'root']
+        incidents = analytics.group_incidents(issues, window_min=window, min_size=min_size)
+        grouped = sum(inc['issue_count'] for inc in incidents)
+        return jsonify({
+            "incidents": incidents,
+            "window_min": window,
+            "total_issues": len(issues),
+            "grouped_issues": grouped,
+            "standalone_issues": len(issues) - grouped,
+        })
 
     @bp.route('/api/issues/<key_b64>/telemetry_context', methods=['GET'])
     @requires_auth

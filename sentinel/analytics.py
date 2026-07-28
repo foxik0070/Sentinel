@@ -121,3 +121,83 @@ def analyze_trend(metric_name, current_val, category):
                 return "WARNING", f"Anomálie: Hodnota mimo normál (Z-Score: {z_score:.1f})"
 
     return "OK", None
+
+
+# ==============================================================================
+# 446: Seskupení issues do incidentů
+# ==============================================================================
+# Dashboard ukazuje desítky izolovaných alertů, i když jde často o JEDEN
+# incident (výpadek uplinku → 5 hostů nedostupných → 12 alertů). Seskupení
+# podle času vzniku dává AI i člověku celek místo střepů.
+
+from datetime import datetime, timezone   # noqa: E402
+
+
+def _parse_ts(value):
+    """Tolerantní parsování timestampu na aware UTC. None při nezdaru."""
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+def group_incidents(issues, window_min: int = 2, min_size: int = 2) -> list:
+    """Seskupí issues, které vznikly blízko sebe, do incidentů.
+
+    Řadí podle času vzniku a láme skupinu, jakmile je mezera mezi po sobě
+    jdoucími issues větší než `window_min`. Řetězení je záměr: kaskáda
+    (uplink → hosty → služby) přichází postupně, ne naráz, takže pevné okno
+    od prvního alertu by ji rozseklo.
+
+    Vrací [{id, started_at, ended_at, span_min, hosts, plugins, severity,
+            issue_count, issues}] seřazeno od nejnovějšího.
+    Issues bez použitelného času se přeskočí (nelze je zařadit).
+    """
+    dated = []
+    for i in issues or []:
+        ts = _parse_ts(i.get('first_seen') or i.get('last_seen'))
+        if ts:
+            dated.append((ts, i))
+    dated.sort(key=lambda x: x[0])
+
+    groups, current = [], []
+    for ts, issue in dated:
+        if current and (ts - current[-1][0]).total_seconds() > window_min * 60:
+            groups.append(current)
+            current = []
+        current.append((ts, issue))
+    if current:
+        groups.append(current)
+
+    _sev_rank = {'critical': 4, 'high': 3, 'medium': 2, 'low': 1, '': 0}
+    out = []
+    for g in groups:
+        if len(g) < min_size:
+            continue
+        items = [i for _, i in g]
+        start, end = g[0][0], g[-1][0]
+        worst = max((str(i.get('severity') or '').lower() for i in items),
+                    key=lambda s: _sev_rank.get(s, 0), default='')
+        out.append({
+            "id": f"INC-{start.strftime('%Y%m%d-%H%M%S')}",
+            "started_at": start.isoformat(),
+            "ended_at": end.isoformat(),
+            "span_min": round((end - start).total_seconds() / 60, 1),
+            "hosts": sorted({str(i.get('host') or '?') for i in items}),
+            "plugins": sorted({str(i.get('plugin_name') or '?') for i in items}),
+            "severity": worst,
+            "issue_count": len(items),
+            "issues": [{
+                "key": i.get('key', ''),
+                "host": i.get('host', ''),
+                "plugin_name": i.get('plugin_name', ''),
+                "severity": i.get('severity', ''),
+                "last_line": (i.get('last_line') or '')[:200],
+                "first_seen": i.get('first_seen') or i.get('last_seen'),
+            } for i in items],
+        })
+    out.sort(key=lambda x: x["started_at"], reverse=True)
+    return out
