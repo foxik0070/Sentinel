@@ -649,15 +649,21 @@ def agent_watchdog_loop():
             agent_watchdog_loop._prune_counter += 1
             if agent_watchdog_loop._prune_counter >= 1440:  # každý den (1440 minut)
                 agent_watchdog_loop._prune_counter = 0
-                conn_p = _get_conn()
-                try:
-                    conn_p.execute("DELETE FROM issue_history WHERE resolved_at < datetime('now', '-90 days')")
-                    conn_p.execute("DELETE FROM root_audit WHERE is_active=0 AND connected_at < datetime('now', '-30 days')")
-                    conn_p.execute("DELETE FROM action_audit WHERE at < datetime('now', '-90 days')")
-                    conn_p.commit()
-                    logger.info("Daily pruning: issue_history, root_audit, action_audit cleaned.")
-                finally:
-                    conn_p.close()
+                # dlouhá zápisová transakce MUSÍ držet db_lock, jinak běží
+                # souběžně s agent ingestem → SQLITE_BUSY
+                _hist_days = int(getattr(config, 'ISSUE_HISTORY_RETENTION_DAYS', 90))
+                with db_lock:
+                    conn_p = _get_conn()
+                    try:
+                        conn_p.execute(
+                            "DELETE FROM issue_history WHERE resolved_at < datetime('now', ?)",
+                            (f'-{_hist_days} days',))
+                        conn_p.execute("DELETE FROM root_audit WHERE is_active=0 AND connected_at < datetime('now', '-30 days')")
+                        conn_p.execute("DELETE FROM action_audit WHERE at < datetime('now', '-90 days')")
+                        conn_p.commit()
+                        logger.info(f"Daily pruning: issue_history (>{_hist_days}d), root_audit, action_audit cleaned.")
+                    finally:
+                        conn_p.close()
         except Exception as pe:
             logger.error(f"Watchdog daily pruning error: {pe}")
 
@@ -668,12 +674,15 @@ def agent_watchdog_loop():
             agent_watchdog_loop._vacuum_counter += 1
             if agent_watchdog_loop._vacuum_counter >= 10080:  # 7 dní × 1440 minut
                 agent_watchdog_loop._vacuum_counter = 0
-                conn_v = _get_conn()
-                try:
-                    conn_v.execute("VACUUM")
-                    logger.info("DB VACUUM dokončen.")
-                finally:
-                    conn_v.close()
+                # VACUUM potřebuje exkluzivní zámek celé DB — bez db_lock
+                # kolidoval s běžícími zápisy
+                with db_lock:
+                    conn_v = _get_conn()
+                    try:
+                        conn_v.execute("VACUUM")
+                        logger.info("DB VACUUM dokončen.")
+                    finally:
+                        conn_v.close()
         except Exception as ve:
             logger.error(f"Watchdog VACUUM error: {ve}")
 

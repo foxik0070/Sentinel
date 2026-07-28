@@ -868,35 +868,41 @@ def save_problem(key, data):
 
     # Recurring issue detection: occurrence_count >= 3 within 24h → tag + bump severity
     if not is_new_issue:
+        # zápisy MUSÍ být pod db_lock — bez něj běžely paralelně s držiteli
+        # zámku (ingest z více agentů) a na SQLite/WAL končily SQLITE_BUSY,
+        # spolknutým do debug logu → recurring tag i bump severity tiše mizely
         try:
-            conn = _get_conn()
-            row = conn.execute(
-                "SELECT occurrence_count, first_seen, severity FROM problems WHERE key=?", (key,)
-            ).fetchone()
-            if row:
-                occ, first_seen_str, cur_sev = row
-                if occ and occ >= 3 and first_seen_str:
-                    fs = datetime.fromisoformat(first_seen_str)
-                    if fs.tzinfo is None:
-                        fs = fs.replace(tzinfo=timezone.utc)
-                    age_h = (datetime.now(timezone.utc) - fs).total_seconds() / 3600
-                    if age_h <= 24:
-                        # Přidat recurring tag (pokud ještě nemá)
-                        exists = conn.execute(
-                            "SELECT 1 FROM issue_tags WHERE problem_key=? AND lower(tag)='recurring'", (key,)
-                        ).fetchone()
-                        if not exists:
-                            conn.execute(
-                                "INSERT INTO issue_tags (problem_key, tag, created_by) VALUES (?,?,?)",
-                                (key, 'recurring', 'system')
-                            )
-                            conn.commit()
-                        # Bump severity pokud ještě není high/critical
-                        sev_order = {'': 0, None: 0, 'low': 1, 'medium': 2, 'high': 3, 'critical': 4}
-                        if sev_order.get(cur_sev, 0) < sev_order.get('high', 3):
-                            conn.execute("UPDATE problems SET severity='high' WHERE key=?", (key,))
-                            conn.commit()
-            conn.close()
+            with db_lock:
+                conn = _get_conn()
+                try:
+                    row = conn.execute(
+                        "SELECT occurrence_count, first_seen, severity FROM problems WHERE key=?", (key,)
+                    ).fetchone()
+                    if row:
+                        occ, first_seen_str, cur_sev = row
+                        if occ and occ >= 3 and first_seen_str:
+                            fs = datetime.fromisoformat(first_seen_str)
+                            if fs.tzinfo is None:
+                                fs = fs.replace(tzinfo=timezone.utc)
+                            age_h = (datetime.now(timezone.utc) - fs).total_seconds() / 3600
+                            if age_h <= 24:
+                                # tag přidat jen jednou — INSERT OR IGNORE by vyžadoval
+                                # unikátní index, proto check-then-act pod zámkem
+                                exists = conn.execute(
+                                    "SELECT 1 FROM issue_tags WHERE problem_key=? AND lower(tag)='recurring'", (key,)
+                                ).fetchone()
+                                if not exists:
+                                    conn.execute(
+                                        "INSERT INTO issue_tags (problem_key, tag, created_by) VALUES (?,?,?)",
+                                        (key, 'recurring', 'system')
+                                    )
+                                # Bump severity pokud ještě není high/critical
+                                sev_order = {'': 0, None: 0, 'low': 1, 'medium': 2, 'high': 3, 'critical': 4}
+                                if sev_order.get(cur_sev, 0) < sev_order.get('high', 3):
+                                    conn.execute("UPDATE problems SET severity='high' WHERE key=?", (key,))
+                                conn.commit()
+                finally:
+                    conn.close()
         except Exception as _re:
             logger.debug(f"recurring detection: {_re}")
 

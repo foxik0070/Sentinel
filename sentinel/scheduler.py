@@ -115,7 +115,10 @@ class Scheduler:
 
     def _minutely_tasks(self) -> None:
         state.apply_snooze_rules()
-        state.auto_resolve_old_problems(days=getattr(config, 'DB_RETENTION_DAYS', 30))
+        # retence PROBLÉMŮ, ne telemetrie — dřív se sem předávalo
+        # DB_RETENTION_DAYS (default 2 dny), takže historie vyřešených issues
+        # mizela skoro okamžitě a zvýšení retence telemetrie ji nechtěně měnilo
+        state.auto_resolve_old_problems(days=getattr(config, 'PROBLEM_RETENTION_DAYS', 30))
         self._service._run_escalation_rules()
         self._service._save_health_snapshot()
         self._service._run_self_monitor_webhook()

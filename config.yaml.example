@@ -357,3 +357,7 @@ prompts:
 #     #   priv_protocol: AES
 #     #   priv_pass: "{SECRET:SNMP_PRIV_PASS}"
 #     #   oids: [{ oid: 1.3.6.1.2.1.1.3.0, metric: uptime_ticks }]
+
+# Retence vyřešených/ignorovaných problémů ve dnech (nezávislá na db_retention_days,
+# která řídí RAW telemetrii). Default 30.
+# problem_retention_days: 30

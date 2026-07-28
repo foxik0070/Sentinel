@@ -38,7 +38,13 @@ def _verify_webhook_auth() -> bool:
                 return False
         except ValueError:
             return False
-        nonce_key = f"{expected_token[:8]}:{ts_header}"
+        # Nonce musí rozlišit dva RŮZNÉ alerty ve stejné sekundě — dřív byl klíč
+        # jen token+timestamp, takže Grafana/Alertmanager posílající dva alerty
+        # naráz dostaly na druhý 401 a alert se tiše zahodil. Otisk těla to řeší
+        # a zároveň zachová ochranu proti přehrání identického požadavku.
+        import hashlib as _hl
+        _body_fp = _hl.sha256(request.get_data() or b'').hexdigest()[:16]
+        nonce_key = f"{expected_token[:8]}:{ts_header}:{_body_fp}"
         now = _t.time()
         if nonce_key in _used_nonces:
             return False

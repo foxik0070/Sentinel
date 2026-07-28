@@ -245,7 +245,11 @@ FIM_ENABLED = False  # 176: File integrity monitoring
 FIM_PATHS: list = []  # 176: Seznam sledovaných souborů (default v watcher.py)
 
 # Database retention
-DB_RETENTION_DAYS = 2
+DB_RETENTION_DAYS = 2          # retence RAW telemetrie (dny)
+# Retence vyřešených/ignorovaných problémů. Dřív se používalo DB_RETENTION_DAYS,
+# takže zvýšení retence telemetrie (kvůli anomaly baseline) nechtěně prodloužilo
+# držení problémů — a naopak default 2 dny mazal historii issues skoro okamžitě.
+PROBLEM_RETENTION_DAYS: int = 30
 TELEMETRY_AGGREGATE_AFTER_HOURS = 24  # aggregate raw telemetry older than N hours (0 = disabled)
 ANALYTICS = {}  # runtime override from config.yaml analytics section
 HA_THRESHOLDS = {}  # runtime override from config.yaml ha_thresholds section
@@ -609,6 +613,8 @@ def load_config():
 
     # Database retention
     DB_RETENTION_DAYS = int(data.get("db_retention_days", DB_RETENTION_DAYS))
+    global PROBLEM_RETENTION_DAYS
+    PROBLEM_RETENTION_DAYS = int(data.get("problem_retention_days", PROBLEM_RETENTION_DAYS))
     global TELEMETRY_AGGREGATE_AFTER_HOURS
     TELEMETRY_AGGREGATE_AFTER_HOURS = int(data.get("telemetry_aggregate_after_hours", TELEMETRY_AGGREGATE_AFTER_HOURS))
     global ANALYTICS, HA_THRESHOLDS, SSH_KEY_PATH, SSH_USER, SSH_JUMP_HOST
@@ -816,7 +822,7 @@ _KNOWN_KEYS = {
     'issue_history_retention_days', 'display_tz', 'heartbeat_urls', 'gitea',
     'windows_ingest_key', 'dns_checks', 'lifecycle', 'ai_digest_hour',
     'rag_learn_resolved', 'ai_timeout_seconds', 'slo_targets',
-    'process_rotated_logs', 'snmp_poll',
+    'process_rotated_logs', 'snmp_poll', 'problem_retention_days',
 }
 
 VALIDATION_WARNINGS: list = []   # populated by _validate_config(), readable via API
