@@ -2002,13 +2002,17 @@ SwaggerUIBundle({
                 '[{"name":"...", "plugin":"...", "pattern":"...", "channel":"agent", "reason":"..."}]\n'
                 "Pattern musí být validní Python regex. Žádný jiný text."
             )
-            raw = service.execute_ollama(prompt, num_ctx=2048, max_tokens=500)
-            # Extrahuj JSON z odpovědi
-            import re as _re
-            m = _re.search(r'\[.*\]', raw, _re.DOTALL)
-            if not m:
-                return jsonify({"suggestions": [], "message": "AI nevygeneroval JSON výstup.", "raw": raw[:300]})
-            suggestions = json.loads(m.group(0))
+            # 506: ask_json parsuje i modely, které přidají větu okolo,
+            # a při nevalidním výstupu zopakuje dotaz s korekcí
+            ok, suggestions, raw = service.ask_json(
+                prompt, expect='array', num_ctx=2048, max_tokens=500)
+            if not ok or not isinstance(suggestions, list):
+                return jsonify({"suggestions": [],
+                                "message": "AI nevygenerovala validní JSON výstup.",
+                                "raw": raw[:300]})
+            # ponech jen položky s povinnými poli — model občas vrátí půlku
+            suggestions = [s for s in suggestions
+                           if isinstance(s, dict) and s.get('pattern') and s.get('name')]
             return jsonify({"suggestions": suggestions})
         except Exception as e:
             return jsonify({"error": str(e)}), 500

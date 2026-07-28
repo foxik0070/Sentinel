@@ -1092,6 +1092,88 @@ class ChatService(threading.Thread):
 
     _JOKE_SKIP_PLUGINS = {'detector_who', 'detector_icinga', 'agent_security_vulnerability_scan', 'agent_security_root_monitor'}
 
+    # ── 506: Strukturovaný výstup z AI ──────────────────────────────────────
+
+    @staticmethod
+    def extract_json(raw: str, expect: str = 'object'):
+        """Vytáhne JSON z AI odpovědi. Vrací dekódovaný objekt nebo None.
+
+        Modely rády obalují JSON do ```json bloků nebo přidávají větu před/za.
+        Projekt měl tři různé regexy, každý jinak rozbitý — nejhůř
+        `\\{[^{}]+\\}`, který na vnořeném objektu ({"a":{"b":1}}) usekl JSON
+        v půli. Tady se závorky párují, takže vnoření projde.
+        """
+        if not raw:
+            return None
+        text = re.sub(r'```(?:json)?', '', str(raw)).strip()
+        # rychlá cesta — celá odpověď je validní JSON
+        try:
+            return json.loads(text)
+        except (ValueError, TypeError):
+            pass
+        open_ch, close_ch = ('[', ']') if expect == 'array' else ('{', '}')
+        start = text.find(open_ch)
+        if start < 0:
+            return None
+        depth, in_str, esc = 0, False, False
+        for i in range(start, len(text)):
+            c = text[i]
+            if esc:
+                esc = False
+                continue
+            if c == '\\':
+                esc = True
+                continue
+            if c == '"':
+                in_str = not in_str
+                continue
+            if in_str:
+                continue
+            if c == open_ch:
+                depth += 1
+            elif c == close_ch:
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(text[start:i + 1])
+                    except (ValueError, TypeError):
+                        return None
+        return None
+
+    def ask_json(self, prompt: str, required_keys=None, expect: str = 'object',
+                 num_ctx: int = 2048, max_tokens: int = 500, retry: bool = True):
+        """506: Zeptá se AI a vrátí ROZPARSOVANÝ JSON, ne text k luštění.
+
+        Vrací (ok, data, raw):
+          ok=True  → data je dict/list se všemi required_keys
+          ok=False → data je None, raw nese původní odpověď pro log/diagnostiku
+
+        Při nevalidní odpovědi jednou zopakuje dotaz s korekcí — malé modely
+        (qwen2.5-coder:1.5b) často napoprvé přidají vysvětlující větu navíc.
+        """
+        attempt_prompt = prompt
+        raw = ""
+        for attempt in (1, 2):
+            raw = self.execute_ollama(attempt_prompt, num_ctx=num_ctx, max_tokens=max_tokens)
+            if not self._ai_reply_ok(raw):
+                return False, None, str(raw)        # AI nedostupná — retry nemá smysl
+            data = self.extract_json(raw, expect=expect)
+            if data is not None:
+                missing = [k for k in (required_keys or []) if k not in data] \
+                    if isinstance(data, dict) else []
+                if not missing:
+                    return True, data, str(raw)
+                logger.debug(f"ask_json: chybí klíče {missing} (pokus {attempt})")
+            if not retry or attempt == 2:
+                break
+            attempt_prompt = (
+                f"{prompt}\n\n"
+                f"POZOR: předchozí odpověď nebyla validní JSON"
+                f"{' nebo chyběly klíče ' + ', '.join(required_keys) if required_keys else ''}. "
+                f"Odpověz POUZE JSON, bez markdown bloků a bez jakéhokoli textu okolo."
+            )
+        return False, None, str(raw)
+
     def pick_infra_joke(self, lang: str = 'cs', source: str = 'manual') -> str:
         """Sdílený generátor sarkastického vtipu (dvouklik na logo i hodinový job).
 

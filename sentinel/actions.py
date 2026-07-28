@@ -174,10 +174,11 @@ def suggest_remediation(cluster, issue_type, node, raw_line, problem_key):
 
 def process_ai_proposal(context, ai_response):
     try:
-        clean_json = re.sub(r'```(?:json)?\s*', '', ai_response).strip()
-        m = re.search(r'\{.*\}', clean_json, re.DOTALL)
-        clean_json = m.group(0) if m else clean_json
-        data = json.loads(clean_json)
+        # 506: sdílená robustní extrakce místo lokálního regexu
+        from .chat_service import ChatService as _CS
+        data = _CS.extract_json(ai_response)
+        if data is None:
+            raise ValueError("AI odpověď neobsahuje validní JSON")
         
         command = data.get("command", "N/A")
         description = data.get("description", "AI Suggested Fix")

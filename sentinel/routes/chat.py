@@ -567,11 +567,11 @@ def create_blueprint(service):
                 command = "N/A"
                 confidence = None  # 429: self-assessment modelu 0-100
                 try:
-                    clean_json = raw_response.replace("```json", "").replace("```", "").strip()
-                    json_match = re.search(r'\{[^{}]+\}', clean_json, re.DOTALL)
-                    if json_match:
-                        clean_json = json_match.group(0)
-                    parsed = json.loads(clean_json)
+                    # 506: sdílená extrakce — dřívější `\{[^{}]+\}` usekl JSON
+                    # v půli, jakmile odpověď obsahovala vnořený objekt
+                    parsed = service.extract_json(raw_response)
+                    if parsed is None:
+                        raise ValueError("v odpovědi není JSON")
                     description = parsed.get("description", raw_response)
                     command = parsed.get("command", "N/A")
                     try:
