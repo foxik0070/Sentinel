@@ -297,6 +297,11 @@ def create_blueprint(service):
         import re as _re
         if not _re.match(r'^[\w./\-]+\.ya?ml$', playbook):
             return jsonify({"error": "Neplatná cesta k playbooku"}), 400
+        # regex výše propouštěl '../' — omezit na cesty bez traversalu
+        if '..' in playbook or playbook.startswith('/'):
+            return jsonify({"error": "Cesta k playbooku musí být relativní a bez '..'"}), 400
+        if not _valid_host(host):
+            return jsonify({"error": "Neplatný hostname"}), 400
 
         ssh_user = getattr(config, 'SSH_USER', 'root')
         ssh_key  = getattr(config, 'SSH_KEY_PATH', '')
@@ -306,9 +311,12 @@ def create_blueprint(service):
         if extra:
             cmd_parts += ['--extra-vars', extra]
         cmd_parts += ['--one-line']
-        cmd = ' '.join(f'"{p}"' if ' ' in p else p for p in cmd_parts)
+        # shlex.quote na každý argument — dřív se citovaly jen ty s mezerou,
+        # takže extra_vars typu 'x&&id' bylo command injection
+        cmd = ' '.join(shlex.quote(p) for p in cmd_parts)
         try:
-            ok, output = _actions.run_ssh_command_real('localhost', cmd)
+            # modul je importován jako `actions` (ne `_actions`) — dřív NameError
+            ok, output = actions.run_ssh_command_real('localhost', cmd, internal=True)
         except Exception as e:
             return jsonify({"error": str(e)}), 500
         state.log_ssh_execute(host, f'ansible-playbook {playbook}', g.username, ok, output)

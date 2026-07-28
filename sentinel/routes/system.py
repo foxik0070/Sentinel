@@ -356,6 +356,10 @@ def create_blueprint(service):
     @bp.route('/api/config/view', methods=['GET'])
     @requires_auth
     def api_config_view():
+        # Hesla jsou sice maskovaná, ale zbytek (LDAP bind DN, cesty ke klíčům,
+        # jump host, interní URL) do rukou viewera nepatří.
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
         # 350: Mask sensitive fields — password/token/secret/api_key → "***"
         _MASK = '***'
         def _mask(v):
@@ -2268,6 +2272,30 @@ SwaggerUIBundle({
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
+    def _is_private_url(url: str) -> bool:
+        """Return True if URL resolves to a private/loopback IP range (SSRF guard)."""
+        import ipaddress as _ipa
+        import urllib.parse as _up
+        import socket as _sock
+        try:
+            parsed = _up.urlparse(url)
+            host = parsed.hostname or ''
+            if not host:
+                return True
+            try:
+                addr = _ipa.ip_address(host)
+            except ValueError:
+                # DNS resolve
+                try:
+                    addr = _ipa.ip_address(_sock.gethostbyname(host))
+                except Exception:
+                    return False  # Can't resolve — allow, will fail later
+            return (addr.is_private or addr.is_loopback or
+                    addr.is_link_local or addr.is_multicast or
+                    addr.is_reserved)
+        except Exception:
+            return False
+
     @bp.route('/api/system/test-url', methods=['POST'])
     @requires_auth
     def api_test_url():
@@ -2278,6 +2306,11 @@ SwaggerUIBundle({
         url = (d.get('url') or '').strip().rstrip('/')
         if not url or not url.startswith('http'):
             return jsonify({"ok": False, "error": "Neplatná URL"}), 400
+        # SSRF: bez tohohle šel endpoint zneužít jako skener interní sítě
+        # (metadata 169.254.169.254, localhost, privátní rozsahy).
+        # Admin smí testovat i interní adresy — je to jeho síť; ostatní role ne.
+        if g.user_role not in ('admin', 'superadmin') and _is_private_url(url):
+            return jsonify({"ok": False, "error": "Interní adresy smí testovat jen admin"}), 403
         try:
             t0 = _time.monotonic()
             r = _req.get(url, timeout=6, allow_redirects=True)
@@ -2464,30 +2497,6 @@ SwaggerUIBundle({
         })
 
     # ── 354: SSRF protection helper ─────────────────────────────────────────────
-
-    def _is_private_url(url: str) -> bool:
-        """Return True if URL resolves to a private/loopback IP range (SSRF guard)."""
-        import ipaddress as _ipa
-        import urllib.parse as _up
-        import socket as _sock
-        try:
-            parsed = _up.urlparse(url)
-            host = parsed.hostname or ''
-            if not host:
-                return True
-            try:
-                addr = _ipa.ip_address(host)
-            except ValueError:
-                # DNS resolve
-                try:
-                    addr = _ipa.ip_address(_sock.gethostbyname(host))
-                except Exception:
-                    return False  # Can't resolve — allow, will fail later
-            return (addr.is_private or addr.is_loopback or
-                    addr.is_link_local or addr.is_multicast or
-                    addr.is_reserved)
-        except Exception:
-            return False
 
     @bp.route('/api/admin/validate_url', methods=['POST'])
     @requires_auth

@@ -182,22 +182,22 @@ button:disabled { background: var(--border); cursor: not-allowed; }
     box-sizing: border-box;
 }
 
-.badge-status { background: var(--border); color: #aaa; border: 1px solid #444; transition: all 0.3s ease; }
+.badge-status { background: var(--card-bg); color: var(--text-muted); border: 1px solid var(--card-border); transition: all 0.3s ease; }
 .badge-status.active { background: var(--error); color: white; border-color: transparent; animation: pulse 2s infinite; }
 .badge-status.ok { background: rgba(16, 124, 16, 0.1); color: var(--success); border: 1px solid var(--success); }
 
 .badge-online { background: rgba(16, 124, 16, 0.1); color: var(--success); border: 1px solid var(--success); }
 .badge-online.offline { background: rgba(197, 15, 31, 0.1); color: var(--error); border: 1px solid var(--error); }
 
-.badge-client { background: rgba(255, 255, 255, 0.05); color: #aaa; border: 1px solid #444; transition: all 0.3s ease; }
+.badge-client { background: var(--card-bg); color: var(--text-muted); border: 1px solid var(--card-border); transition: all 0.3s ease; }
 .badge-client.active { background: rgba(16, 124, 16, 0.1); color: var(--success); border: 1px solid var(--success); }
 
-.badge-agents { background: rgba(255, 255, 255, 0.05); color: #aaa; border: 1px solid #444; transition: all 0.3s ease; }
+.badge-agents { background: var(--card-bg); color: var(--text-muted); border: 1px solid var(--card-border); transition: all 0.3s ease; }
 .badge-agents.online { background: rgba(16, 124, 16, 0.1); color: var(--success); border: 1px solid var(--success); }
 .badge-agents.partial { background: rgba(255, 165, 0, 0.15); color: #ffa500; border: 1px solid #ffa500; }
 .badge-agents.offline { background: rgba(197, 15, 31, 0.1); color: var(--error); border: 1px solid var(--error); }
 
-.badge-service { background: rgba(255, 255, 255, 0.05); color: #aaa; border: 1px solid #444; transition: all 0.3s ease; cursor: default; }
+.badge-service { background: var(--card-bg); color: var(--text-muted); border: 1px solid var(--card-border); transition: all 0.3s ease; cursor: default; }
 .badge-service.active { background: rgba(16, 124, 16, 0.1); color: var(--success); border: 1px solid var(--success); }
 .badge-service.inactive { color: #555; border-color: #333; opacity: 0.55; }
 .badge-service.error { background: rgba(197, 15, 31, 0.1); color: var(--error); border: 1px solid var(--error); }
@@ -253,7 +253,7 @@ button:disabled { background: var(--border); cursor: not-allowed; }
 
 /* --- 6. LEVY PANEL NASTROJU (TOOLS PANEL) --- */
 #tools-panel { width: 260px; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
-.tool-header { padding: 8px 12px; font-weight: bold; border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.02); margin-top: 8px; font-size:0.78em; text-transform: uppercase; letter-spacing: 1px; color:#555; flex-shrink: 0; }
+.tool-header { padding: 8px 12px; font-weight: bold; border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.02); margin-top: 8px; font-size:0.78em; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); flex-shrink: 0; }
 .tool-header:first-child { margin-top: 0; }
 #quick-actions-list { overflow-y: auto; flex: 0 0 auto; max-height: 42%; padding: 6px 7px; min-height: 0; }
 .tool-list { overflow-y: auto; flex: 1; padding: 6px 7px; min-height: 0; }
@@ -277,7 +277,7 @@ button:disabled { background: var(--border); cursor: not-allowed; }
 .group-action-btn { width: 100%; background: #333; border: 1px solid #444; color: #ccc; font-size: 0.75rem; padding: 5px; border-radius: 3px; cursor: pointer; margin-bottom: 4px; transition: all 0.2s ease; }
 .group-action-btn:hover { background: var(--accent); color: white; border-color: var(--accent); }
 
-.file-item { padding: 6px 10px; font-size: 0.85rem; color: #aaa; border-left: 1px solid var(--border); margin-left: 8px; display: flex; justify-content: space-between; align-items: center; transition: all 0.2s ease; }
+.file-item { padding: 6px 10px; font-size: 0.85rem; color: var(--text-muted); border-left: 1px solid var(--border); margin-left: 8px; display: flex; justify-content: space-between; align-items: center; transition: all 0.2s ease; }
 .file-item:hover { color: var(--accent); border-left-color: var(--accent); background: rgba(255,255,255,0.03); }
 .file-actions i { margin-left: 10px; cursor: pointer; color: #555; font-size: 0.95em; transition: color 0.2s ease; }
 .file-actions i:hover { color: var(--accent); }
@@ -295,7 +295,7 @@ button:disabled { background: var(--border); cursor: not-allowed; }
 }
 
 .sys-header { 
-    background: #202020; 
+    background: var(--card-bg); 
     padding: 10px 15px; 
     cursor: pointer; 
     display: flex; 
@@ -375,15 +375,15 @@ button:disabled { background: var(--border); cursor: not-allowed; }
 .metric-card.CRITICAL { border-left-color: var(--error); background: rgba(197, 15, 31, 0.1); box-shadow: 0 0 10px rgba(197, 15, 31, 0.2); animation: pulse-red 2s infinite; }
 .metric-card.OK { border-left-color: var(--success); }
 
-.metric-name { font-weight: bold; font-size: 0.95em; color: #eee; }
+.metric-name { font-weight: bold; font-size: 0.95em; color: var(--text-main); }
 .metric-val { font-family: monospace; font-size: 1.1em; font-weight: bold; }
-.metric-msg { font-size: 0.85em; color: #aaa; margin-top: 4px; }
+.metric-msg { font-size: 0.85em; color: var(--text-muted); margin-top: 4px; }
 .trend-arrow { margin-left: 5px; font-size: 0.9em; }
 .metric-cat-header { margin-top: 15px; border-bottom: 1px solid #333; color: #888; font-size: 0.8em; text-transform: uppercase; letter-spacing: 1px; padding-bottom: 4px; }
 
 details.ok-metrics > summary { list-style: none; cursor: pointer; padding: 8px; background: rgba(255,255,255,0.02); color: #666; font-size: 0.85em; border-radius: 4px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
 details.ok-metrics > summary::-webkit-details-marker { display: none; }
-details.ok-metrics > summary:hover { background: rgba(255,255,255,0.05); color: #aaa; }
+details.ok-metrics > summary:hover { background: var(--card-bg); color: var(--text-muted); }
 details.ok-metrics > summary::after { content: '▼'; font-size: 0.8em; }
 details.ok-metrics[open] > summary::after { content: '▲'; }
 
@@ -440,7 +440,7 @@ details.ok-metrics[open] > summary::after { content: '▲'; }
     box-sizing: border-box;
 }
 .modal-footer { padding: 15px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; background: rgba(0,0,0,0.2); }
-.modal-code { background: #111; padding: 10px; border-radius: 4px; font-family: monospace; color: #00ff00; margin: 10px 0; max-height: 200px; overflow: auto; border: 1px solid #333; }
+.modal-code { background: var(--code-bg); padding: 10px; border-radius: 4px; font-family: monospace; color: var(--code-text); margin: 10px 0; max-height: 200px; overflow: auto; border: 1px solid var(--border); }
 
 /* modal scrollbar handled by global ::-webkit-scrollbar rules */
 
@@ -807,4 +807,36 @@ details.ok-metrics[open] > summary::after { content: '▲'; }
     background-size: 800px 100%;
     animation: skeleton-shimmer 1.3s linear infinite;
     border: 1px solid var(--border);
+}
+
+/* --- Přístupnost: viditelný fokus při navigaci klávesnicí ---
+   Dřív měly fokus jen textové inputy, takže při Tabu v modálech
+   (SSH, KB upload, pravidla) nebylo poznat, kde uživatel je. */
+button:focus-visible,
+a:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+input:focus-visible,
+.badge:focus-visible,
+.icon-btn:focus-visible,
+.icon-btn-header:focus-visible,
+.tool-btn:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 3px;
+}
+
+/* Bulk lišta na mobilu: 7 prvků ve flex řádku bez wrapu přetékalo,
+   takže Smazat/Export/přiřazení byly mimo obrazovku. */
+@media (max-width: 560px) {
+    #bulk-action-bar,
+    #agent-bulk-bar {
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+    #bulk-action-bar button,
+    #agent-bulk-bar button { flex: 1 1 auto; }
+    #bulk-assign-inp { width: 100%; }
 }
