@@ -82,7 +82,7 @@ Priorita: 🔴 vysoká (řeší dnešní bolest) · 🟡 střední · 🟢 nice-
 
 ## D. Kvalita odpovědí, kontext & RAG (506–525)
 
-- [ ] 506 🔴 **Strukturovaný výstup místo textu** — přechod na JSON schema pro analýzy (dnes se parsuje volný text regexem a `_ai_reply_ok` čichá k prefixům)
+- [X] 506 🔴 **Strukturovaný výstup místo textu** — HOTOVO (41876f8): extract_json (párování závorek) + ask_json s retry — přechod na JSON schema pro analýzy (dnes se parsuje volný text regexem a `_ai_reply_ok` čichá k prefixům)
 - [X] 507 🔴 **execute_ollama vrací (ok, text)** — HOTOVO (7f15a72): AIResult(str) s .ok/.error, zpětně kompatibilní — místo chybové hlášky jako obsahu; odstraní prefix-sniffing napříč kódem *(známý accepted-risk)*
 - [ ] 508 🔴 **Kontextové okno podle úlohy** — krátký prompt pro klasifikaci severity, velký pro korelaci; dnes se posílá stejně velký kontext
 - [ ] 509 🟡 **Komprese kontextu** — před odesláním zkrátit opakující se log řádky (`... 47× stejný řádek`) místo ořezu na N znaků
