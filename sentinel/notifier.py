@@ -80,14 +80,20 @@ _retry_thread = threading.Thread(target=_retry_worker, daemon=True, name="Notifi
 _retry_thread.start()
 
 
-def _with_retry(fn, *args, **kwargs):
-    """Spustí fn okamžitě; při výjimce zařadí do retry fronty."""
+def _with_retry(fn, *args, **kwargs) -> bool:
+    """Spustí fn okamžitě; při výjimce zařadí do retry fronty.
+
+    Vrací True při úspěchu (nebo když je kanál vypnutý a nic se nedělo),
+    False když se odeslání nepovedlo a je naplánován retry.
+    """
     try:
         fn(*args, **kwargs)
+        return True
     except Exception as e:
         logger.debug(f"Notifier {fn.__name__} první pokus selhal ({e}), plánuji retry")
         with _retry_lock:
             _retry_queue.append((fn, args, kwargs, 1, time.time() + _RETRY_BACKOFF[0]))
+        return False
 
 
 def send_notification(key: str, channel: str, host: str, msg: str) -> None:
@@ -102,25 +108,39 @@ def send_notification(key: str, channel: str, host: str, msg: str) -> None:
     if now_ts - _throttle.get(throttle_key, 0) < throttle_secs:
         return
     _throttle[throttle_key] = now_ts
+    # dict rostl bez limitu (klíč per problem_key) — zahoď zámky starší než
+    # nejdelší throttle okno, ty už stejně nikdy nic neumlčí
+    if len(_throttle) > 500:
+        _cutoff = now_ts - max(_THROTTLE_BY_SEV.values() or [14400])
+        for _k in [k for k, v in _throttle.items() if v < _cutoff]:
+            _throttle.pop(_k, None)
 
     instance = getattr(config, 'INSTANCE_NAME', 'Sentinel')
     # 337: Instance name v titulku — důležité pro multi-instance setups
     title = f"🚨 [{instance}] {channel.upper()} alert"
     body = f"[{host}] {msg[:200]}"
 
-    _with_retry(_send_teams, title, body, channel, instance)
-    _with_retry(_send_webhook, key, channel, host, msg, title, instance)
-    _with_retry(_send_pagerduty, key, channel, title, body, msg, instance)
-    _with_retry(_send_slack, title, body, channel)
-    _with_retry(_send_ntfy, title, body, channel)
-    _with_retry(_send_gotify, title, body, channel)
-    _with_retry(_send_smtp, title, body)
-    _with_retry(_send_ha, title, body)
-    _with_retry(_send_matrix, title, body)
-    _with_retry(_send_discord, title, body, channel)
-    _with_retry(_send_telegram, title, body)
-    _with_retry(_send_opsgenie, key, channel, title, body, instance)
-    _with_retry(_send_grafana_annotation, key, channel, host, msg)
+    results = [
+        _with_retry(_send_teams, title, body, channel, instance),
+        _with_retry(_send_webhook, key, channel, host, msg, title, instance),
+        _with_retry(_send_pagerduty, key, channel, title, body, msg, instance),
+        _with_retry(_send_slack, title, body, channel),
+        _with_retry(_send_ntfy, title, body, channel),
+        _with_retry(_send_gotify, title, body, channel),
+        _with_retry(_send_smtp, title, body),
+        _with_retry(_send_ha, title, body),
+        _with_retry(_send_matrix, title, body),
+        _with_retry(_send_discord, title, body, channel),
+        _with_retry(_send_telegram, title, body),
+        _with_retry(_send_opsgenie, key, channel, title, body, instance),
+        _with_retry(_send_grafana_annotation, key, channel, host, msg),
+    ]
+    # Throttle se nastavuje předem (aby souběžné alerty neprošly), ale když
+    # selhaly úplně všechny kanály, nesmíme alert umlčet na 15-60 min —
+    # retry sice běží, ale může vyčerpat pokusy. Uvolni zámek pro další pokus.
+    if results and not any(results):
+        _throttle.pop(throttle_key, None)
+        logger.warning(f"Notifier: žádný kanál neuspěl pro '{key}' — throttle uvolněn, běží retry")
     send_ha_action(channel)
 
 
@@ -143,6 +163,7 @@ def _send_teams(title: str, body: str, channel: str, instance: str) -> None:
                       headers={"Content-Type": "application/json"}, timeout=8)
     except Exception as e:
         logger.warning(f"Teams notify failed: {e}")
+        raise   # 362: propaguj do _with_retry, jinak je retry fronta mrtvá
 
 
 def _send_webhook(key: str, channel: str, host: str, msg: str,
@@ -164,6 +185,7 @@ def _send_webhook(key: str, channel: str, host: str, msg: str,
         requests.post(wh_url, data=payload, headers=headers, timeout=8)
     except Exception as e:
         logger.warning(f"Webhook notify failed: {e}")
+        raise   # 362: propaguj do _with_retry, jinak je retry fronta mrtvá
 
 
 def _send_pagerduty(key: str, channel: str, title: str, body: str,
@@ -186,6 +208,7 @@ def _send_pagerduty(key: str, channel: str, title: str, body: str,
                       headers={"Content-Type": "application/json"}, timeout=8)
     except Exception as e:
         logger.warning(f"PagerDuty notify failed: {e}")
+        raise   # 362: propaguj do _with_retry, jinak je retry fronta mrtvá
 
 
 def _send_slack(title: str, body: str, channel: str) -> None:
@@ -203,6 +226,7 @@ def _send_slack(title: str, body: str, channel: str) -> None:
                       headers={"Content-Type": "application/json"}, timeout=8)
     except Exception as e:
         logger.warning(f"Slack notify failed: {e}")
+        raise   # 362: propaguj do _with_retry, jinak je retry fronta mrtvá
 
 
 def _send_ntfy(title: str, body: str, channel: str) -> None:
@@ -221,6 +245,7 @@ def _send_ntfy(title: str, body: str, channel: str) -> None:
         requests.post(ntfy_url, data=body.encode(), headers=hdrs, timeout=8)
     except Exception as e:
         logger.warning(f"ntfy notify failed: {e}")
+        raise   # 362: propaguj do _with_retry, jinak je retry fronta mrtvá
 
 
 def _send_gotify(title: str, body: str, channel: str) -> None:
@@ -237,6 +262,7 @@ def _send_gotify(title: str, body: str, channel: str) -> None:
                       timeout=8)
     except Exception as e:
         logger.warning(f"Gotify notify failed: {e}")
+        raise   # 362: propaguj do _with_retry, jinak je retry fronta mrtvá
 
 
 def _send_smtp(title: str, body: str) -> None:
@@ -272,6 +298,7 @@ def _send_smtp(title: str, body: str) -> None:
                 srv.sendmail(msg_obj['From'], smtp_to.split(','), msg_obj.as_string())
     except Exception as e:
         logger.warning(f"SMTP notify failed: {e}")
+        raise   # 362: propaguj do _with_retry, jinak je retry fronta mrtvá
 
 
 def _send_matrix(title: str, body: str) -> None:
@@ -292,6 +319,7 @@ def _send_matrix(title: str, body: str) -> None:
                               "Content-Type": "application/json"}, timeout=8)
     except Exception as e:
         logger.warning(f"Matrix notify failed: {e}")
+        raise   # 362: propaguj do _with_retry, jinak je retry fronta mrtvá
 
 
 def send_ha_action(channel: str) -> None:
@@ -351,6 +379,7 @@ def _send_discord(title: str, body: str, channel: str) -> None:
         }, timeout=8)
     except Exception as e:
         logger.warning(f"Discord notify failed: {e}")
+        raise   # 362: propaguj do _with_retry, jinak je retry fronta mrtvá
 
 
 def _send_telegram(title: str, body: str) -> None:
@@ -368,6 +397,7 @@ def _send_telegram(title: str, body: str) -> None:
                       timeout=8)
     except Exception as e:
         logger.warning(f"Telegram notify failed: {e}")
+        raise   # 362: propaguj do _with_retry, jinak je retry fronta mrtvá
 
 
 def _send_opsgenie(key: str, channel: str, title: str, body: str, instance: str) -> None:
@@ -393,6 +423,7 @@ def _send_opsgenie(key: str, channel: str, title: str, body: str, instance: str)
                       timeout=8)
     except Exception as e:
         logger.warning(f"Opsgenie notify failed: {e}")
+        raise   # 362: propaguj do _with_retry, jinak je retry fronta mrtvá
 
 
 def _send_ha(title: str, body: str) -> None:
@@ -410,3 +441,4 @@ def _send_ha(title: str, body: str) -> None:
                                "Content-Type": "application/json"}, timeout=8)
     except Exception as e:
         logger.warning(f"HA notify failed: {e}")
+        raise   # 362: propaguj do _with_retry, jinak je retry fronta mrtvá
