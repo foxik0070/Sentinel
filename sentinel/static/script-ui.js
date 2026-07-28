@@ -680,7 +680,10 @@ function _tlActiveDaysBtn(days) {
     });
 }
 
+let _tlRequestSeq = 0;   // race guard: rychlé přepnutí 7→30 dní vykreslilo
+                         // odpověď, která doběhla poslední, ne tu vyžádanou
 async function loadTimeline(days) {
+    const _seq = ++_tlRequestSeq;
     _tlActiveDaysBtn(days);
     const heatmapEl = document.getElementById('timeline-heatmap');
     const statsEl   = document.getElementById('timeline-stats');
@@ -689,7 +692,9 @@ async function loadTimeline(days) {
 
     try {
         const r = await fetch(`/api/alerts/timeline?days=${days}`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const d = await r.json();
+        if (_seq !== _tlRequestSeq) return;   // mezitím přišel novější požadavek
         _renderTimeline(d, days);
     } catch(e) {
         heatmapEl.innerHTML = `<div style="padding:20px; color:var(--error); text-align:center;">${t('data_load_failed')}</div>`;
@@ -1057,7 +1062,8 @@ async function openSettingsModal() {
     fetch('/api/config/validate').then(r => r.json()).then(d => {
         const warns = d.warnings || [];
         const el = document.getElementById('cfg-validation-banner');
-        if (!el || !warns.length) return;
+        if (!el) return;
+        if (!warns.length) { el.style.display = 'none'; return; }   // jinak visí staré varování
         const colors = {critical:'#ef4444', error:'#f97316', warning:'#eab308', info:'#888'};
         el.style.display = 'block';
         el.innerHTML = `<div style="font-size:.78em;font-weight:700;margin-bottom:4px;color:#eab308;"><i class="fa-solid fa-triangle-exclamation"></i> Varování konfigurace (${warns.length})</div>` +
@@ -2986,7 +2992,7 @@ function openPluginStatsModalInline(inline = false) {
     const el = document.getElementById('plugin-stats-content');
     if (!el) return;
     el.innerHTML = `<div style="text-align:center; padding:20px; color:var(--text-muted);"><i class="fa-solid fa-spinner fa-spin"></i></div>`;
-    fetch('/api/plugins/stats').then(r => r.json()).then(d => {
+    fetch('/api/plugins/stats').then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }).then(d => {
         const stats = d.stats || [];
         if (!stats.length) { el.innerHTML = `<div style="color:var(--text-muted); padding:16px; text-align:center;">${t('no_data')}</div>`; return; }
         const maxTotal = Math.max(1, ...stats.map(s => s.total));

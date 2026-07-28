@@ -1055,7 +1055,10 @@ def _get_suppress_rules() -> list:
         ).fetchall()
         conn.close()
         return [{'host': r[0], 'plugin': r[1]} for r in rows]
-    except:
+    except Exception as e:
+        # fail-open: bez pravidel se potlačené issues zobrazí. To je záměr
+        # (lepší šum než skrytý problém), ale musí to jít poznat z logu.
+        logger.warning(f"_get_suppress_rules selhalo — potlačení dočasně neaktivní: {e}")
         return []
 
 def _is_suppressed(host: str, plugin: str, rules: list) -> bool:
@@ -1100,7 +1103,11 @@ def get_active_issues(include_snoozed: bool = False):
             if suppress and _is_suppressed(d.get('host', ''), d.get('plugin_name', ''), suppress):
                 continue
             issues.append(d)
-    except: pass
+    except Exception as e:
+        # Dřív `except: pass` — výjimka u n-tého řádku tiše zkrátila seznam
+        # issues pro dashboard, eskalace i denní report, a nikde o tom nebyla
+        # stopa. Seznam vracíme dál (lepší částečný než žádný), ale hlasitě.
+        logger.error(f"get_active_issues: neúplný seznam ({len(issues)} načteno): {e}")
     return issues
 
 

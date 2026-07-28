@@ -3,13 +3,22 @@ let dedicatedIssuesInterval = null;
 let currentOpenChannel = null;
 
 async function openIssuesModal(channel) {
-    currentOpenChannel = channel;
     // 390: návrat do issues = konec breadcrumb stopy
     if (typeof _navClear === 'function') _navClear();
     const modal = document.getElementById('dedicated-issues-modal');
     const titleEl = document.getElementById('dedicated-modal-title');
-    
-    if (channel === 'root_audit') { 
+
+    if (channel === 'root_audit') {
+        // root_audit je vlastní modal, ne kanál issues — currentOpenChannel
+        // se dřív nastavil na pseudo-kanál a běžící 3s interval dál tloukl
+        // na /api/modal_issues/root_audit; navazující akce (delete_all,
+        // AI souhrn, drag pořadí) pak pracovaly se špatným kanálem
+        if (typeof dedicatedIssuesInterval !== 'undefined' && dedicatedIssuesInterval) {
+            clearInterval(dedicatedIssuesInterval);
+            dedicatedIssuesInterval = null;
+        }
+        if (modal) modal.style.display = 'none';
+        currentOpenChannel = null;
         openRootAudit(); 
         if (window.innerWidth <= 768 && document.getElementById('tools-panel').style.left === '0px') { 
             toggleMobileMenu(); 
@@ -17,6 +26,7 @@ async function openIssuesModal(channel) {
         return; 
     }
 
+    currentOpenChannel = channel;
     modal.style.display = 'flex';
     if (channel === 'agent') titleEl.innerHTML = `<i class='fa-solid fa-server' style='color:var(--accent)'></i> ${t('issues_title_agent')}`;
     if (channel === 'root') titleEl.innerHTML = `<i class='fa-solid fa-user-secret' style='color:#ffc107'></i> ${t('issues_title_root')}`;
