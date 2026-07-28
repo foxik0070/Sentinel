@@ -683,6 +683,90 @@ def create_blueprint(service):
             "standalone_issues": len(issues) - grouped,
         })
 
+    @bp.route('/api/incidents/analyze', methods=['POST'])
+    @requires_auth
+    def api_incident_analyze():
+        """448: AI označí u skupiny alertů, který je PŘÍČINA a které následky.
+
+        Body: {"incident_id": "INC-..."} nebo {"keys": [...]}.
+        Vrací strukturu, ne odstavec — UI pak umí symptomy sbalit pod příčinu.
+        """
+        if g.user_role == 'viewer':
+            return jsonify({"error": "Forbidden"}), 403
+        body = request.get_json(silent=True) or {}
+        issues = state.get_active_issues()
+        if g.user_role != 'superadmin':
+            issues = [i for i in issues if (i.get('channel_type') or '').lower() != 'root']
+
+        keys = body.get('keys')
+        if keys:
+            wanted = set(keys)
+            members = [i for i in issues if i.get('key') in wanted]
+        else:
+            inc_id = (body.get('incident_id') or '').strip()
+            _w = int_param(body.get('window'), 2, 1, 60)
+            group = next((grp for grp in analytics.group_incidents(issues, window_min=_w)
+                          if grp['id'] == inc_id), None)
+            if not group:
+                return jsonify({"error": "Incident nenalezen"}), 404
+            member_keys = {m['key'] for m in group['issues']}
+            members = [i for i in issues if i.get('key') in member_keys]
+
+        if len(members) < 2:
+            return jsonify({"error": "Pro analýzu příčiny jsou potřeba aspoň 2 issues"}), 400
+
+        listing = "\n".join(
+            f"{n}. [{i.get('plugin_name', '?')}] {i.get('host', '?')} "
+            f"({str(i.get('first_seen') or '')[11:19]}): {(i.get('last_line') or '')[:150]}"
+            for n, i in enumerate(members[:20], 1)
+        )
+        prompt = (
+            "Jsi zkušený SRE. Níže je skupina alertů, které vznikly krátce po sobě.\n"
+            "Urči, který alert je PŘÍČINA (root cause) a které jsou jen NÁSLEDKY.\n\n"
+            f"ALERTY:\n{listing}\n\n"
+            'Odpověz POUZE JSON: {"root_cause_index": <číslo alertu nebo null>, '
+            '"reasoning": "<1-2 věty česky proč>", '
+            '"symptom_indexes": [<čísla následků>], '
+            '"related": <true pokud spolu alerty souvisí, jinak false>, '
+            '"confidence": <0-100>}\n'
+            "Pokud spolu alerty NESOUVISÍ (jen náhoda ve stejném čase), "
+            "vrať related=false a root_cause_index=null."
+        )
+        ok, data, raw = service.ask_json(
+            prompt, required_keys=["related"], num_ctx=2048, max_tokens=400)
+        if not ok:
+            return jsonify({"error": "AI nevrátila použitelnou odpověď",
+                            "raw": str(raw)[:300]}), 503
+
+        def _member(idx):
+            try:
+                pos = int(idx) - 1
+                return members[pos] if 0 <= pos < len(members) else None
+            except (TypeError, ValueError):
+                return None
+
+        related = bool(data.get("related"))
+        # Když spolu alerty nesouvisí, nemají ani "následky" — model občas
+        # symptom_indexes vyplní i při related=false a UI by pak sbalilo
+        # nesouvisející issues pod neexistující příčinu.
+        root = _member(data.get("root_cause_index")) if related else None
+        symptoms = ([m for m in (_member(x) for x in (data.get("symptom_indexes") or []))
+                     if m is not None and m is not root] if related and root else [])
+
+        def _slim(i):
+            return {"key": i.get('key'), "host": i.get('host'),
+                    "plugin_name": i.get('plugin_name'),
+                    "last_line": (i.get('last_line') or '')[:200]}
+
+        return jsonify({
+            "related": related,
+            "reasoning": html.escape(str(data.get("reasoning") or ''))[:600],
+            "confidence": data.get("confidence"),
+            "root_cause": _slim(root) if root else None,
+            "symptoms": [_slim(m) for m in symptoms],
+            "analyzed_count": len(members),
+        })
+
     @bp.route('/api/issues/<key_b64>/telemetry_context', methods=['GET'])
     @requires_auth
     def api_issue_telemetry_context(key_b64):
