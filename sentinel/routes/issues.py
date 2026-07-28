@@ -1257,6 +1257,10 @@ def create_blueprint(service):
         )
         try:
             content = service.execute_ollama(prompt, num_ctx=2048, max_tokens=500)
+            # 507: bez téhle kontroly se při výpadku AI uložila do DB jako
+            # runbook chybová hláška ("Chyba spojení s AI: …")
+            if not service._ai_reply_ok(content):
+                return jsonify({"error": f"AI nedostupná: {str(content)[:150]}"}), 503
             state.save_runbook(issue_type, content, plugin=plugin, channel=channel, created_by=g.username)
             service.log_event("runbook_generate", f"Runbook vygenerován: {issue_type}", user=g.username)
             return jsonify({"status": "ok", "issue_type": issue_type, "content": content})

@@ -52,6 +52,31 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(log_entry)
 
 logger = logging.getLogger("sentinel.chat")
+
+
+class AIResult(str):
+    """507: Výsledek AI volání — str s příznakem úspěchu.
+
+    execute_ollama() historicky vracelo chyby jako běžný text ("Chyba spojení
+    s AI: …"), takže každý volající musel hádat podle prefixu, jestli dostal
+    odpověď nebo chybu. Když se znění změnilo, chybová hláška se uložila jako
+    obsah (digest, postmortem, runbook).
+
+    Dědíme ze str, takže všech ~19 volajících funguje beze změny (.strip(),
+    formátování, konkatenace), ale nové kódu stačí `if not result.ok:`.
+    """
+    ok: bool = True
+    error: str = ""
+
+    def __new__(cls, text: str, ok: bool = True, error: str = ""):
+        obj = super().__new__(cls, text if text is not None else "")
+        obj.ok = ok
+        obj.error = error
+        return obj
+
+    @classmethod
+    def failure(cls, message: str) -> "AIResult":
+        return cls(message, ok=False, error=message)
 handler = logging.StreamHandler()
 handler.setFormatter(JsonFormatter())
 logger.handlers = [handler]
@@ -933,7 +958,13 @@ class ChatService(threading.Thread):
 
     @staticmethod
     def _ai_reply_ok(text: str) -> bool:
-        """execute_ollama vrací chyby jako text — nefiltrované by se uložily do DB."""
+        """507: True pokud jde o použitelnou AI odpověď, ne chybovou hlášku.
+
+        Primárně čte příznak z AIResult; kontrola prefixů zůstává jako pojistka
+        pro odpovědi, které by prošly cestou nevracející AIResult.
+        """
+        if isinstance(text, AIResult) and not text.ok:
+            return False
         t = (text or "").strip()
         return bool(t) and not t.startswith("Chyba spojení s AI") and not t.startswith("AI Error")
 
@@ -2031,7 +2062,7 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
                     data = resp.json()
                     result = data.get("message", {}).get("content", "")
                     if not result:
-                        result = "AI Error (No response field)"
+                        result = AIResult.failure("AI Error (No response field)")
                     self._add_token_usage(*self._extract_token_usage(data))
                 except Exception as hailo_err:
                     utils.log_message(f"AI: hailo-ollama Error: {hailo_err}, falling back to CPU ollama")
@@ -2057,10 +2088,10 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
                             self._add_token_usage(*self._extract_token_usage(cpu_data))
                         else:
                             utils.log_message(f"AI: CPU fallback HTTP {cpu_resp.status_code}: {cpu_resp.text[:120]}")
-                            result = f"Chyba spojení s AI: {hailo_err}"
+                            result = AIResult.failure(f"Chyba spojení s AI: {hailo_err}")
                     except Exception as cpu_err:
                         utils.log_message(f"AI: CPU fallback failed: {cpu_err}")
-                        result = f"Chyba spojení s AI: {hailo_err}"
+                        result = AIResult.failure(f"Chyba spojení s AI: {hailo_err}")
 
             elif config.ARGS.get("EXTERNAL_OLLAMA"):
                 ext_messages = messages if messages is not None else [{"role": "user", "content": prompt}]
@@ -2100,7 +2131,7 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
 
                 except Exception as e:
                     utils.log_message(f"AI: Critical Connection Error: {e}")
-                    result = f"Chyba spojení s AI: {str(e)}"
+                    result = AIResult.failure(f"Chyba spojení s AI: {str(e)}")
 
             else:
                 res = subprocess.run(
@@ -2117,12 +2148,13 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
             duration = time.time() - start_ts
             self.metrics["ai_latency_history"].append(duration)
             self.log_event("ai_inference", "Ollama execution success", duration_ms=duration*1000)
-            return result
+            # zachovej případný failure příznak z fallback větví
+            return result if isinstance(result, AIResult) else AIResult(result)
 
         except Exception as e:
             self.metrics["ai_errors"] += 1
             self.log_event("ai_error", str(e), level=logging.ERROR)
-            return f"AI Error: {e}"
+            return AIResult.failure(f"AI Error: {e}")
         finally:
             self.llm_semaphore.release()
 
