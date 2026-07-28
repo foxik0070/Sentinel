@@ -71,7 +71,11 @@ async function refreshModalIssuesContent(isAuto = false) {
         const openPicker = bodyEl && bodyEl.querySelector('[id^="lc-picker-"][style*="flex"], [id^="snooze-dropdown"]');
         // 395: rozbalený inline detail — nepřepisovat, uživatel čte
         const openDetail = bodyEl && bodyEl.querySelector('[id^="inline-detail-"][style*="display: block"], [id^="inline-detail-"][style*="display:block"]');
-        if (focusedInput || anyInputWithText || openPicker || openDetail) return;
+        // AI výsledky (souhrn/korelace/clustery) žijí uvnitř modal-body a AI běží
+        // desítky sekund až minuty — bez tohohle je auto-refresh po 3 s smazal
+        // dřív, než se stihly zobrazit.
+        const aiResult = bodyEl && bodyEl.querySelector('#batch-ai-result, #correlate-ai-result, #auto-cluster-result');
+        if (focusedInput || anyInputWithText || openPicker || openDetail || aiResult) return;
     }
 
     if (!isAuto) {

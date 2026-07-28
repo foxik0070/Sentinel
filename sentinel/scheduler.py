@@ -138,8 +138,11 @@ class Scheduler:
         threading.Thread(target=self._service._check_dns_records,
                          daemon=True, name="DNSCheck").start()
         # Geo-IP cache prune
+        # POZOR: _geo_cache je lokální proměnná uvnitř create_blueprint(), ne
+        # modulový atribut — import proto vyhazoval ImportError každou hodinu
+        # (spolknutý do warningu) a cache se nikdy neprořezala.
         try:
-            from .routes.agents import _geo_cache  # type: ignore
+            from .routes.agents import _GEO_CACHE as _geo_cache
             now_t = time.time()
             for ip in list(_geo_cache):
                 if now_t - _geo_cache[ip].get('ts', 0) > 3600:

@@ -1375,7 +1375,7 @@ function _savedFiltersLoad() {
 }
 
 function _savedFiltersStore(list) {
-    localStorage.setItem('sentinel_saved_filters', JSON.stringify(list.slice(0, 20)));
+    _lsSet('sentinel_saved_filters', JSON.stringify(list.slice(0, 20)));
 }
 
 function _savedFiltersToggle() {

@@ -1179,7 +1179,12 @@ class ChatService(threading.Thread):
                                 f"'{(issue.get('last_line',''))[:80]}' "
                                 f"aktivní {age_hours:.1f}h → priorita {target_sev.upper()}"
                             )
-                            self._send_notification("escalation", ch, issue.get('host', 'sentinel'), msg)
+                            # throttle je per-klíč: konstantní "escalation" znamenalo,
+                            # že se za hodinu odeslala jen PRVNÍ eskalace. A protože
+                            # severity je už zvýšená, podmínka příště neplatí → ostatní
+                            # eskalace se neodeslaly nikdy. Klíč musí být per-issue.
+                            self._send_notification(f"escalation_{issue['key']}", ch,
+                                                    issue.get('host', 'sentinel'), msg)
                             logger.info(f"[escalation] {issue['key']} → {target_sev} ({age_hours:.1f}h)")
                             break  # Jen jedno pravidlo na issue za jeden cyklus
         except Exception as e:

@@ -95,7 +95,7 @@ function _dashApplyWidgetOrder(container) {
             animation: 150,
             onEnd: () => {
                 const ids = [...container.querySelectorAll(':scope > [data-dash-widget]')].map(el => el.dataset.dashWidget);
-                localStorage.setItem('dash_widget_order', JSON.stringify(ids));
+                _lsSet('dash_widget_order', JSON.stringify(ids));
             },
         });
     }
@@ -241,7 +241,7 @@ function _renderDashboard(d, tl) {
     body.innerHTML = `
         <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;">${cards.join('')}</div>
         <div id="dash-widgets-container">
-        ${_dashWidget('sys', 'microchip', 'Systém', `<div style="display:flex;gap:10px;">${sysCards}</div>`, 'margin-bottom:12px;')}
+        ${_dashWidget('sys', 'microchip', t('dash_system'), `<div style="display:flex;gap:10px;">${sysCards}</div>`, 'margin-bottom:12px;')}
         ${sparks.length ? _dashWidget('temp', 'temperature-half', t('dash_temp_sparklines')||'Teploty hostů', `<div style="display:flex;gap:8px;flex-wrap:wrap;">${sparks.map(s=>{const temp=s.latest;const color=temp>=75?'#dc3545':temp>=60?'#ffc107':'#4da6ff';return`<div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;min-width:120px;flex:1;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;"><div style="font-size:.78em;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%;" title="${_escape(s.host)}">${_escape(s.host)}</div><div style="font-size:.9em;font-weight:700;color:${color};">${temp}°</div></div>${_sparklineSvg(s.history,100,28,color)}</div>`;}).join('')}</div>`, 'margin-bottom:12px;') : ''}
         ${_dashWidget('charts', 'chart-line', t('dash_trend'), `<div style="display:grid;grid-template-columns:2fr 1fr;gap:12px;"><div style="position:relative;height:140px;"><canvas id="dash-chart-trend"></canvas></div><div style="position:relative;height:140px;"><canvas id="dash-chart-donut"></canvas></div></div>`, 'margin-bottom:12px;')}
         <div data-dash-widget="bottom" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
@@ -1391,10 +1391,14 @@ async function _toolsAnalyticsLoad() {
                 }
             });
         } else if (cvs && !fp.length) {
-            cvs.parentElement.innerHTML = '<span style="color:var(--text-muted);font-size:.82em;">Žádné false positive záznamy.</span>';
+            // canvas NEmazat — po přepnutí rozsahu by už graf nešlo vykreslit
+            cvs.insertAdjacentHTML('afterend', '<span data-fp-empty style="color:var(--text-muted);font-size:.82em;">Žádné false positive záznamy.</span>');
+            cvs.style.display = 'none';
         }
     } catch(e) {
         if (slaBody) slaBody.innerHTML = `<span style="color:var(--error);">Chyba: ${_escape(e.message)}</span>`;
+        // bez tohohle se v SLO panelu točil spinner donekonečna
+        if (sloBody) sloBody.innerHTML = `<span style="color:var(--error);">Chyba: ${_escape(e.message)}</span>`;
     }
 }
 
@@ -1411,13 +1415,14 @@ async function _loadHealthTrend() {
         const scores = hist.map(h => h.score);
         const issues = hist.map(h => h.issues);
         const cid = 'health-trend-chart';
-        el.innerHTML = _dashWidget('healthtrend', 'heart-pulse', 'Zdraví systému (7 dní)',
+        el.innerHTML = _dashWidget('healthtrend', 'heart-pulse', t('dash_health_trend'),
             `<div style="position:relative;height:80px;"><canvas id="${cid}"></canvas></div>`,
             'margin-top:0;');
         requestAnimationFrame(() => {
             const cvs = document.getElementById(cid);
             if (!cvs) return;
-            new Chart(cvs, {
+            if (cvs._chart) { try { cvs._chart.destroy(); } catch {} }
+        cvs._chart = new Chart(cvs, {
                 type: 'line',
                 data: {
                     labels,
@@ -1457,7 +1462,7 @@ async function _loadFlappingWidget() {
                 <span style="font-size:.72em;color:var(--text-muted);">${(i.last_resolved||'').slice(0,10)}</span>
             </div>`).join('');
         el.innerHTML = _dashWidget('flapping', 'rotate',
-            'Top flapping issues (7 dní)',
+            t('dash_flapping'),
             `<div style="font-size:.72em;display:flex;gap:16px;color:var(--text-muted);padding-bottom:4px;border-bottom:1px solid var(--border);margin-bottom:4px;">
                 <span style="min-width:30px;text-align:right;">Počet</span><span style="min-width:90px;">Host</span><span>Plugin</span>
              </div>${rows}`,
@@ -4958,7 +4963,7 @@ function _convLoad() {
 
 function _convStore(list) {
     // max 10 konverzací, každá max ~200 kB — localStorage limit ~5 MB
-    try { localStorage.setItem('sentinel_conversations', JSON.stringify(list.slice(0, 10))); }
+    try { _lsSet('sentinel_conversations', JSON.stringify(list.slice(0, 10))); }
     catch (e) { alert('Uložení selhalo — konverzace je příliš velká.'); }
 }
 

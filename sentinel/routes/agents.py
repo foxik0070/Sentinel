@@ -11,6 +11,8 @@ from .. import state, config, utils, actions
 
 logger = logging.getLogger("sentinel.chat")
 
+_GEO_CACHE: dict = {}  # ip → {lat, lon, country, city, ts}; prořezává scheduler
+
 # 240: Validace hostname — povoleny jen bezpečné znaky
 _HOSTNAME_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$')
 
@@ -1178,7 +1180,9 @@ def create_blueprint(service):
         return jsonify(result)
 
     # ── Geo Map (118) ─────────────────────────────────────────────────────────
-    _geo_cache = {}  # ip → {lat, lon, country, city, ts}
+    # modulová cache — scheduler ji hodinově prořezává (jako lokální proměnná
+    # uvnitř create_blueprint byla zvenčí nedosažitelná a rostla bez limitu)
+    _geo_cache = _GEO_CACHE
 
     @bp.route('/api/agents/geomap', methods=['GET'])
     @requires_auth

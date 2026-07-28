@@ -1,4 +1,12 @@
 // 231: CSRF — globální fetch wrapper přidá X-CSRF-Token ke všem state-changing requestům
+
+/** Bezpečný zápis do localStorage — v private mode / při plné kvótě
+    setItem hodí QuotaExceededError a přerušil by volající funkci. */
+function _lsSet(key, val) {
+    try { localStorage.setItem(key, val); return true; }
+    catch (e) { console.warn('localStorage nedostupné:', e.name); return false; }
+}
+
 (function() {
     function _getCsrfToken() {
         const m = document.querySelector('meta[name="csrf-token"]');
@@ -139,7 +147,7 @@ window.onload = () => {
             const localLight = document.body.classList.contains('light-mode');
             if (serverLight !== localLight) {
                 document.body.classList.toggle('light-mode', serverLight);
-                localStorage.setItem('sentinel-theme', d.theme);
+                _lsSet('sentinel-theme', d.theme);
             }
         }
     }).catch(()=>{});
@@ -443,7 +451,7 @@ socket.on('issue_resolved', () => {
 function toggleTheme() {
     const isLight = document.body.classList.toggle('light-mode');
     const val = isLight ? 'light' : 'dark';
-    localStorage.setItem('sentinel-theme', val);
+    _lsSet('sentinel-theme', val);
     document.documentElement.classList.remove('light-mode-pre');
     // 001: persist to server per-user
     fetch('/api/user/theme', {method:'POST', headers:{'Content-Type':'application/json'},
