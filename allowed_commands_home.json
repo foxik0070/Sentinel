@@ -1,0 +1,100 @@
+[
+  {
+    "pattern": "systemctl --failed --no-pager",
+    "description": "Výpis selhaných systemd jednotek",
+    "auto_execute": false,
+    "risk_max": 5,
+    "note": "Zdroj: system_detector — diagnostika bez vedlejšího efektu"
+  },
+  {
+    "pattern": "ss -tlnp",
+    "description": "Výpis naslouchajících portů a procesů",
+    "auto_execute": false,
+    "risk_max": 5,
+    "note": "Zdroj: agent_network_port_security, port_detector — neregistrované porty"
+  },
+  {
+    "pattern": "apt-get update",
+    "description": "Aktualizace cache balíčků (bez instalace)",
+    "auto_execute": false,
+    "risk_max": 8,
+    "note": "Zdroj: audit_detector SEC_UPDATE — pouze refresh cache, nic neinstaluje"
+  },
+  {
+    "pattern": "du -sh /var/* /home/* /tmp/* 2>/dev/null | sort -rh | head -20",
+    "description": "Nalezení největších adresářů (diagnostika zaplněného disku)",
+    "auto_execute": false,
+    "risk_max": 5,
+    "note": "Zdroj: capacity_detector DISK_FULL — server / na 97% využití"
+  },
+  {
+    "pattern": "journalctl --vacuum-size=500M",
+    "description": "Ořezání systemd journalu na max 500 MB",
+    "auto_execute": false,
+    "risk_max": 20,
+    "note": "Zdroj: capacity_detector DISK_FULL — uvolnění místa, zachová nejnovější logy"
+  },
+  {
+    "pattern": "apt-get autoremove -y",
+    "description": "Odstranění nepotřebných balíčků",
+    "auto_execute": false,
+    "risk_max": 30,
+    "note": "Zdroj: capacity_detector DISK_FULL — bezpečné uvolnění místa po aktualizacích"
+  },
+  {
+    "pattern": "apt-get upgrade -y",
+    "description": "Instalace dostupných bezpečnostních aktualizací (apt/Debian)",
+    "auto_execute": false,
+    "risk_max": 50,
+    "note": "Zdroj: audit_detector SEC_UPDATE — proxmox01/02: 26 pkg, nextcloud: 26 pkg. Plánovaná údržba!"
+  },
+  {
+    "pattern": "systemctl mask systemd-networkd-wait-online.service",
+    "description": "Zakázání čekání na síť při startu (fix pomalého bootu kontejnerů/VM)",
+    "auto_execute": false,
+    "risk_max": 35,
+    "note": "Zdroj: system_detector — timeout na 8+ hostech (nextcloud, navidrome, octoprint...)"
+  },
+  {
+    "pattern": "proxmox-backup-client garbage-collect *",
+    "description": "Garbage collection Proxmox Backup Server datastore",
+    "auto_execute": false,
+    "risk_max": 30,
+    "note": "Zdroj: capacity_detector — uvolnění místa v PBS datastore"
+  },
+  {
+    "pattern": "reboot",
+    "description": "Restart hostitele (plánovaná údržba po kernel update)",
+    "auto_execute": false,
+    "risk_max": 90,
+    "note": "Zdroj: audit_detector REBOOT_REQ — 11 hostů čeká na reboot. POZOR: odpojí uživatele!"
+  },
+  {
+    "pattern": "systemctl restart *.service",
+    "description": "Restart konkrétní systemd služby",
+    "auto_execute": false,
+    "risk_max": 25,
+    "note": "Obecný příkaz — upřesnit název služby"
+  },
+  {
+    "pattern": "mount -a",
+    "description": "Připojení všech souborových systémů z /etc/fstab",
+    "auto_execute": false,
+    "risk_max": 20,
+    "note": "Oprava chybějících mountů"
+  },
+  {
+    "pattern": "journalctl --rotate && journalctl --vacuum-time=7d",
+    "description": "Rotace a čištění systemd journalu (>7 dní)",
+    "auto_execute": false,
+    "risk_max": 10,
+    "note": "Pravidelná údržba logů"
+  },
+  {
+    "pattern": "df -h",
+    "description": "Přehled využití diskového prostoru",
+    "auto_execute": false,
+    "risk_max": 5,
+    "note": "Diagnostický příkaz — read-only"
+  }
+]

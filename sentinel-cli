@@ -1,0 +1,185 @@
+#!/usr/bin/env python3
+"""
+424: sentinel-cli — CLI klient pro Sentinel Commander REST API.
+
+Konfigurace (env nebo ~/.config/sentinel-cli.conf ve formátu KEY=VALUE):
+  SENTINEL_URL      např. https://192.168.2.111:5050
+  SENTINEL_API_KEY  API klíč (Settings → API Keys)
+  SENTINEL_INSECURE 1 = nekontrolovat TLS certifikát (self-signed)
+
+Příklady:
+  sentinel-cli status
+  sentinel-cli issues                 # aktivní issues
+  sentinel-cli issues security        # jen kanál security
+  sentinel-cli ack <key|číslo>        # acknowledge
+  sentinel-cli resolve <key|číslo>    # recheck s force
+  sentinel-cli agents                 # seznam agentů
+  sentinel-cli digest                 # AI denní přehled
+  sentinel-cli slo [dny]              # SLO error budget
+"""
+import base64
+import json
+import os
+import ssl
+import sys
+import urllib.request
+
+CONF_PATH = os.path.expanduser("~/.config/sentinel-cli.conf")
+
+
+def _load_conf():
+    conf = {}
+    try:
+        with open(CONF_PATH) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    k, _, v = line.partition('=')
+                    conf[k.strip()] = v.strip()
+    except FileNotFoundError:
+        pass
+    return conf
+
+
+_conf = _load_conf()
+BASE = (os.environ.get('SENTINEL_URL') or _conf.get('SENTINEL_URL') or '').rstrip('/')
+API_KEY = os.environ.get('SENTINEL_API_KEY') or _conf.get('SENTINEL_API_KEY') or ''
+INSECURE = (os.environ.get('SENTINEL_INSECURE') or _conf.get('SENTINEL_INSECURE') or '') == '1'
+
+C_RED, C_GRN, C_YEL, C_DIM, C_RST = '\033[31m', '\033[32m', '\033[33m', '\033[2m', '\033[0m'
+if not sys.stdout.isatty():
+    C_RED = C_GRN = C_YEL = C_DIM = C_RST = ''
+
+
+def api(path, method='GET', body=None):
+    if not BASE:
+        sys.exit(f"Chybí SENTINEL_URL (env nebo {CONF_PATH})")
+    if not API_KEY:
+        sys.exit(f"Chybí SENTINEL_API_KEY (env nebo {CONF_PATH})")
+    req = urllib.request.Request(
+        BASE + path, method=method,
+        data=json.dumps(body).encode() if body is not None else None,
+        headers={'X-API-Key': API_KEY, 'Content-Type': 'application/json'},
+    )
+    ctx = ssl._create_unverified_context() if INSECURE else None
+    try:
+        with urllib.request.urlopen(req, timeout=30, context=ctx) as r:
+            return json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        sys.exit(f"HTTP {e.code}: {e.read().decode()[:200]}")
+    except Exception as e:
+        sys.exit(f"Chyba spojení: {e}")
+
+
+def _kb64(key):
+    return base64.b64encode(key.encode()).decode()
+
+
+def _resolve_key(arg):
+    """Číslo z posledního `issues` výpisu, nebo přímo klíč."""
+    if arg.isdigit():
+        try:
+            with open('/tmp/.sentinel-cli-issues.json') as f:
+                cache = json.load(f)
+            return cache[int(arg) - 1]
+        except (FileNotFoundError, IndexError):
+            sys.exit("Číslo neodpovídá poslednímu výpisu — spusť `sentinel-cli issues`.")
+    return arg
+
+
+def cmd_status(_):
+    d = api('/api/connection/status')
+    sv, st, ai = d.get('server', {}), d.get('stats', {}), d.get('ai', {})
+    up = sv.get('uptime_seconds', 0)
+    print(f"Sentinel {sv.get('version', '?')} @ {sv.get('hostname', '?')} — uptime {up // 86400}d {(up % 86400) // 3600}h")
+    print(f"Issues: {st.get('active_issues', '?')} | AI: {st.get('ai_requests', 0)} req "
+          f"({st.get('ai_errors', 0)} err, avg {st.get('avg_latency_s', '?')}s) | model {ai.get('model', '?')}")
+    tok = ai.get('tokens') or {}
+    if tok.get('today_requests'):
+        print(f"Tokeny dnes: {tok.get('today_in', 0)} in / {tok.get('today_out', 0)} out")
+
+
+def cmd_issues(args):
+    channel = args[0] if args else None
+    d = api('/api/issues/history?limit=200')
+    items = [i for i in d.get('items', []) if i.get('issue_status') == 'active']
+    if channel:
+        items = [i for i in items if (i.get('channel_type') or '').lower() == channel.lower()]
+    if not items:
+        print("Žádné aktivní issues." + (f" (kanál {channel})" if channel else ""))
+        return
+    keys = []
+    for n, i in enumerate(items, 1):
+        keys.append(i['key'])
+        ch = (i.get('channel_type') or '?').upper()
+        ts = (i.get('last_seen') or '')[:16].replace('T', ' ')
+        print(f"{C_DIM}{n:3}.{C_RST} {C_YEL}[{ch}]{C_RST} {C_DIM}{ts}{C_RST} "
+              f"{i.get('host', '?')}: {(i.get('last_line') or '')[:90]}")
+    with open('/tmp/.sentinel-cli-issues.json', 'w') as f:
+        json.dump(keys, f)
+    print(f"{C_DIM}— {len(items)} issues; ack/resolve <číslo> funguje na tento výpis{C_RST}")
+
+
+def cmd_ack(args):
+    if not args:
+        sys.exit("Použití: sentinel-cli ack <key|číslo>")
+    key = _resolve_key(args[0])
+    api(f'/api/issues/{_kb64(key)}/acknowledge', 'POST', {})
+    print(f"{C_GRN}✓ acknowledged:{C_RST} {key}")
+
+
+def cmd_resolve(args):
+    if not args:
+        sys.exit("Použití: sentinel-cli resolve <key|číslo>")
+    key = _resolve_key(args[0])
+    d = api(f'/api/issues/{_kb64(key)}/recheck', 'POST', {'force': True})
+    print(f"{C_GRN}✓ {d.get('verdict', '?')}:{C_RST} {d.get('detail', '')}")
+
+
+def cmd_agents(_):
+    d = api('/api/agents/list')
+    for a in d.get('agents', []):
+        on = a.get('status') == 'ONLINE'
+        dot = f"{C_GRN}●{C_RST}" if on else f"{C_RED}●{C_RST}"
+        print(f"{dot} {a.get('hostname', '?'):24} {a.get('status', ''):8} "
+              f"{C_DIM}{(a.get('last_seen') or '')[:16].replace('T', ' ')}{C_RST}")
+
+
+def cmd_digest(_):
+    d = api('/api/analyze/daily_digest')
+    dig = d.get('digest')
+    if not dig:
+        print("Žádný digest — vygeneruje se ráno, nebo POST /api/analyze/daily_digest.")
+        return
+    import html as _html
+    print(f"{C_DIM}AI přehled — {dig.get('date', '')}{C_RST}\n{_html.unescape(dig.get('text', ''))}")
+
+
+def cmd_slo(args):
+    days = args[0] if args and args[0].isdigit() else '30'
+    d = api(f'/api/analytics/slo?days={days}')
+    for s in d.get('slo', []):
+        col = {'ok': C_GRN, 'warning': C_YEL, 'exhausted': C_RED}.get(s['status'], '')
+        print(f"{col}{s['host']:24}{C_RST} {s['uptime_pct']:8}% (cíl {s['target_pct']}%) "
+              f"výpadky {s['downtime_min']:9.0f} min  budget {s['budget_remaining_min']:9.0f} min")
+
+
+COMMANDS = {
+    'status': cmd_status, 'issues': cmd_issues, 'ack': cmd_ack,
+    'resolve': cmd_resolve, 'agents': cmd_agents, 'digest': cmd_digest, 'slo': cmd_slo,
+}
+
+
+def main():
+    args = sys.argv[1:]
+    if not args or args[0] in ('-h', '--help', 'help'):
+        print(__doc__.strip())
+        return
+    fn = COMMANDS.get(args[0])
+    if not fn:
+        sys.exit(f"Neznámý příkaz '{args[0]}'. Příkazy: {', '.join(COMMANDS)}")
+    fn(args[1:])
+
+
+if __name__ == '__main__':
+    main()

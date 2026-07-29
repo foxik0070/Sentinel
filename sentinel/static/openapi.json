@@ -1,0 +1,391 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Sentinel Commander API",
+    "version": "2026.05.043",
+    "description": "Hybrid AI Log Monitor & Analyzer for Linux Infrastructure.\n\nAuth: HTTP Basic, session cookie, Bearer token (agents), X-API-Key.\n\nRoles: viewer ← admin ← superadmin"
+  },
+  "servers": [{ "url": "http://localhost:5050", "description": "Local instance" }],
+  "components": {
+    "securitySchemes": {
+      "basicAuth": { "type": "http", "scheme": "basic" },
+      "bearerAuth": { "type": "http", "scheme": "bearer" },
+      "apiKey": { "type": "apiKey", "in": "header", "name": "X-API-Key" }
+    },
+    "schemas": {
+      "Issue": {
+        "type": "object",
+        "properties": {
+          "key": { "type": "string", "example": "AGENT|node05|fail2ban" },
+          "status": { "type": "string", "enum": ["active", "validating", "resolved"] },
+          "channel_type": { "type": "string", "example": "SECURITY" },
+          "host": { "type": "string" },
+          "plugin_name": { "type": "string" },
+          "last_line": { "type": "string" },
+          "last_seen": { "type": "string", "format": "date-time" },
+          "first_seen": { "type": "string", "format": "date-time" },
+          "occurrence_count": { "type": "integer", "minimum": 1 },
+          "snoozed_until": { "type": "string", "format": "date-time", "nullable": true }
+        }
+      },
+      "Agent": {
+        "type": "object",
+        "properties": {
+          "hostname": { "type": "string" },
+          "status": { "type": "string", "enum": ["ONLINE", "OFFLINE"] },
+          "last_seen": { "type": "string", "format": "date-time" },
+          "registered_at": { "type": "string", "format": "date-time" },
+          "agent_version": { "type": "string", "nullable": true },
+          "agent_group": { "type": "string", "nullable": true },
+          "last_data_lag_ms": { "type": "integer", "nullable": true },
+          "alerts_24h": { "type": "integer" },
+          "alerts_7d": { "type": "integer" },
+          "alerts_total": { "type": "integer" }
+        }
+      },
+      "Action": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "problem_key": { "type": "string" },
+          "command": { "type": "string" },
+          "status": { "type": "string", "enum": ["pending", "executed", "rejected", "expired", "dry_run"] },
+          "risk_score": { "type": "integer" },
+          "node": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "SuppressRule": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "host_pattern": { "type": "string" },
+          "plugin_pattern": { "type": "string" },
+          "reason": { "type": "string" },
+          "expires_at": { "type": "string", "nullable": true }
+        }
+      },
+      "Comment": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "author": { "type": "string" },
+          "text": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "example": "error" },
+          "message": { "type": "string" }
+        }
+      }
+    }
+  },
+  "security": [{ "basicAuth": [] }],
+  "paths": {
+    "/api/status_check": {
+      "get": {
+        "summary": "Health probe",
+        "description": "Returns 200 OK when Sentinel is running. Used by systemd watchdog.",
+        "security": [],
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/api/v1/issues": {
+      "get": {
+        "summary": "List active issues",
+        "tags": ["Issues"],
+        "parameters": [
+          { "name": "channel", "in": "query", "schema": { "type": "string" } },
+          { "name": "host", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active issues",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "issues": { "type": "array", "items": { "$ref": "#/components/schemas/Issue" } } } } } }
+          }
+        }
+      }
+    },
+    "/api/issues/history": {
+      "get": {
+        "summary": "Issues history (active + resolved UNION)",
+        "tags": ["Issues"],
+        "parameters": [
+          { "name": "channel", "in": "query", "schema": { "type": "string" } },
+          { "name": "host", "in": "query", "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 200 } }
+        ],
+        "responses": { "200": { "description": "Combined history" } }
+      }
+    },
+    "/api/issues/meta": {
+      "get": {
+        "summary": "Live filter metadata",
+        "tags": ["Issues"],
+        "responses": { "200": { "description": "channels, plugins, statuses arrays" } }
+      }
+    },
+    "/api/issues/{key_b64}/comments": {
+      "get": {
+        "summary": "Get comments for issue",
+        "tags": ["Comments"],
+        "parameters": [{ "name": "key_b64", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Base64-encoded issue key" }],
+        "responses": { "200": { "description": "Comment list", "content": { "application/json": { "schema": { "type": "object", "properties": { "comments": { "type": "array", "items": { "$ref": "#/components/schemas/Comment" } } } } } } }
+      },
+      "post": {
+        "summary": "Add comment to issue",
+        "tags": ["Comments"],
+        "parameters": [{ "name": "key_b64", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["text"], "properties": { "text": { "type": "string", "maxLength": 2000 } } } } } },
+        "responses": { "200": { "description": "Comment added" } }
+      }
+    },
+    "/api/issues/comments/{id}": {
+      "delete": {
+        "summary": "Delete comment (admin+)",
+        "tags": ["Comments"],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "Deleted" } }
+      }
+    },
+    "/api/issues/comment_counts": {
+      "get": {
+        "summary": "Comment count map for all issues",
+        "tags": ["Comments"],
+        "responses": { "200": { "description": "Map of key_b64 → count" } }
+      }
+    },
+    "/api/agents/list": {
+      "get": {
+        "summary": "List registered agents",
+        "tags": ["Agents"],
+        "responses": { "200": { "description": "Agent list" } }
+      }
+    },
+    "/api/agents/health": {
+      "get": {
+        "summary": "Agent health with alert statistics",
+        "tags": ["Agents"],
+        "responses": {
+          "200": {
+            "description": "Enriched agent list",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "agents": { "type": "array", "items": { "$ref": "#/components/schemas/Agent" } } } } } }
+          }
+        }
+      }
+    },
+    "/api/agents/register": {
+      "post": {
+        "summary": "Register new agent (superadmin)",
+        "tags": ["Agents"],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["hostname"], "properties": { "hostname": { "type": "string" } } } } } },
+        "responses": { "200": { "description": "Returns token", "content": { "application/json": { "schema": { "type": "object", "properties": { "status": { "type": "string" }, "token": { "type": "string" } } } } } }
+      }
+    },
+    "/api/agents/group/{group_name}/maintenance": {
+      "post": {
+        "summary": "Set maintenance for all agents in group (admin+)",
+        "tags": ["Agents"],
+        "parameters": [{ "name": "group_name", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Base64-encoded group name" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "minutes": { "type": "integer", "description": "0 = cancel maintenance" } } } } } },
+        "responses": { "200": { "description": "OK with affected count" } }
+      }
+    },
+    "/api/v1/agent/ingest": {
+      "post": {
+        "summary": "Agent push endpoint",
+        "description": "Used by remote agents to push events. Auth via Bearer token.",
+        "tags": ["Agents"],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object",
+            "required": ["hostname", "events"],
+            "properties": {
+              "hostname": { "type": "string" },
+              "agent_version": { "type": "string", "description": "SHA of agent code" },
+              "data_timestamp": { "type": "string", "format": "date-time", "description": "When data was collected (for lag calculation)" },
+              "events": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "plugin": { "type": "string" },
+                    "status": { "type": "string", "enum": ["active", "ok", "resolved"] },
+                    "message": { "type": "string" }
+                  }
+                }
+              }
+            }
+          } } }
+        },
+        "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" }, "429": { "description": "Rate limit exceeded" } }
+      }
+    },
+    "/api/suppress/rules": {
+      "get": {
+        "summary": "List suppression rules (admin+)",
+        "tags": ["Suppression"],
+        "responses": { "200": { "description": "Rule list", "content": { "application/json": { "schema": { "type": "object", "properties": { "rules": { "type": "array", "items": { "$ref": "#/components/schemas/SuppressRule" } } } } } } }
+      },
+      "post": {
+        "summary": "Add suppression rule (admin+)",
+        "tags": ["Suppression"],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["host_pattern", "plugin_pattern"], "properties": { "host_pattern": { "type": "string" }, "plugin_pattern": { "type": "string" }, "reason": { "type": "string" }, "expires_at": { "type": "string", "nullable": true } } } } } },
+        "responses": { "200": { "description": "Rule created" } }
+      }
+    },
+    "/api/suppress/rules/{id}": {
+      "delete": {
+        "summary": "Delete suppression rule (admin+)",
+        "tags": ["Suppression"],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "Deleted" } }
+      }
+    },
+    "/api/snooze/rules": {
+      "get": { "summary": "List maintenance windows", "tags": ["Maintenance"], "responses": { "200": { "description": "Rules" } } },
+      "post": {
+        "summary": "Create maintenance window",
+        "tags": ["Maintenance"],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["name", "start_hour", "end_hour"], "properties": { "name": { "type": "string" }, "channels": { "type": "string", "default": "*" }, "start_hour": { "type": "integer" }, "end_hour": { "type": "integer" }, "days": { "type": "string", "example": "0,1,2,3,4" } } } } } },
+        "responses": { "200": { "description": "Created" } }
+      }
+    },
+    "/api/snooze/rules/{id}": {
+      "delete": { "summary": "Delete maintenance window", "tags": ["Maintenance"], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "responses": { "200": { "description": "Deleted" } } }
+    },
+    "/api/snooze/rules/{id}/toggle": {
+      "post": { "summary": "Toggle maintenance window enabled", "tags": ["Maintenance"], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "responses": { "200": { "description": "Toggled" } } }
+    },
+    "/api/actions/list": {
+      "get": {
+        "summary": "List actions",
+        "tags": ["Actions"],
+        "parameters": [
+          { "name": "status", "in": "query", "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50 } }
+        ],
+        "responses": { "200": { "description": "Actions list", "content": { "application/json": { "schema": { "type": "object", "properties": { "actions": { "type": "array", "items": { "$ref": "#/components/schemas/Action" } } } } } } }
+      }
+    },
+    "/api/actions/audit_log": {
+      "get": {
+        "summary": "Full action audit log",
+        "tags": ["Actions"],
+        "parameters": [{ "name": "limit", "in": "query", "schema": { "type": "integer", "default": 200, "maximum": 500 } }],
+        "responses": { "200": { "description": "Audit entries with action context" } }
+      }
+    },
+    "/api/v1/actions/{id}/approve": {
+      "post": { "summary": "Approve and execute action (admin+)", "tags": ["Actions"], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "responses": { "200": { "description": "Executed" } } }
+    },
+    "/api/v1/actions/{id}/reject": {
+      "post": { "summary": "Reject action (admin+)", "tags": ["Actions"], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "responses": { "200": { "description": "Rejected" } } }
+    },
+    "/api/export/incidents.csv": {
+      "get": {
+        "summary": "Export incidents as CSV",
+        "tags": ["Export"],
+        "parameters": [
+          { "name": "channels", "in": "query", "schema": { "type": "string" }, "description": "Pipe-separated: SECURITY|AGENT" },
+          { "name": "host", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "CSV file", "content": { "text/csv": {} } } }
+      }
+    },
+    "/api/export/telemetry.csv": {
+      "get": {
+        "summary": "Export telemetry as CSV",
+        "tags": ["Export"],
+        "parameters": [
+          { "name": "days", "in": "query", "schema": { "type": "integer", "default": 7 } },
+          { "name": "category", "in": "query", "schema": { "type": "string" } },
+          { "name": "metric", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "CSV file", "content": { "text/csv": {} } } }
+      }
+    },
+    "/api/export/db_backup": {
+      "get": {
+        "summary": "SQL dump of entire DB (superadmin)",
+        "tags": ["Export"],
+        "responses": { "200": { "description": "SQL dump", "content": { "text/plain": {} } } }
+      }
+    },
+    "/api/export/incidents.html": {
+      "get": {
+        "summary": "Printable HTML incident report",
+        "tags": ["Export"],
+        "parameters": [
+          { "name": "channels", "in": "query", "schema": { "type": "string" } },
+          { "name": "plugins", "in": "query", "schema": { "type": "string" } },
+          { "name": "statuses", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Self-contained HTML page", "content": { "text/html": {} } } }
+      }
+    },
+    "/api/metrics": {
+      "get": {
+        "summary": "Prometheus metrics",
+        "description": "Prometheus text format. Auth via ?token= or session.",
+        "tags": ["Metrics"],
+        "parameters": [{ "name": "token", "in": "query", "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Prometheus exposition format", "content": { "text/plain": {} } } }
+      }
+    },
+    "/api/alerts/timeline": {
+      "get": {
+        "summary": "Alert timeline heatmap data",
+        "tags": ["Metrics"],
+        "parameters": [{ "name": "days", "in": "query", "schema": { "type": "integer", "default": 7, "maximum": 30 } }],
+        "responses": { "200": { "description": "heatmap and by_channel arrays" } }
+      }
+    },
+    "/api/plugins/stats": {
+      "get": {
+        "summary": "Alert counts per plugin",
+        "tags": ["Metrics"],
+        "responses": { "200": { "description": "Plugin statistics" } }
+      }
+    },
+    "/api/logs/list": {
+      "get": { "summary": "List log files in LOG_DIR", "tags": ["Logs"], "responses": { "200": { "description": "File list" } } }
+    },
+    "/api/logs/tail/{filename}": {
+      "get": {
+        "summary": "Live log tail (SSE stream)",
+        "tags": ["Logs"],
+        "parameters": [
+          { "name": "filename", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "lines", "in": "query", "schema": { "type": "integer", "default": 50, "maximum": 200 } }
+        ],
+        "responses": { "200": { "description": "Server-Sent Events stream", "content": { "text/event-stream": {} } } }
+      }
+    },
+    "/api/chat": {
+      "post": {
+        "summary": "Free chat with LLM",
+        "tags": ["AI"],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["message"], "properties": { "message": { "type": "string" } } } } } },
+        "responses": { "200": { "description": "SSE stream with AI response", "content": { "text/event-stream": {} } } }
+      }
+    }
+  },
+  "tags": [
+    { "name": "Issues", "description": "Active and historical incidents" },
+    { "name": "Comments", "description": "Issue comment threads" },
+    { "name": "Agents", "description": "Remote agent management" },
+    { "name": "Actions", "description": "AI-proposed remediation actions" },
+    { "name": "Suppression", "description": "Alert suppression rules" },
+    { "name": "Maintenance", "description": "Scheduled maintenance windows" },
+    { "name": "Export", "description": "Data export endpoints" },
+    { "name": "Metrics", "description": "Telemetry and analytics" },
+    { "name": "Logs", "description": "Log file access" },
+    { "name": "AI", "description": "AI inference endpoints" }
+  ]
+}
