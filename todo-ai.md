@@ -59,7 +59,7 @@ Priorita: 🔴 vysoká (řeší dnešní bolest) · 🟡 střední · 🟢 nice-
 
 ## C. Řešení & remediace (486–505)
 
-- [ ] 486 🔴 **Ověření, že oprava fungovala** — po remediaci AI zkontroluje, zda problém opravdu zmizel (dnes se jen přepne na `validating`)
+- [X] 486 🔴 **Ověření, že oprava fungovala** — po remediaci AI zkontroluje, zda problém opravdu zmizel (dnes se jen přepne na `validating`)
 - [ ] 487 🔴 **Vysvětlení odmítnutí** — když safety klasifikátor/allowlist zablokuje příkaz, AI vysvětlí proč a navrhne povolenou alternativu
 - [ ] 488 🔴 **Postupná remediace** — nejdřív nejmenší zásah (restart služby), teprve při neúspěchu větší; ne rovnou reboot
 - [ ] 489 🟡 **Rollback plán** — ke každému návrhu i postup, jak změnu vrátit, pokud nepomůže

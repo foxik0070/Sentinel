@@ -1036,6 +1036,98 @@ def get_webhook_deliveries(limit: int = 100) -> list:
         logger.error(f"get_webhook_deliveries: {e}")
         return []
 
+_FIX_COLS = ['id', 'problem_key', 'host', 'plugin_name', 'command', 'applied_by',
+             'applied_at', 'verify_after', 'status', 'verdict_detail', 'verified_at']
+
+
+def record_fix_attempt(problem_key: str, command: str, host: str = '',
+                       plugin_name: str = '', applied_by: str = '',
+                       wait_min: int | None = None) -> int | None:
+    """486: Zaznamená zásah, který se má později ověřit. Vrací id pokusu."""
+    from . import fix_verify
+    from datetime import datetime, timezone
+    with db_lock:
+        try:
+            conn = _get_conn()
+            cur = conn.execute(
+                "INSERT INTO fix_attempts (problem_key, host, plugin_name, command, "
+                "applied_by, applied_at, verify_after) VALUES (?,?,?,?,?,?,?)",
+                (str(problem_key)[:200], str(host)[:100], str(plugin_name)[:100],
+                 str(command)[:1000], str(applied_by)[:64],
+                 datetime.now(timezone.utc).isoformat(), fix_verify.wait_until(wait_min))
+            )
+            conn.commit()
+            rid = cur.lastrowid
+            conn.close()
+            return rid
+        except Exception as e:
+            logger.error(f"record_fix_attempt: {e}")
+            return None
+
+
+def get_pending_fix_attempts(limit: int = 100) -> list:
+    """486: Pokusy čekající na vyhodnocení."""
+    try:
+        conn = _get_conn()
+        try:
+            rows = conn.execute(
+                f"SELECT {','.join(_FIX_COLS)} FROM fix_attempts "
+                "WHERE status='pending' ORDER BY verify_after LIMIT ?", (int(limit),)
+            ).fetchall()
+        finally:
+            conn.close()
+        return [dict(zip(_FIX_COLS, r)) for r in rows]
+    except Exception as e:
+        logger.error(f"get_pending_fix_attempts: {e}")
+        return []
+
+
+def get_fix_attempts(problem_key: str = '', limit: int = 50) -> list:
+    """486: Historie zásahů — pro konkrétní issue, nebo poslední napříč."""
+    try:
+        conn = _get_conn()
+        try:
+            if problem_key:
+                rows = conn.execute(
+                    f"SELECT {','.join(_FIX_COLS)} FROM fix_attempts "
+                    "WHERE problem_key=? ORDER BY id DESC LIMIT ?",
+                    (str(problem_key), int(limit))).fetchall()
+            else:
+                rows = conn.execute(
+                    f"SELECT {','.join(_FIX_COLS)} FROM fix_attempts "
+                    "ORDER BY id DESC LIMIT ?", (int(limit),)).fetchall()
+        finally:
+            conn.close()
+        return [dict(zip(_FIX_COLS, r)) for r in rows]
+    except Exception as e:
+        logger.error(f"get_fix_attempts: {e}")
+        return []
+
+
+def close_fix_attempt(attempt_id: int, status: str, detail: str = '') -> bool:
+    """486: Uzavře pokus verdiktem.
+
+    Podmínka `status='pending'` brání dvojímu vyhodnocení, kdyby se souběžně
+    trefil scheduler i ruční ověření z UI.
+    """
+    from datetime import datetime, timezone
+    with db_lock:
+        try:
+            conn = _get_conn()
+            cur = conn.execute(
+                "UPDATE fix_attempts SET status=?, verdict_detail=?, verified_at=? "
+                "WHERE id=? AND status='pending'",
+                (str(status)[:16], str(detail)[:500],
+                 datetime.now(timezone.utc).isoformat(), int(attempt_id)))
+            conn.commit()
+            changed = cur.rowcount
+            conn.close()
+            return changed > 0
+        except Exception as e:
+            logger.error(f"close_fix_attempt: {e}")
+            return False
+
+
 def _suggestion_hash(text: str) -> str:
     """Otisk návrhu pro porovnání „tohle už jednou odmítli"."""
     import hashlib
