@@ -1256,11 +1256,21 @@ class ChatService(threading.Thread):
                         sev_order = {'': 0, 'low': 1, 'medium': 2, 'high': 3, 'critical': 4}
                         if sev_order.get(cur_sev, 0) < sev_order.get(target_sev, 3):
                             state.set_issue_severity(issue['key'], target_sev)
-                            msg = (
-                                f"⚠️ Eskalace: [{ch.upper()}] {issue.get('host','?')} — "
-                                f"'{(issue.get('last_line',''))[:80]}' "
-                                f"aktivní {age_hours:.1f}h → priorita {target_sev.upper()}"
-                            )
+                            # 499: eskalace nese kontext — hlavně co už se
+                            # zkusilo a nezabralo. Holé „aktivní 26h → HIGH"
+                            # tomu, kdo problém přebírá, nepomůže.
+                            try:
+                                from . import escalation
+                                msg = escalation.build(
+                                    state, issue, age_hours, target_sev,
+                                    ask_ai=lambda p: self.execute_ollama(p, num_ctx=1024, max_tokens=150))
+                            except Exception as _ee:
+                                logger.error(f"[escalation] kontext selhal, posílám holou zprávu: {_ee}")
+                                msg = (
+                                    f"⚠️ Eskalace: [{ch.upper()}] {issue.get('host','?')} — "
+                                    f"'{(issue.get('last_line',''))[:80]}' "
+                                    f"aktivní {age_hours:.1f}h → priorita {target_sev.upper()}"
+                                )
                             # throttle je per-klíč: konstantní "escalation" znamenalo,
                             # že se za hodinu odeslala jen PRVNÍ eskalace. A protože
                             # severity je už zvýšená, podmínka příště neplatí → ostatní

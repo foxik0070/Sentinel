@@ -72,7 +72,7 @@ Priorita: 🔴 vysoká (řeší dnešní bolest) · 🟡 střední · 🟢 nice-
 - [ ] 496 🟡 **Návrh preventivního opatření** — po vyřešení: co udělat, aby se to nestalo znovu (cron, logrotate, alert, kvóta)
 - [ ] 497 🟢 **Batch remediace** — stejný problém na N hostech vyřešit jedním schváleným plánem místo N kliknutí
 - [ ] 498 🟡 **Kontrola maintenance okna** — AI nenavrhne restart produkce v pracovní době, pokud problém není kritický
-- [ ] 499 🔴 **Eskalace s kontextem** — když AI neví, sestavit shrnutí pro člověka: co zkusila, co vyloučila, co doporučuje ověřit
+- [X] 499 🔴 **Eskalace s kontextem** — když AI neví, sestavit shrnutí pro člověka: co zkusila, co vyloučila, co doporučuje ověřit
 - [ ] 500 🟡 **Rozpoznání "neřešitelného"** — odlišit problém vyžadující fyzický zásah (výměna disku) a nenabízet SSH příkazy
 - [ ] 501 🟢 **Koordinace s Ansible** — u opakovaného problému navrhnout trvalou opravu jako Ansible task, ne jednorázový příkaz
 - [ ] 502 🟡 **Prioritizace fronty práce** — AI seřadí otevřené issues podle dopadu × jistoty řešení a navrhne, čím začít
