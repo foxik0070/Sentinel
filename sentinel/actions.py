@@ -258,6 +258,26 @@ def process_ai_proposal(context, ai_response):
     except Exception as e:
         utils.log_message(f"Error processing AI proposal: {e}")
 
+def _record_fix_attempt_for_action(action_id, command, mgmt_node):
+    """486: Zásah proběhl — nechat si ho ověřit.
+
+    Volá se jen po ÚSPĚŠNÉM reálném vykonání; dry-run ani selhaný příkaz
+    nemá smysl ověřovat, protože se na stroji nic nestalo. Bez problem_key
+    není co porovnávat (ruční příkaz mimo issue), takže se přeskočí.
+    """
+    try:
+        act = state.get_action(action_id) or {}
+        key = act.get('problem_key')
+        if not key:
+            return
+        state.record_fix_attempt(
+            problem_key=key, command=command,
+            host=act.get('node') or mgmt_node,
+            applied_by=act.get('executed_by') or 'action')
+    except Exception as e:
+        utils.log_message(f"[486] Nelze zaznamenat pokus o opravu: {e}")
+
+
 def run_ssh_command_real(cluster, command, action_id=None, timeout: int = 30, internal: bool = False):
     """internal=True: hardcoded read-only diagnostika ze serveru — přeskočí allowlist,
     ale ne dry-run guard. Nikdy nepoužívat pro příkazy odvozené z user inputu."""
@@ -324,6 +344,7 @@ def run_ssh_command_real(cluster, command, action_id=None, timeout: int = 30, in
             if action_id is not None:
                 state.log_action_event(action_id, "executed",
                                        details={"mgmt_node": mgmt_node, "rc": 0})
+                _record_fix_attempt_for_action(action_id, command, mgmt_node)
             return True, out
         else:
             err = f"STDERR: {result.stderr.strip()}"
