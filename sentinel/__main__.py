@@ -254,6 +254,9 @@ def main():
     WEB_CHECK_INTERVAL = 30
     STALE_CHECK_INTERVAL = 3600  # resolve stale problems once per hour
     stale_counter = STALE_CHECK_INTERVAL - 60  # první sweep ~minutu po startu
+    # 486: ověřování oprav — často, protože pokusy dozrávají po ~15 min
+    FIX_VERIFY_INTERVAL = 120
+    fix_verify_counter = 0
     _scheme = "https" if getattr(config, 'HTTPS_ENABLED', False) else "http"
     WEB_URL = f"{_scheme}://127.0.0.1:{config.WEB_PORT}/api/status_check"
 
@@ -306,6 +309,7 @@ def main():
             time.sleep(1)
             loop_counter  += 1
             stale_counter += 1
+            fix_verify_counter += 1
 
             if not ollama_thread.is_alive():
                 utils.log_message("CRITICAL: Ollama worker died!")
@@ -330,6 +334,27 @@ def main():
                         utils.log_message(f"Stale cleanup: resolved {n} inactive problems (per-severity TTL)")
                 except Exception as _e:
                     utils.log_message(f"[!] Stale cleanup failed: {_e}")
+
+            # 486: dozrálé pokusy o opravu — zabralo to, nebo se problém vrátil?
+            if fix_verify_counter >= FIX_VERIFY_INTERVAL:
+                fix_verify_counter = 0
+                try:
+                    from . import fix_verify
+
+                    def _notify_failed(attempt, detail):
+                        utils.send_to_teams(
+                            f"⚠️ <b>Oprava nezabrala</b><br>"
+                            f"{attempt.get('host', '?')} — <code>{attempt.get('command', '?')}</code><br>"
+                            f"{detail}", "tests")
+
+                    res = fix_verify.run_due_verifications(state, notify=_notify_failed)
+                    if any(res.values()):
+                        utils.log_message(
+                            f"Fix verify: {res.get('worked', 0)} zabralo, "
+                            f"{res.get('failed', 0)} nezabralo, "
+                            f"{res.get('uncertain', 0)} nejasných")
+                except Exception as _e:
+                    utils.log_message(f"[!] Fix verify failed: {_e}")
 
             if loop_counter >= WEB_CHECK_INTERVAL:
                 loop_counter = 0

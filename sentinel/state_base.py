@@ -499,7 +499,24 @@ def init_db():
                           error TEXT DEFAULT '',
                           created_at TEXT DEFAULT (datetime('now')))''')
 
-            # infra_jokes: log vtipu generovaného AI (dvouklik logo + hodinový)
+            # 486: pokusy o opravu — po prodlevě se ověří, jestli zabraly.
+            # Bez toho zásah končil tím, že příkaz nespadl, což o vyřešení
+            # problému nevypovídá.
+            c.execute('''CREATE TABLE IF NOT EXISTS fix_attempts
+                         (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                          problem_key TEXT NOT NULL,
+                          host TEXT DEFAULT '',
+                          plugin_name TEXT DEFAULT '',
+                          command TEXT DEFAULT '',
+                          applied_by TEXT DEFAULT '',
+                          applied_at TEXT DEFAULT (datetime('now')),
+                          verify_after TEXT NOT NULL,
+                          status TEXT DEFAULT 'pending',   -- pending|worked|failed|uncertain
+                          verdict_detail TEXT DEFAULT '',
+                          verified_at TEXT DEFAULT '')''')
+            c.execute('CREATE INDEX IF NOT EXISTS idx_fix_attempts_status ON fix_attempts(status, verify_after)')
+            c.execute('CREATE INDEX IF NOT EXISTS idx_fix_attempts_key ON fix_attempts(problem_key)')
+
             # 526/527: zpětná vazba na AI odpovědi a zamítnuté návrhy.
             # Bez ní se kvalita AI neměří a model opakuje totéž, co už
             # uživatel jednou odmítl.
@@ -518,6 +535,7 @@ def init_db():
             c.execute('CREATE INDEX IF NOT EXISTS idx_ai_feedback_hash ON ai_feedback(suggestion_hash)')
             c.execute('CREATE INDEX IF NOT EXISTS idx_ai_feedback_kind ON ai_feedback(kind, created_at)')
 
+            # infra_jokes: log vtipu generovaného AI (dvouklik logo + hodinový)
             c.execute('''CREATE TABLE IF NOT EXISTS infra_jokes
                          (id INTEGER PRIMARY KEY AUTOINCREMENT,
                           joke TEXT NOT NULL,

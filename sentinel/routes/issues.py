@@ -8,7 +8,7 @@ import sqlite3
 from datetime import datetime, timezone, timedelta
 from flask import Blueprint, request, jsonify, g, Response
 from ..auth import requires_auth, int_param
-from .. import state, config, utils, analytics, actions, diagnostics
+from .. import state, config, utils, analytics, actions, diagnostics, fix_verify
 
 logger = logging.getLogger("sentinel.chat")
 
@@ -970,6 +970,62 @@ def create_blueprint(service):
 
         return jsonify({"verdict": verdict, "detail": detail,
                         "age_minutes": int(age_min), "ai_opinion": ai_opinion})
+
+    @bp.route('/api/issues/<key_b64>/fix_attempt', methods=['POST'])
+    @requires_auth
+    def api_record_fix_attempt(key_b64):
+        """486: Zaznamená, že se na issue zasáhlo — ověří se za ~15 min.
+
+        Verdikt nepočítáme hned: kdyby ano, označili bychom za úspěch i zásah,
+        který problém jen na chvíli utišil.
+        """
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        try:
+            key = base64.b64decode(key_b64).decode()
+        except Exception:
+            return jsonify({"error": "bad key"}), 400
+        body = request.get_json(silent=True) or {}
+        command = str(body.get('command') or '').strip()
+        if not command:
+            return jsonify({"error": "chybí command"}), 400
+        prob = state.get_problem(key) or {}
+        aid = state.record_fix_attempt(
+            problem_key=key, command=command,
+            host=body.get('host') or prob.get('host') or '',
+            plugin_name=body.get('plugin_name') or prob.get('plugin_name') or '',
+            applied_by=g.username, wait_min=body.get('wait_min'))
+        if aid is None:
+            return jsonify({"error": "uložení selhalo"}), 500
+        return jsonify({"success": True, "attempt_id": aid,
+                        "verify_in_min": body.get('wait_min') or fix_verify.DEFAULT_WAIT_MIN})
+
+    @bp.route('/api/issues/<key_b64>/fix_attempts', methods=['GET'])
+    @requires_auth
+    def api_list_fix_attempts(key_b64):
+        """486: Historie zásahů na issue — zabraly, nebo ne."""
+        try:
+            key = base64.b64decode(key_b64).decode()
+        except Exception:
+            return jsonify({"error": "bad key"}), 400
+        attempts = state.get_fix_attempts(key)
+        return jsonify({"attempts": attempts, "summary": fix_verify.summarize(attempts)})
+
+    @bp.route('/api/fix_attempts/verify_now', methods=['POST'])
+    @requires_auth
+    def api_verify_fixes_now():
+        """486: Ruční spuštění vyhodnocení — netrpělivým adminům."""
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        return jsonify(fix_verify.run_due_verifications(state))
+
+    @bp.route('/api/fix_attempts/stats', methods=['GET'])
+    @requires_auth
+    def api_fix_attempt_stats():
+        """486: Kolik zásahů reálně zabralo."""
+        attempts = state.get_fix_attempts(limit=int_param('limit', 200, 1, 1000))
+        return jsonify({"summary": fix_verify.summarize(attempts),
+                        "recent": attempts[:25]})
 
     @bp.route('/api/issues/<key_b64>/delete', methods=['DELETE'])
     @requires_auth
