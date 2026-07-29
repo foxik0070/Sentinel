@@ -19,6 +19,38 @@ logger = logging.getLogger("sentinel.chat")
 def create_blueprint(service):
     bp = Blueprint('chat', __name__)
 
+    @bp.route('/api/ai/feedback', methods=['POST'])
+    @requires_auth
+    def ai_feedback():
+        """526: Uživatel ohodnotí AI odpověď (👍/👎).
+
+        Zaznamenává se i text návrhu — bez něj by šlo měřit jen počty,
+        ale ne se poučit z toho, CO bylo špatně (527).
+        """
+        data = request.get_json(silent=True) or {}
+        rating = str(data.get('rating') or '').strip().lower()
+        if rating not in ('up', 'down', 'rejected', 'applied'):
+            return jsonify({"error": "rating musí být up|down|rejected|applied"}), 400
+        kind = str(data.get('kind') or 'other').strip().lower()
+        if kind not in ('autofix', 'analysis', 'diagnose', 'digest', 'chat', 'other'):
+            kind = 'other'
+        ok = state.record_ai_feedback(
+            kind=kind, rating=rating,
+            suggestion=data.get('suggestion') or '',
+            problem_key=data.get('problem_key') or '',
+            plugin_name=data.get('plugin_name') or '',
+            host=data.get('host') or '',
+            reason=data.get('reason') or '',
+            username=getattr(g, 'user', '') or '',
+        )
+        return jsonify({"success": ok})
+
+    @bp.route('/api/ai/feedback/stats', methods=['GET'])
+    @requires_auth
+    def ai_feedback_stats():
+        """526: Kolik procent AI odpovědí bylo k něčemu."""
+        return jsonify(state.get_ai_feedback_stats(int_param('days', 30, 1, 365)))
+
     @bp.route('/api/analyze_single_file', methods=['POST'])
     @requires_auth
     def analyze_single_file():
@@ -614,12 +646,29 @@ def create_blueprint(service):
                         f"Jistota AI: {confidence}/100 ({c_label})</div>"
                     )
 
+                # 527: tenhle návrh už někdo odmítl — model to sám neví,
+                # protože nemá paměť napříč sezeními. Nezakazujeme ho, jen
+                # to řekneme nahlas; odmítnutí mohlo být i chybné.
+                rejected_html = ""
+                if command and command != "N/A":
+                    prior = state.was_suggestion_rejected(command)
+                    if prior:
+                        why = f" — „{html.escape(prior['reason'])}"'"' if prior.get('reason') else ""
+                        rejected_html = (
+                            f"<div style='background:rgba(220,53,69,0.12);border:1px solid #dc3545;"
+                            f"border-radius:4px;padding:7px 10px;margin-top:8px;font-size:0.8em;color:#dc3545;'>"
+                            f"⚠️ Tenhle příkaz už byl {prior['times']}× odmítnut "
+                            f"({html.escape(prior.get('by') or 'neznámý')}, {html.escape(prior.get('at') or '')})"
+                            f"{why}</div>"
+                        )
+
                 ts_key = str(int(time.time() * 1000))[-7:]
                 b64_payload = base64.b64encode(json.dumps({
                     "command": command,
                     "description": description,
                 }).encode()).decode()
                 reanalyze_b64 = base64.b64encode(clean_msg.encode()).decode()
+                cmd_b64 = base64.b64encode((command or '').encode()).decode()
                 queue_btn = ""
                 if role in ['admin', 'superadmin'] and command and command != 'N/A':
                     queue_btn = (
@@ -641,12 +690,22 @@ def create_blueprint(service):
                     f"style='position:absolute;top:5px;right:5px;background:transparent;border:1px solid var(--card-border);"
                     f"border-radius:3px;color:var(--text-muted);cursor:pointer;padding:2px 7px;font-size:0.72em;' "
                     f"title='Copy'>📋</button></div>"
-                    f"{risk_html}{confidence_html}"
-                    f"<div style='display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;'>"
+                    f"{risk_html}{confidence_html}{rejected_html}"
+                    f"<div style='display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center;'>"
                     f"{queue_btn}"
                     f"<button onclick='triggerAction(\"autofix_text \"+atob(\"{reanalyze_b64}\"))' "
                     f"style='background:var(--card-bg);color:var(--text-muted);border:1px solid var(--card-border);"
                     f"padding:5px 12px;border-radius:4px;cursor:pointer;font-size:0.82em;'>🔄 Re-analyze</button>"
+                    # 526: hodnocení hned u návrhu — jinak ho nikdo nedá
+                    f"<span style='margin-left:auto;display:flex;gap:5px;align-items:center;'>"
+                    f"<span style='font-size:0.75em;color:var(--text-muted);'>Pomohlo?</span>"
+                    f"<button onclick='aiFeedback(this,\"autofix\",\"up\",\"{cmd_b64}\")' "
+                    f"title='Návrh dává smysl' style='background:transparent;border:1px solid var(--card-border);"
+                    f"border-radius:4px;cursor:pointer;padding:3px 8px;font-size:0.85em;'>👍</button>"
+                    f"<button onclick='aiFeedback(this,\"autofix\",\"down\",\"{cmd_b64}\")' "
+                    f"title='Špatný návrh — už ho nenabízej' style='background:transparent;border:1px solid var(--card-border);"
+                    f"border-radius:4px;cursor:pointer;padding:3px 8px;font-size:0.85em;'>👎</button>"
+                    f"</span>"
                     f"</div></div>"
                 )
                 return jsonify({"reply": html_reply})

@@ -500,6 +500,24 @@ def init_db():
                           created_at TEXT DEFAULT (datetime('now')))''')
 
             # infra_jokes: log vtipu generovaného AI (dvouklik logo + hodinový)
+            # 526/527: zpětná vazba na AI odpovědi a zamítnuté návrhy.
+            # Bez ní se kvalita AI neměří a model opakuje totéž, co už
+            # uživatel jednou odmítl.
+            c.execute('''CREATE TABLE IF NOT EXISTS ai_feedback
+                         (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                          kind TEXT NOT NULL,            -- autofix|analysis|diagnose|digest|other
+                          rating TEXT NOT NULL,          -- up|down|rejected|applied
+                          problem_key TEXT DEFAULT '',
+                          plugin_name TEXT DEFAULT '',
+                          host TEXT DEFAULT '',
+                          suggestion TEXT DEFAULT '',    -- co AI navrhla (příkaz/závěr)
+                          suggestion_hash TEXT DEFAULT '',
+                          reason TEXT DEFAULT '',        -- proč uživatel odmítl
+                          username TEXT DEFAULT '',
+                          created_at TEXT DEFAULT (datetime('now')))''')
+            c.execute('CREATE INDEX IF NOT EXISTS idx_ai_feedback_hash ON ai_feedback(suggestion_hash)')
+            c.execute('CREATE INDEX IF NOT EXISTS idx_ai_feedback_kind ON ai_feedback(kind, created_at)')
+
             c.execute('''CREATE TABLE IF NOT EXISTS infra_jokes
                          (id INTEGER PRIMARY KEY AUTOINCREMENT,
                           joke TEXT NOT NULL,

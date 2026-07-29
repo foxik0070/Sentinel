@@ -1036,6 +1036,100 @@ def get_webhook_deliveries(limit: int = 100) -> list:
         logger.error(f"get_webhook_deliveries: {e}")
         return []
 
+def _suggestion_hash(text: str) -> str:
+    """Otisk návrhu pro porovnání „tohle už jednou odmítli"."""
+    import hashlib
+    norm = ' '.join(str(text or '').lower().split())
+    return hashlib.sha256(norm.encode()).hexdigest()[:24] if norm else ''
+
+
+def record_ai_feedback(kind: str, rating: str, suggestion: str = '', problem_key: str = '',
+                       plugin_name: str = '', host: str = '', reason: str = '',
+                       username: str = '') -> bool:
+    """526/527: Uloží hodnocení AI odpovědi nebo zamítnutí návrhu."""
+    with db_lock:
+        try:
+            conn = _get_conn()
+            conn.execute(
+                "INSERT INTO ai_feedback (kind, rating, problem_key, plugin_name, host, "
+                "suggestion, suggestion_hash, reason, username) VALUES (?,?,?,?,?,?,?,?,?)",
+                (str(kind)[:32], str(rating)[:16], str(problem_key)[:200],
+                 str(plugin_name)[:100], str(host)[:100], str(suggestion)[:1000],
+                 _suggestion_hash(suggestion), str(reason)[:500], str(username)[:64])
+            )
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            logger.error(f"record_ai_feedback: {e}")
+            return False
+
+
+def was_suggestion_rejected(suggestion: str, plugin_name: str = '') -> dict | None:
+    """527: Byl tenhle návrh už odmítnut? Vrací poslední zamítnutí nebo None.
+
+    Porovnává se otisk normalizovaného textu, takže drobné rozdíly ve formátu
+    (mezery, velikost písmen) nezpůsobí, že se návrh bude nabízet znovu.
+    """
+    h = _suggestion_hash(suggestion)
+    if not h:
+        return None
+    try:
+        conn = _get_conn()
+        try:
+            row = conn.execute(
+                "SELECT reason, username, created_at, COUNT(*) FROM ai_feedback "
+                "WHERE suggestion_hash=? AND rating IN ('down','rejected') "
+                "AND (?='' OR plugin_name=?) "
+                "GROUP BY suggestion_hash ORDER BY created_at DESC LIMIT 1",
+                (h, plugin_name or '', plugin_name or '')
+            ).fetchone()
+        finally:
+            conn.close()
+        if not row:
+            return None
+        return {"reason": row[0], "by": row[1], "at": row[2], "times": row[3]}
+    except Exception as e:
+        logger.debug(f"was_suggestion_rejected: {e}")
+        return None
+
+
+def get_ai_feedback_stats(days: int = 30) -> dict:
+    """526: Souhrn kvality AI — kolik odpovědí bylo užitečných."""
+    try:
+        conn = _get_conn()
+        try:
+            rows = conn.execute(
+                "SELECT kind, rating, COUNT(*) FROM ai_feedback "
+                "WHERE created_at > datetime('now', ?) GROUP BY kind, rating",
+                (f'-{int(days)} days',)
+            ).fetchall()
+            recent = conn.execute(
+                "SELECT kind, rating, host, plugin_name, substr(suggestion,1,120), "
+                "reason, username, created_at FROM ai_feedback "
+                "ORDER BY id DESC LIMIT 20"
+            ).fetchall()
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.error(f"get_ai_feedback_stats: {e}")
+        return {"by_kind": {}, "totals": {}, "recent": []}
+
+    by_kind: dict = {}
+    totals: dict = {}
+    for kind, rating, cnt in rows:
+        by_kind.setdefault(kind, {})[rating] = cnt
+        totals[rating] = totals.get(rating, 0) + cnt
+    good = totals.get('up', 0) + totals.get('applied', 0)
+    bad = totals.get('down', 0) + totals.get('rejected', 0)
+    cols = ['kind', 'rating', 'host', 'plugin_name', 'suggestion', 'reason', 'username', 'created_at']
+    return {
+        "by_kind": by_kind, "totals": totals, "days": days,
+        "useful_pct": round(good / (good + bad) * 100, 1) if (good + bad) else None,
+        "recent": [dict(zip(cols, r)) for r in recent],
+    }
+
+
 _token_stats_lock = threading.Lock()
 
 def record_token_usage(tokens_in: int, tokens_out: int):

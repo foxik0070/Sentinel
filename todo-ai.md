@@ -105,8 +105,8 @@ Priorita: 🔴 vysoká (řeší dnešní bolest) · 🟡 střední · 🟢 nice-
 
 ## E. Učení, zpětná vazba & evaluace (526–545)
 
-- [ ] 526 🔴 **Palec nahoru/dolů u AI odpovědi** — sbírat hodnocení a ukládat s kontextem; bez zpětné vazby se kvalita neměří
-- [ ] 527 🔴 **Učení z odmítnutých návrhů** — když admin autofix zamítne, zaznamenat proč a nenabízet totéž znovu
+- [X] 526 🔴 **Palec nahoru/dolů u AI odpovědi** — sbírat hodnocení a ukládat s kontextem; bez zpětné vazby se kvalita neměří
+- [X] 527 🔴 **Učení z odmítnutých návrhů** — když admin autofix zamítne, zaznamenat proč a nenabízet totéž znovu
 - [ ] 528 🟡 **Sledování úspěšnosti návrhů** — poměr „návrh → provedeno → problém zmizel" per typ issue
 - [ ] 529 🔴 **Eval suite z reálných incidentů** — generovat testy z vyřešených incidentů, ne jen 6 ručních (434)
 - [ ] 530 🟡 **Regresní brána při změně modelu** — nedovolit přepnutí modelu, pokud skóre klesne pod baseline (dnes 5/6)

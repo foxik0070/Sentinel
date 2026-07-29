@@ -712,6 +712,33 @@ input.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage()
 function sendCmd(cmd, force = false) { input.value = cmd; sendMessage(force); }
 function triggerAction(cmd) { input.value = cmd; sendMessage(true); }
 
+// 526: hodnocení AI odpovědi. U 👎 se ptáme na důvod — bez něj víme jen
+// ŽE je návrh špatný, ne PROČ, a to se nedá použít ke zlepšení promptů.
+async function aiFeedback(btn, kind, rating, suggestionB64, extra = {}) {
+    let reason = '';
+    if (rating === 'down') {
+        reason = prompt('Co bylo špatně? (nepovinné — pomůže to zlepšit návrhy)') || '';
+    }
+    const box = btn.parentElement;
+    try {
+        const resp = await fetch('/api/ai/feedback', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                kind, rating, reason,
+                suggestion: suggestionB64 ? atob(suggestionB64) : '',
+                ...extra
+            })
+        });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        box.innerHTML = rating === 'up'
+            ? "<span style='font-size:0.75em;color:#28a745;'>👍 Díky</span>"
+            : "<span style='font-size:0.75em;color:#dc3545;'>👎 Zaznamenáno — příště upozorníme</span>";
+    } catch (e) {
+        box.innerHTML = "<span style='font-size:0.75em;color:var(--text-muted);'>Uložení selhalo</span>";
+    }
+}
+
 async function analyzeFile(group, filename, isBulk = false) {
     if (isProcessing && !isBulk) return;
     if (!isBulk) {
