@@ -1,0 +1,15 @@
+# Sentinel Commander — pinované závislosti (2026-06-10)
+# Aktualizovat: pip install --upgrade -r requirements.txt && pip freeze | grep ... > requirements.txt
+Flask==3.1.1
+Flask-Compress==1.24
+Flask-SocketIO==5.6.1
+flask-ldap3-login==1.0.2
+PyYAML==6.0.2
+requests==2.32.3
+watchdog==6.0.0
+Markdown==3.10.2
+paramiko==3.5.1
+numpy==2.2.4
+chromadb==1.5.9
+python-socketio==5.16.2
+ldap3==2.9.1
