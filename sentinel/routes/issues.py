@@ -8,7 +8,7 @@ import sqlite3
 from datetime import datetime, timezone, timedelta
 from flask import Blueprint, request, jsonify, g, Response
 from ..auth import requires_auth, int_param
-from .. import state, config, utils, analytics
+from .. import state, config, utils, analytics, actions, diagnostics
 
 logger = logging.getLogger("sentinel.chat")
 
@@ -766,6 +766,114 @@ def create_blueprint(service):
             "symptoms": [_slim(m) for m in symptoms],
             "analyzed_count": len(members),
         })
+
+    @bp.route('/api/issues/<key_b64>/diagnose', methods=['POST'])
+    @requires_auth
+    def api_issue_diagnose(key_b64):
+        """462: AI navrhne diagnostický plán — read-only kroky z pevného katalogu.
+
+        Nic se nespouští; plán jde uživateli ke schválení (viz .../diagnose/run).
+        Model vybírá jen ID z katalogu, negeneruje shell.
+        """
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        try:
+            key = base64.b64decode(key_b64).decode()
+        except Exception:
+            return jsonify({"error": "bad key"}), 400
+        prob = state.get_problem(key)
+        if not prob:
+            return jsonify({"error": "Issue nenalezena"}), 404
+
+        host = prob.get('host') or ''
+        # telemetrie (449) jako další vstup pro volbu kroků
+        telem = state.get_telemetry_context(host, prob.get('first_seen'), window_min=30)
+        telem_note = ""
+        if telem:
+            telem_note = "\nTELEMETRIE v okolí incidentu:\n" + "\n".join(
+                f"- {m['metric']}: {m['during_avg']}"
+                + (f" ({m['delta_pct']:+}% oproti předchozímu období)"
+                   if m['delta_pct'] is not None else "")
+                for m in telem[:5]) + "\n"
+
+        prompt = diagnostics.plan_prompt(
+            host, prob.get('plugin_name') or '?', (prob.get('last_line') or '')[:300], telem_note)
+        # 800 tokenů: s 500 se odpověď se seznamem kroků usekla v půli JSONu
+        ok, data, raw = service.ask_json(
+            prompt, required_keys=["steps"], num_ctx=2048, max_tokens=800)
+        if not ok:
+            return jsonify({"error": "AI nevrátila použitelný plán",
+                            "raw": str(raw)[:300]}), 503
+
+        steps = diagnostics.resolve_steps(data.get("steps"))
+        if not steps:
+            # co model navrhl — jinak se ladí naslepo (halucinované ID?
+            # chybějící parametr? prázdný seznam?)
+            rejected = [str(s.get("id"))[:40] for s in (data.get("steps") or [])
+                        if isinstance(s, dict)][:8]
+            logger.info(f"diagnose: žádný platný krok, model navrhl: {rejected}")
+            return jsonify({"error": "AI nevybrala žádný platný diagnostický krok",
+                            "rejected_ids": rejected,
+                            "hypothesis": html.escape(str(data.get("hypothesis") or ''))[:300]}), 422
+        return jsonify({
+            "hypothesis": html.escape(str(data.get("hypothesis") or ''))[:300],
+            "steps": steps, "host": host, "key": key,
+        })
+
+    @bp.route('/api/issues/<key_b64>/diagnose/run', methods=['POST'])
+    @requires_auth
+    def api_issue_diagnose_run(key_b64):
+        """462: Spustí schválené kroky a nechá AI vyhodnotit skutečné výstupy.
+
+        Přijímá jen ID z katalogu — příkaz se skládá na serveru, nikdy se
+        nepřebírá z requestu.
+        """
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        try:
+            key = base64.b64decode(key_b64).decode()
+        except Exception:
+            return jsonify({"error": "bad key"}), 400
+        prob = state.get_problem(key)
+        if not prob:
+            return jsonify({"error": "Issue nenalezena"}), 404
+
+        body = request.get_json(silent=True) or {}
+        steps = diagnostics.resolve_steps(body.get("steps"))
+        if not steps:
+            return jsonify({"error": "Žádné platné kroky ke spuštění"}), 400
+
+        host = prob.get('host') or ''
+        cluster = actions._find_cluster_for_host(host) or host
+        results = []
+        for st in steps:
+            try:
+                ok_run, out = actions.run_ssh_command_real(
+                    cluster, st["command"], timeout=25, internal=True)
+                out = (out or '').replace('STDOUT: ', '', 1)
+            except Exception as e:
+                ok_run, out = False, str(e)
+            results.append({"id": st["id"], "command": st["command"],
+                            "ok": bool(ok_run), "output": out[:4000]})
+        service.log_event("issue_diagnose", f"Diagnostika {host}: {len(results)} kroků",
+                          user=g.username)
+
+        # jádro 462: model vyhodnocuje REÁLNÁ data, ne vlastní domněnku
+        verdict = None
+        if body.get("interpret", True):
+            ok_ai, data, _ = service.ask_json(
+                diagnostics.interpret_prompt(
+                    host, (prob.get('last_line') or '')[:200],
+                    str(body.get("hypothesis") or ''), results),
+                required_keys=["finding"], num_ctx=4096, max_tokens=400)
+            if ok_ai:
+                verdict = {
+                    "confirmed": data.get("confirmed"),
+                    "finding": html.escape(str(data.get("finding") or ''))[:800],
+                    "next_step": html.escape(str(data.get("next_step") or ''))[:400],
+                    "confidence": data.get("confidence"),
+                }
+        return jsonify({"host": host, "results": results, "verdict": verdict})
 
     @bp.route('/api/issues/<key_b64>/telemetry_context', methods=['GET'])
     @requires_auth

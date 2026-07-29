@@ -29,7 +29,7 @@ Priorita: 🔴 vysoká (řeší dnešní bolest) · 🟡 střední · 🟢 nice-
 - [ ] 459 🟡 **Detekce kaskád** — rozpoznat lavinu (1 příčina → 20 alertů do 60 s) a poslat JEDNU notifikaci se souhrnem
 - [ ] 460 🟢 **Korelace s SLO** — spojit issue s dopadem na error budget (404) a podle toho řadit
 - [ ] 461 🟡 **Hypotézy s pravděpodobností** — místo jedné odpovědi vrátit 2–3 hypotézy s odhadem jistoty a návrhem, čím je ověřit
-- [ ] 462 🔴 **Diagnostický plán** — AI navrhne posloupnost read-only příkazů k potvrzení hypotézy; spustí se jedním kliknutím a výsledek se vrátí modelu
+- [X] 462 🔴 **Diagnostický plán** — HOTOVO: diagnostics.py katalog + POST /api/issues/<k>/diagnose{,/run} — AI navrhne posloupnost read-only příkazů k potvrzení hypotézy; spustí se jedním kliknutím a výsledek se vrátí modelu
 - [ ] 463 🟡 **Iterativní vyšetřování** — smyčka hypotéza → diagnostika → vyhodnocení → další krok (max N kol, s rozpočtem tokenů)
 - [ ] 464 🟢 **Graf incidentu v UI** — vizualizace vztahů mezi issues (příčina/následek/duplicita)
 - [ ] 465 🟡 **Zpětná korelace při vyřešení** — když issue zmizí, ověřit, zda zmizely i navázané, a potvrdit tím správnost hypotézy
