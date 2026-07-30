@@ -51,6 +51,45 @@ def create_blueprint(service):
         """526: Kolik procent AI odpovědí bylo k něčemu."""
         return jsonify(state.get_ai_feedback_stats(int_param('days', 30, 1, 365)))
 
+    @bp.route('/api/ai/explain_block', methods=['POST'])
+    @requires_auth
+    def ai_explain_block():
+        """487: Proč byl příkaz zablokován a co jde použít místo něj.
+
+        Alternativy se berou z allowlistu a z read-only simulace — model je
+        negeneruje, jinak by „pomáhal" návrhem, jak zákaz obejít.
+        """
+        from .. import safety, policy
+        cmd = str((request.get_json(silent=True) or {}).get('command') or '').strip()
+        if not cmd:
+            return jsonify({"error": "chybí command"}), 400
+        try:
+            rules = state.list_allowed_commands()
+        except Exception as e:
+            logger.error(f"487: allowlist nedostupný: {e}")
+            rules = []
+        return jsonify(policy.explain_block(cmd, safety, rules))
+
+    @bp.route('/api/ai/allowlist_suggestions', methods=['GET'])
+    @requires_auth
+    def ai_allowlist_suggestions():
+        """490: Příkazy, které AI navrhuje opakovaně a jsou bezpečné.
+
+        Jen návrhy — rozšíření allowlistu je změna oprávnění a musí ji
+        provést admin vědomě.
+        """
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        from .. import safety, policy
+        entries = state.get_ai_audit(kind='autofix', limit=int_param('scan', 500, 1, 2000))
+        try:
+            rules = state.list_allowed_commands()
+        except Exception:
+            rules = []
+        return jsonify({"suggestions": policy.suggest_allowlist_rules(
+            entries, rules, safety,
+            min_count=int_param('min_count', policy.MIN_SUGGESTIONS_FOR_RULE, 2, 50))})
+
     @bp.route('/api/ai/audit', methods=['GET'])
     @requires_auth
     def ai_audit_list():
