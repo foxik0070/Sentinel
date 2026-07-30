@@ -889,7 +889,14 @@ def _apply_db_overrides():
     """Apply runtime integration toggles stored in DB (survive /etc read-only filesystem)."""
     global TEAMS_ENABLED, HA_ENABLED, MQTT_ENABLED, WEBHOOK_ENABLED
     try:
-        from . import state as _state
+        # POZOR: čte se přes state_base, NE přes fasádu `state`.
+        # load_config() běží při importu config, takže `from . import state`
+        # tady spustilo import fasády uprostřed inicializace state_agents —
+        # `from .state_agents import *` pak zkopírovalo jen část jmen a
+        # `state` přišel o ~60 funkcí. Projevilo se to jen podle pořadí
+        # importů, takže to v produkci dlouho nebylo vidět.
+        # state_base na state_agents nezávisí, takže tudy smyčka nevede.
+        from .state_base import _get_conn as _conn
         mapping = {
             'integration.teams': 'TEAMS_ENABLED',
             'integration.homeassistant': 'HA_ENABLED',
@@ -897,10 +904,16 @@ def _apply_db_overrides():
             'integration.webhook': 'WEBHOOK_ENABLED',
         }
         g = globals()
-        for db_key, var in mapping.items():
-            val = _state.get_setting(db_key)
-            if val is not None:
-                g[var] = (val == '1')
+        conn = _conn()
+        try:
+            rows = conn.execute(
+                "SELECT key, value FROM kv_settings WHERE key IN (?,?,?,?)",
+                tuple(mapping)).fetchall()
+        finally:
+            conn.close()
+        for db_key, val in rows:
+            if val is not None and db_key in mapping:
+                g[mapping[db_key]] = (val == '1')
     except Exception:
         pass  # DB not ready yet during early boot — config.yaml values remain
 
