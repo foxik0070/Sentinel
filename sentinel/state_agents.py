@@ -1036,6 +1036,100 @@ def get_webhook_deliveries(limit: int = 100) -> list:
         logger.error(f"get_webhook_deliveries: {e}")
         return []
 
+_AUDIT_COLS = ['id', 'kind', 'model', 'problem_key', 'host', 'prompt', 'response',
+               'outcome', 'executed', 'suspicious', 'username', 'created_at']
+
+# Prompty i odpovědi umí být dlouhé; ukládáme jen tolik, aby šlo rozhodnutí
+# zpětně pochopit, ne aby DB rostla donekonečna.
+_AUDIT_PROMPT_MAX = 4000
+_AUDIT_RESPONSE_MAX = 4000
+
+
+def record_ai_decision(kind: str, prompt: str = '', response: str = '', model: str = '',
+                       problem_key: str = '', host: str = '', outcome: str = '',
+                       executed: bool = False, suspicious: bool = False,
+                       username: str = '') -> int | None:
+    """545: Zapíše, co model dostal, co vrátil a co se z toho stalo."""
+    with db_lock:
+        try:
+            conn = _get_conn()
+            cur = conn.execute(
+                "INSERT INTO ai_audit (kind, model, problem_key, host, prompt, response, "
+                "outcome, executed, suspicious, username) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (str(kind)[:32], str(model)[:64], str(problem_key)[:200], str(host)[:100],
+                 str(prompt or '')[:_AUDIT_PROMPT_MAX], str(response or '')[:_AUDIT_RESPONSE_MAX],
+                 str(outcome)[:500], 1 if executed else 0, 1 if suspicious else 0,
+                 str(username)[:64]))
+            conn.commit()
+            rid = cur.lastrowid
+            conn.close()
+            return rid
+        except Exception as e:
+            logger.error(f"record_ai_decision: {e}")
+            return None
+
+
+def update_ai_decision(audit_id: int, outcome: str = '', executed: bool | None = None) -> bool:
+    """545: Doplní, jak rozhodnutí dopadlo (zásah se děje až po zápisu)."""
+    with db_lock:
+        try:
+            conn = _get_conn()
+            if executed is None:
+                conn.execute("UPDATE ai_audit SET outcome=? WHERE id=?",
+                             (str(outcome)[:500], int(audit_id)))
+            else:
+                conn.execute("UPDATE ai_audit SET outcome=?, executed=? WHERE id=?",
+                             (str(outcome)[:500], 1 if executed else 0, int(audit_id)))
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            logger.error(f"update_ai_decision: {e}")
+            return False
+
+
+def get_ai_audit(kind: str = '', problem_key: str = '', limit: int = 50,
+                 only_executed: bool = False) -> list:
+    """545: Dohledání AI rozhodnutí."""
+    try:
+        where, params = [], []
+        if kind:
+            where.append("kind=?"); params.append(str(kind))
+        if problem_key:
+            where.append("problem_key=?"); params.append(str(problem_key))
+        if only_executed:
+            where.append("executed=1")
+        clause = (" WHERE " + " AND ".join(where)) if where else ""
+        params.append(int(limit))
+        conn = _get_conn()
+        try:
+            rows = conn.execute(
+                f"SELECT {','.join(_AUDIT_COLS)} FROM ai_audit{clause} "
+                "ORDER BY id DESC LIMIT ?", params).fetchall()
+        finally:
+            conn.close()
+        return [dict(zip(_AUDIT_COLS, r)) for r in rows]
+    except Exception as e:
+        logger.error(f"get_ai_audit: {e}")
+        return []
+
+
+def prune_ai_audit(days: int = 90) -> int:
+    """545: Audit se nemá hromadit donekonečna."""
+    with db_lock:
+        try:
+            conn = _get_conn()
+            cur = conn.execute("DELETE FROM ai_audit WHERE created_at < datetime('now', ?)",
+                               (f'-{int(days)} days',))
+            conn.commit()
+            n = cur.rowcount
+            conn.close()
+            return n
+        except Exception as e:
+            logger.error(f"prune_ai_audit: {e}")
+            return 0
+
+
 _FIX_COLS = ['id', 'problem_key', 'host', 'plugin_name', 'command', 'applied_by',
              'applied_at', 'verify_after', 'status', 'verdict_detail', 'verified_at']
 

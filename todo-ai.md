@@ -92,7 +92,7 @@ Priorita: 🔴 vysoká (řeší dnešní bolest) · 🟡 střední · 🟢 nice-
 - [ ] 513 🟡 **RAG čistota** — deduplikace a expirace naučených chunků (`learned_kb.txt` roste bez limitu)
 - [ ] 514 🟡 **Chunking podle struktury** — dělit KB podle sekcí, ne po pevných blocích
 - [ ] 515 🟢 **Reranking** — druhý průchod nad top-20 pro lepší pořadí
-- [ ] 516 🔴 **Detekce halucinace** — ověřit, že hostnamy/služby/cesty v odpovědi reálně existují v DB; jinak označit
+- [X] 516 🔴 **Detekce halucinace** — ověřit, že hostnamy/služby/cesty v odpovědi reálně existují v DB; jinak označit
 - [ ] 517 🟡 **Odmítnutí bez dat** — model má říct „nevím, chybí mi X" místo pravděpodobné smyšlenky (eval 434 to už částečně testuje)
 - [ ] 518 🟡 **Konzistence napříč dotazy** — stejná otázka nemá dávat protichůdné odpovědi; cache + kontrola
 - [ ] 519 🟡 **Jazyk odpovědi dle uživatele** — dnes prompty míchají češtinu a angličtinu podle místa v kódu
@@ -124,7 +124,7 @@ Priorita: 🔴 vysoká (řeší dnešní bolest) · 🟡 střední · 🟢 nice-
 - [ ] 542 🟢 **Sdílení znalostí mezi instancemi** — export/import naučené KB pro víc Sentinelů
 - [ ] 543 🟡 **Ochrana proti prompt injection z logů** — obsah logu je nedůvěryhodný vstup; oddělit ho od instrukcí a testovat evalem
 - [ ] 544 🟡 **Limit dopadu AI** — strop akcí za hodinu (AI nesmí spustit lavinu remediací)
-- [ ] 545 🔴 **Audit stopa AI rozhodnutí** — co model dostal, co vrátil, co se z toho vykonalo — dohledatelné zpětně
+- [X] 545 🔴 **Audit stopa AI rozhodnutí** — co model dostal, co vrátil, co se z toho vykonalo — dohledatelné zpětně
 
 ---
 
