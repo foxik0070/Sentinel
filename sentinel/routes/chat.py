@@ -51,6 +51,22 @@ def create_blueprint(service):
         """526: Kolik procent AI odpovědí bylo k něčemu."""
         return jsonify(state.get_ai_feedback_stats(int_param('days', 30, 1, 365)))
 
+    @bp.route('/api/ai/audit', methods=['GET'])
+    @requires_auth
+    def ai_audit_list():
+        """545: Dohledání AI rozhodnutí — co model dostal, vrátil a co se stalo.
+
+        Prompty mohou obsahovat obsah logů z monitorovaných strojů, proto
+        jen pro adminy.
+        """
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        return jsonify({"entries": state.get_ai_audit(
+            kind=request.args.get('kind', ''),
+            problem_key=request.args.get('problem_key', ''),
+            limit=int_param('limit', 50, 1, 500),
+            only_executed=request.args.get('executed') == '1')})
+
     @bp.route('/api/analyze_single_file', methods=['POST'])
     @requires_auth
     def analyze_single_file():
@@ -646,6 +662,31 @@ def create_blueprint(service):
                         f"Jistota AI: {confidence}/100 ({c_label})</div>"
                     )
 
+                # 516: obsahuje odpověď stroje, které Sentinel nezná? Model si
+                # je umí vymyslet věrohodně a člověk pak hledá neexistující
+                # server. Neříkáme „lež", jen „tohle neznám, ověř si to".
+                halluc_html = ""
+                suspicious = False
+                try:
+                    from .. import ai_verify
+                    _hres = ai_verify.verify(state, f"{description} {command}")
+                    suspicious = _hres.get('suspicious', False)
+                    halluc_html = ai_verify.warning_html(_hres)
+                except Exception as _he:
+                    logger.debug(f"516: kontrola halucinací selhala: {_he}")
+
+                # 545: audit — co model dostal, co vrátil. Zapisuje se vždy,
+                # i když se návrh nakonec nevykoná; právě to je dohledatelnost.
+                try:
+                    state.record_ai_decision(
+                        kind='autofix', prompt=prompt or str(autofix_messages),
+                        response=raw_response, problem_key='', host='',
+                        outcome='navrženo', executed=False,
+                        suspicious=suspicious, username=g.username,
+                        model=getattr(config, 'HAILO_OLLAMA_MODEL', ''))
+                except Exception as _ae:
+                    logger.debug(f"545: audit zápis selhal: {_ae}")
+
                 # 527: tenhle návrh už někdo odmítl — model to sám neví,
                 # protože nemá paměť napříč sezeními. Nezakazujeme ho, jen
                 # to řekneme nahlas; odmítnutí mohlo být i chybné.
@@ -690,7 +731,7 @@ def create_blueprint(service):
                     f"style='position:absolute;top:5px;right:5px;background:transparent;border:1px solid var(--card-border);"
                     f"border-radius:3px;color:var(--text-muted);cursor:pointer;padding:2px 7px;font-size:0.72em;' "
                     f"title='Copy'>📋</button></div>"
-                    f"{risk_html}{confidence_html}{rejected_html}"
+                    f"{risk_html}{confidence_html}{halluc_html}{rejected_html}"
                     f"<div style='display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center;'>"
                     f"{queue_btn}"
                     f"<button onclick='triggerAction(\"autofix_text \"+atob(\"{reanalyze_b64}\"))' "

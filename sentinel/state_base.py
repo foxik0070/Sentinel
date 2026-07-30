@@ -499,6 +499,25 @@ def init_db():
                           error TEXT DEFAULT '',
                           created_at TEXT DEFAULT (datetime('now')))''')
 
+            # 545: audit stopa AI rozhodnutí — co model dostal, co vrátil a co
+            # se z toho vykonalo. Bez toho nejde zpětně zjistit, proč systém
+            # něco navrhl, a u automatického zásahu je to nutná dohledatelnost.
+            c.execute('''CREATE TABLE IF NOT EXISTS ai_audit
+                         (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                          kind TEXT NOT NULL,          -- autofix|diagnose|escalation|analysis|...
+                          model TEXT DEFAULT '',
+                          problem_key TEXT DEFAULT '',
+                          host TEXT DEFAULT '',
+                          prompt TEXT DEFAULT '',
+                          response TEXT DEFAULT '',
+                          outcome TEXT DEFAULT '',     -- co se z toho stalo
+                          executed INTEGER DEFAULT 0,  -- došlo na zásah?
+                          suspicious INTEGER DEFAULT 0,-- 516: neznámé entity v odpovědi
+                          username TEXT DEFAULT '',
+                          created_at TEXT DEFAULT (datetime('now')))''')
+            c.execute('CREATE INDEX IF NOT EXISTS idx_ai_audit_kind ON ai_audit(kind, created_at)')
+            c.execute('CREATE INDEX IF NOT EXISTS idx_ai_audit_key ON ai_audit(problem_key)')
+
             # 486: pokusy o opravu — po prodlevě se ověří, jestli zabraly.
             # Bez toho zásah končil tím, že příkaz nespadl, což o vyřešení
             # problému nevypovídá.

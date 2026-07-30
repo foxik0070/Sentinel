@@ -1297,6 +1297,8 @@ class ChatService(threading.Thread):
                     state.prune_sentinel_errors(days=7)
                     state.prune_health_snapshots(days=30)
                     state.prune_stale_sessions(hours=24)
+                    # 545: audit AI rozhodnutí — držet dohledatelnost, ale ne navždy
+                    state.prune_ai_audit(days=getattr(config, 'AI_AUDIT_RETENTION_DAYS', 90))
                     # 366: Prune issue_history (retain 90 days)
                     _hist_days = getattr(config, 'ISSUE_HISTORY_RETENTION_DAYS', 90)
                     threading.Thread(target=state.prune_issue_history, args=(_hist_days,),
