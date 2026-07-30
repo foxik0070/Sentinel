@@ -60,10 +60,10 @@ Priorita: 🔴 vysoká (řeší dnešní bolest) · 🟡 střední · 🟢 nice-
 ## C. Řešení & remediace (486–505)
 
 - [X] 486 🔴 **Ověření, že oprava fungovala** — po remediaci AI zkontroluje, zda problém opravdu zmizel (dnes se jen přepne na `validating`)
-- [ ] 487 🔴 **Vysvětlení odmítnutí** — když safety klasifikátor/allowlist zablokuje příkaz, AI vysvětlí proč a navrhne povolenou alternativu
+- [X] 487 🔴 **Vysvětlení odmítnutí** — když safety klasifikátor/allowlist zablokuje příkaz, AI vysvětlí proč a navrhne povolenou alternativu
 - [ ] 488 🔴 **Postupná remediace** — nejdřív nejmenší zásah (restart služby), teprve při neúspěchu větší; ne rovnou reboot
 - [ ] 489 🟡 **Rollback plán** — ke každému návrhu i postup, jak změnu vrátit, pokud nepomůže
-- [ ] 490 🔴 **Návrh pravidla do allowlistu** — když AI opakovaně navrhuje stejný bezpečný příkaz, nabídnout jeho přidání (s diffem sudoers dopadu)
+- [X] 490 🔴 **Návrh pravidla do allowlistu** — když AI opakovaně navrhuje stejný bezpečný příkaz, nabídnout jeho přidání (s diffem sudoers dopadu)
 - [ ] 491 🟡 **Odhad rizika v kontextu** — riziko `systemctl restart` závisí na tom, co ta služba dělá; AI zohlední kritičnost hosta
 - [ ] 492 🟡 **Dry-run diff** — u příkazů, které to umí (`apt -s`, `mount --fake`), ukázat, co by se stalo, ještě před schválením
 - [ ] 493 🔴 **Učení z ručních zásahů** — když admin problém vyřeší přes SSH sám, AI z historie příkazů odvodí postup a nabídne ho příště

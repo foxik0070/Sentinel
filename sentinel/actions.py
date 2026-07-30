@@ -330,6 +330,20 @@ def run_ssh_command_real(cluster, command, action_id=None, timeout: int = 30, in
     # 244: Pre-validace příkazu proti allowlistu (extra vrstva před SSH)
     if not internal and not _pre_validate_ssh_command(command):
         err = f"[BLOCKED-244] Command not in allowlist: {command[:80]}"
+        # 487: k odmítnutí přidat důvod a povolenou alternativu. Holé
+        # „BLOCKED" vedlo k tomu, že si to lidi udělali ručně mimo Sentinel
+        # (a přišli o audit), nebo si allowlist otevřeli šířeji než bylo třeba.
+        try:
+            from . import safety, policy
+            info = policy.explain_block(command, safety, state.list_allowed_commands())
+            if info.get('reasons'):
+                err += f"\nDůvod: {', '.join(info['reasons'][:3])}"
+            for alt in info.get('alternatives', [])[:2]:
+                err += f"\nMísto toho lze: {alt['command']}  ({alt['why']})"
+            if info.get('hint'):
+                err += f"\n{info['hint']}"
+        except Exception as _pe:
+            utils.log_message(f"[487] vysvětlení bloku selhalo: {_pe}")
         utils.log_message(err)
         return False, err
 
