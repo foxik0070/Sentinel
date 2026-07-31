@@ -2328,6 +2328,25 @@ def totp_verify(username: str, code: str) -> bool:
         return False
 
 
+_HIST_COLS = ['key', 'channel_type', 'host', 'plugin_name', 'last_line',
+              'first_seen', 'last_seen', 'resolved_at', 'resolve_reason', 'resolved_by']
+
+
+def get_issue_history_rows(days: int = 30, limit: int = 20000) -> list:
+    """480: Syrová historie pro analýzu kvality alertů."""
+    try:
+        with _get_conn() as conn:
+            rows = conn.execute(
+                f"SELECT {','.join(_HIST_COLS)} FROM issue_history "
+                "WHERE resolved_at >= datetime('now', ?) AND first_seen IS NOT NULL "
+                "ORDER BY resolved_at DESC LIMIT ?",
+                (f'-{int(days)} days', int(limit))).fetchall()
+        return [dict(zip(_HIST_COLS, r)) for r in rows]
+    except Exception as e:
+        logger.error(f"get_issue_history_rows: {e}")
+        return []
+
+
 def get_resolution_time_stats(days: int = 30) -> list:
     """258: Průměrná doba řešení issue per plugin (z issue_history)."""
     try:
