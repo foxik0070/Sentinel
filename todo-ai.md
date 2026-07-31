@@ -50,7 +50,7 @@ Priorita: 🔴 vysoká (řeší dnešní bolest) · 🟡 střední · 🟢 nice-
 - [ ] 477 🟢 **Detekce zombie zdrojů** — služby/kontejnery/VM, které běží a nikdo je nepoužívá (žádný provoz, žádné logy)
 - [ ] 478 🟡 **Kontrola konzistence záloh** — AI ověří, že zálohy reálně běží a rostou (PBS), ne jen že job skončil OK
 - [ ] 479 🟡 **Certifikáty a expirace v kontextu** — kromě data expirace i kdo cert používá a co spadne, když vyprší
-- [ ] 480 🔴 **Rozpoznání falešných poplachů** — AI označí alerty, které historicky vždy samy zmizely, a navrhne úpravu prahu/patternu místo notifikace
+- [X] 480 🔴 **Rozpoznání falešných poplachů** — AI označí alerty, které historicky vždy samy zmizely, a navrhne úpravu prahu/patternu místo notifikace
 - [ ] 481 🟡 **Detekce chybějícího monitoringu** — které hosty/služby nikdo nesleduje (běží, ale nemá agenta ani detektor)
 - [ ] 482 🟢 **Analýza logů po restartu** — po každém rebootu nechat AI porovnat, zda vše naběhlo jako minule
 - [ ] 483 🟡 **Detekce hardware degradace** — SMART, teploty, ECC chyby → trend a odhad zbývající životnosti (dnes je jen prahový alert)

@@ -1080,6 +1080,29 @@ def create_blueprint(service):
         return jsonify({"suggestions": policy.suggest_auto_execute(attempts, rules, safety),
                         "min_successes": policy.MIN_SUCCESSES_FOR_AUTO})
 
+    @bp.route('/api/analytics/false_alarms', methods=['GET'])
+    @requires_auth
+    def api_false_alarms():
+        """480: Alerty, které se opakovaně řeší samy — kandidáti na zdržení.
+
+        Počítá se z historie, ne modelem: „kolikrát se to vyřešilo samo" je
+        otázka pro SQL. Nic se neutišuje automaticky, jsou to jen návrhy.
+        """
+        from .. import alert_quality
+        rows = state.get_issue_history_rows(days=int_param('days', 30, 1, 365))
+        # Klíče, na kterých někdo zasahoval, z návrhů vypadnou — někdo je
+        # považoval za skutečný problém.
+        try:
+            touched = {a.get('problem_key') for a in state.get_fix_attempts(limit=2000)}
+        except Exception:
+            touched = set()
+        cands = alert_quality.analyze(
+            rows, touched_keys=touched,
+            min_occurrences=int_param('min_occurrences', alert_quality.MIN_OCCURRENCES, 2, 1000))
+        return jsonify({"candidates": cands[:int_param('limit', 50, 1, 500)],
+                        "summary": alert_quality.summarize(cands),
+                        "analyzed_rows": len(rows)})
+
     @bp.route('/api/fix_attempts/stats', methods=['GET'])
     @requires_auth
     def api_fix_attempt_stats():
