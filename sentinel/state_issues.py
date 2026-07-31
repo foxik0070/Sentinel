@@ -1559,6 +1559,21 @@ def log_ssh_execute(hostname: str, command: str, actor: str, success: bool, outp
     except Exception as e:
         logger.error(f"log_ssh_execute: {e}")
 
+def get_ssh_execute_log(limit: int = 1000) -> list:
+    """493: Ruční SSH zásahy napříč stroji (get_ssh_history je per-host)."""
+    try:
+        with _get_conn() as conn:
+            rows = conn.execute(
+                "SELECT hostname, command, actor, executed_at, success "
+                "FROM ssh_execute_log ORDER BY executed_at DESC LIMIT ?",
+                (int(limit),)).fetchall()
+        return [{"hostname": r[0], "command": r[1], "actor": r[2],
+                 "executed_at": r[3], "success": bool(r[4])} for r in rows]
+    except Exception as e:
+        logger.error(f"get_ssh_execute_log: {e}")
+        return []
+
+
 def get_ssh_history(hostname: str, limit: int = 30) -> list:
     try:
         conn = _get_conn()
