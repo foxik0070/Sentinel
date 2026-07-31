@@ -1037,6 +1037,24 @@ def _try_auto_remediate(key: str, host: str, plugin: str, msg: str, data: dict):
     try:
         from sentinel import actions as _actions
         from sentinel import safety as _safety
+        from sentinel import ai_guard as _guard
+
+        # 544: strop zásahů za hodinu. Bez něj by chyba v detekci (nebo
+        # kaskáda alertů) rozjela remediaci napříč celou infrastrukturou.
+        allowed, why = _guard.ai_action_allowed()
+        if not allowed:
+            logger.warning(f"[544] auto-remediace zastavena pro {key}: {why}")
+            return
+
+        # 541: opakovaný neúspěšný zásah není vytrvalost, ale zacyklení —
+        # a stojí výpadek pokaždé, když se spustí.
+        try:
+            loop = _guard.detect_loop(get_fix_attempts(key, limit=20))
+            if loop:
+                logger.warning(f"[541] auto-remediace zastavena pro {key}: {loop['reason']}")
+                return
+        except Exception as _le:
+            logger.debug(f"541: kontrola zacyklení selhala: {_le}")
 
         # Určit příkaz k spuštění
         command = None
@@ -1079,6 +1097,7 @@ def _try_auto_remediate(key: str, host: str, plugin: str, msg: str, data: dict):
             return
 
         logger.info(f"[AutoRem] Spouštím: {command} na {host}")
+        _guard.record_ai_action()          # 544: započítat do hodinového stropu
         success, output = _actions.run_ssh_command_real(host, command)
         log_auto_remediation(key, command, host, success, output)
 
