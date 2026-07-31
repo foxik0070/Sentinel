@@ -79,11 +79,18 @@ def catalog_for_prompt() -> str:
 
 
 def plan_prompt(host: str, plugin: str, message: str, telemetry_note: str = "") -> str:
-    """Prompt, kterým AI vybere diagnostické kroky."""
+    """Prompt, kterým AI vybere diagnostické kroky.
+
+    543: `message` pochází z logu, tedy z nedůvěryhodného zdroje — jde do
+    promptu ohraničený jako data. Hlavní pojistkou zůstává, že model vybírá
+    jen ID z katalogu, ale spoléhat se na jedinou vrstvu je málo.
+    """
+    from .ai_guard import wrap_untrusted
+    safe_message, _ = wrap_untrusted(message, "hláška z logu")
     return (
         "Jsi zkušený SRE. K následujícímu problému vyber diagnostické příkazy, "
         "které pomohou potvrdit nebo vyvrátit příčinu.\n\n"
-        f"PROBLÉM:\n[{plugin}] {host}: {message}\n"
+        f"PROBLÉM:\n[{plugin}] {host}:\n{safe_message}\n"
         f"{telemetry_note}\n"
         f"DOSTUPNÉ PŘÍKAZY (vybírej POUZE z tohoto seznamu, podle ID):\n"
         f"{catalog_for_prompt()}\n\n"
@@ -144,13 +151,16 @@ def resolve_steps(raw_steps) -> list[dict]:
 
 def interpret_prompt(host: str, message: str, hypothesis: str, results: list) -> str:
     """Prompt, kterým AI vyhodnotí výstupy diagnostiky."""
+    from .ai_guard import wrap_untrusted
     blocks = []
     for r in results:
         output = (r.get("output") or "").strip()
         if len(output) > 1500:                       # ať se vejdeme do kontextu
             output = output[:1500] + "\n…(zkráceno)"
         status = "" if r.get("ok") else "  [PŘÍKAZ SELHAL]"
-        blocks.append(f"$ {r.get('command')}{status}\n{output or '(prázdný výstup)'}")
+        # 543: výstup příkazu je obsah cizího stroje — do promptu jen jako data.
+        safe_out, _ = wrap_untrusted(output or '(prázdný výstup)', "výstup příkazu")
+        blocks.append(f"$ {r.get('command')}{status}\n{safe_out}")
     return (
         "Jsi zkušený SRE. Níže je problém, tvá původní hypotéza a skutečné "
         "výstupy diagnostických příkazů z daného stroje.\n\n"
