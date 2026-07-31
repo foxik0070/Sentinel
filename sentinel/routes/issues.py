@@ -8,7 +8,7 @@ import sqlite3
 from datetime import datetime, timezone, timedelta
 from flask import Blueprint, request, jsonify, g, Response
 from ..auth import requires_auth, int_param
-from .. import state, config, utils, analytics, actions, diagnostics, fix_verify
+from .. import state, config, utils, analytics, actions, diagnostics, fix_verify, remediation
 
 logger = logging.getLogger("sentinel.chat")
 
@@ -1018,6 +1018,67 @@ def create_blueprint(service):
         if g.user_role not in ('admin', 'superadmin'):
             return jsonify({"error": "Forbidden"}), 403
         return jsonify(fix_verify.run_due_verifications(state))
+
+    @bp.route('/api/issues/<key_b64>/remediation_plan', methods=['POST'])
+    @requires_auth
+    def api_remediation_plan(key_b64):
+        """488: Žebřík zásahů — od pozorování po tvrdý restart.
+
+        Model určí jen KATEGORII problému, příkazy jsou z pevného katalogu.
+        Vrací celý žebřík i doporučený další krok podle toho, co už bylo
+        zkoušeno a ověřeně selhalo.
+        """
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        try:
+            key = base64.b64decode(key_b64).decode()
+        except Exception:
+            return jsonify({"error": "bad key"}), 400
+        prob = state.get_problem(key)
+        if not prob:
+            return jsonify({"error": "issue neexistuje"}), 404
+
+        body = request.get_json(silent=True) or {}
+        situation = str(body.get('situation') or '').strip()
+        # POZOR: nepojmenovávat `service` — tak se jmenuje objekt služby
+        # z create_blueprint a přepsáním by se rozbil volající níž.
+        svc_name = body.get('service') or ''
+        if not situation:
+            ok, data, _raw = service.ask_json(
+                remediation.plan_prompt(prob.get('host', ''), prob.get('plugin_name', ''),
+                                        (prob.get('last_line') or '')[:300]),
+                required_keys=('situation',))
+            if not ok:
+                return jsonify({"error": "AI neurčila kategorii problému"}), 502
+            situation = str(data.get('situation') or '').strip()
+            svc_name = svc_name or data.get('service') or ''
+
+        params = {"service": svc_name, "host": prob.get('host', '')}
+        attempts = state.get_fix_attempts(key, limit=50)
+        return jsonify({
+            "situation": situation,
+            "ladder": remediation.plan(situation, params),
+            "next_step": remediation.next_step(situation, attempts, params),
+            "attempts": attempts,
+        })
+
+    @bp.route('/api/allowlist/auto_execute_suggestions', methods=['GET'])
+    @requires_auth
+    def api_auto_execute_suggestions():
+        """505: Pravidla s prokázanou úspěšností, hodná bezobslužného běhu.
+
+        Jen návrhy — povýšení dělá admin vědomě.
+        """
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        from .. import safety, policy
+        try:
+            rules = state.list_allowed_commands()
+        except Exception:
+            rules = []
+        attempts = state.get_fix_attempts(limit=int_param('scan', 1000, 1, 5000))
+        return jsonify({"suggestions": policy.suggest_auto_execute(attempts, rules, safety),
+                        "min_successes": policy.MIN_SUCCESSES_FOR_AUTO})
 
     @bp.route('/api/fix_attempts/stats', methods=['GET'])
     @requires_auth
