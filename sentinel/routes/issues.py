@@ -1139,6 +1139,66 @@ def create_blueprint(service):
                             "raw": (raw or '')[:400]}), 502
         return jsonify({"chain": chain, "changes": changes[:5]})
 
+    @bp.route('/api/analytics/incident_patterns', methods=['GET'])
+    @requires_auth
+    def api_incident_patterns():
+        """453/456/459: společný jmenovatel, systémové problémy, kaskády."""
+        from .. import incident_analysis as ia
+        issues = state.get_active_issues() or []
+        hosts = [a.get('hostname') for a in (state.get_all_agents() or [])]
+        return jsonify({
+            "common": ia.common_denominator(issues),
+            "cross_host": ia.cross_host_pattern(issues, known_hosts=hosts),
+            "cascades": ia.detect_cascade(issues),
+            "analyzed": len(issues),
+        })
+
+    @bp.route('/api/issues/<key_b64>/incident_timeline', methods=['GET'])
+    @requires_auth
+    def api_issue_incident_timeline(key_b64):
+        """454: Chronologie ze VŠECH zdrojů — dnes se skládá ručně ze čtyř obrazovek.
+
+        Vlastní cesta vedle staršího /timeline: ten vrací jen události issue
+        ze `state` a používá ho UI. Slučovat je by tiše změnilo tvar odpovědi,
+        na které něco závisí.
+        """
+        from .. import incident_analysis as ia, correlate
+        try:
+            key = base64.b64decode(key_b64).decode()
+        except Exception:
+            return jsonify({"error": "bad key"}), 400
+        prob = state.get_problem(key)
+        if not prob:
+            return jsonify({"error": "issue neexistuje"}), 404
+        return jsonify({"timeline": ia.build_timeline(
+            prob, changes=correlate.collect_changes(state, prob),
+            attempts=state.get_fix_attempts(key, limit=50))})
+
+    @bp.route('/api/issues/<key_b64>/hypotheses', methods=['POST'])
+    @requires_auth
+    def api_issue_hypotheses(key_b64):
+        """461: Víc hypotéz s pravděpodobností místo jedné zdánlivě jisté odpovědi."""
+        from .. import incident_analysis as ia, correlate, ai_profiles
+        try:
+            key = base64.b64decode(key_b64).decode()
+        except Exception:
+            return jsonify({"error": "bad key"}), 400
+        prob = state.get_problem(key)
+        if not prob:
+            return jsonify({"error": "issue neexistuje"}), 404
+        facts = ''
+        try:
+            facts = correlate.changes_note(correlate.collect_changes(state, prob), limit=3)
+        except Exception:
+            pass
+        p = ai_profiles.for_task('correlate')
+        ok, data, raw = service.ask_json(
+            ia.hypotheses_prompt(prob, facts), required_keys=('hypotheses',),
+            task='hypotheses', num_ctx=p['num_ctx'], max_tokens=p['max_tokens'])
+        if not ok:
+            return jsonify({"error": "AI nevrátila hypotézy", "raw": (raw or '')[:300]}), 502
+        return jsonify({"hypotheses": ia.normalize_hypotheses(data)})
+
     @bp.route('/api/predictions/capacity_context', methods=['GET'])
     @requires_auth
     def api_capacity_context():
