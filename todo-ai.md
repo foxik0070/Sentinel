@@ -61,7 +61,7 @@ Priorita: 🔴 vysoká (řeší dnešní bolest) · 🟡 střední · 🟢 nice-
 
 - [X] 486 🔴 **Ověření, že oprava fungovala** — po remediaci AI zkontroluje, zda problém opravdu zmizel (dnes se jen přepne na `validating`)
 - [X] 487 🔴 **Vysvětlení odmítnutí** — když safety klasifikátor/allowlist zablokuje příkaz, AI vysvětlí proč a navrhne povolenou alternativu
-- [ ] 488 🔴 **Postupná remediace** — nejdřív nejmenší zásah (restart služby), teprve při neúspěchu větší; ne rovnou reboot
+- [X] 488 🔴 **Postupná remediace** — nejdřív nejmenší zásah (restart služby), teprve při neúspěchu větší; ne rovnou reboot
 - [ ] 489 🟡 **Rollback plán** — ke každému návrhu i postup, jak změnu vrátit, pokud nepomůže
 - [X] 490 🔴 **Návrh pravidla do allowlistu** — když AI opakovaně navrhuje stejný bezpečný příkaz, nabídnout jeho přidání (s diffem sudoers dopadu)
 - [ ] 491 🟡 **Odhad rizika v kontextu** — riziko `systemctl restart` závisí na tom, co ta služba dělá; AI zohlední kritičnost hosta
@@ -78,7 +78,7 @@ Priorita: 🔴 vysoká (řeší dnešní bolest) · 🟡 střední · 🟢 nice-
 - [ ] 502 🟡 **Prioritizace fronty práce** — AI seřadí otevřené issues podle dopadu × jistoty řešení a navrhne, čím začít
 - [ ] 503 🟡 **Detekce protichůdných akcí** — varovat, když by nová akce zrušila předchozí (restart služby, kterou někdo právě maskoval)
 - [ ] 504 🟢 **Simulace dopadu** — „co se stane, když tenhle host vypnu" na základě topologie a závislostí
-- [ ] 505 🔴 **Auto-remediace s postupným rozšiřováním důvěry** — příkaz, který 10× uspěl bez následného problému, navrhnout k povýšení na `auto_execute`
+- [X] 505 🔴 **Auto-remediace s postupným rozšiřováním důvěry** — příkaz, který 10× uspěl bez následného problému, navrhnout k povýšení na `auto_execute`
 
 ## D. Kvalita odpovědí, kontext & RAG (506–525)
 
