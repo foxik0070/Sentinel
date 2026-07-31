@@ -20,19 +20,19 @@ Priorita: 🔴 vysoká (řeší dnešní bolest) · 🟡 střední · 🟢 nice-
 - [X] 450 🔴 **Korelace se změnami** — spojit issue s tím, co se před ním změnilo: config_history, deploy (Gitea webhook), apt upgrade, restart služby
 - [ ] 451 🟡 **Topologická korelace** — využít `topology.py` (CDP/LLDP sousedi) k dohledání, zda výpadky sdílí switch/uplink/hypervizor
 - [ ] 452 🟡 **Závislostní graf služeb** — z `depends_on` + systemd `After=/Requires=` (přes SSH) postavit graf a potlačit alerty následných služeb
-- [ ] 453 🟡 **Detekce společného jmenovatele** — u N alertů najít sdílený atribut (stejný balíček, kernel, mountpoint, VLAN) a nabídnout ho jako hypotézu
-- [ ] 454 🟡 **Časová osa incidentu** — chronologie ze všech zdrojů (logy, telemetrie, akce, notifikace) jako podklad pro AI i postmortem
-- [ ] 455 🟡 **"Co se změnilo od posledně"** — u opakujícího se issue diff proti minulému výskytu (jiná zpráva? jiný host? jiná hodnota?)
-- [ ] 456 🟡 **Cross-host pattern** — stejný alert na >30 % hostů = systémový problém, ne lokální; eskalovat jinak a nespamovat per-host
+- [X] 453 🟡 **Detekce společného jmenovatele** — u N alertů najít sdílený atribut (stejný balíček, kernel, mountpoint, VLAN) a nabídnout ho jako hypotézu
+- [X] 454 🟡 **Časová osa incidentu** — chronologie ze všech zdrojů (logy, telemetrie, akce, notifikace) jako podklad pro AI i postmortem
+- [X] 455 🟡 **"Co se změnilo od posledně"** — u opakujícího se issue diff proti minulému výskytu (jiná zpráva? jiný host? jiná hodnota?)
+- [X] 456 🟡 **Cross-host pattern** — stejný alert na >30 % hostů = systémový problém, ne lokální; eskalovat jinak a nespamovat per-host
 - [ ] 457 🟢 **Korelace s externími vlivy** — teplota v místnosti (HA senzory) vs. throttling; výpadek proudu vs. restart hostů
 - [ ] 458 🟡 **Blast radius** — AI odhadne, koho ještě problém zasáhne (závislé služby, uživatelé) a to řídí prioritu
-- [ ] 459 🟡 **Detekce kaskád** — rozpoznat lavinu (1 příčina → 20 alertů do 60 s) a poslat JEDNU notifikaci se souhrnem
+- [X] 459 🟡 **Detekce kaskád** — rozpoznat lavinu (1 příčina → 20 alertů do 60 s) a poslat JEDNU notifikaci se souhrnem
 - [ ] 460 🟢 **Korelace s SLO** — spojit issue s dopadem na error budget (404) a podle toho řadit
-- [ ] 461 🟡 **Hypotézy s pravděpodobností** — místo jedné odpovědi vrátit 2–3 hypotézy s odhadem jistoty a návrhem, čím je ověřit
+- [X] 461 🟡 **Hypotézy s pravděpodobností** — místo jedné odpovědi vrátit 2–3 hypotézy s odhadem jistoty a návrhem, čím je ověřit
 - [X] 462 🔴 **Diagnostický plán** — HOTOVO: diagnostics.py katalog + POST /api/issues/<k>/diagnose{,/run} — AI navrhne posloupnost read-only příkazů k potvrzení hypotézy; spustí se jedním kliknutím a výsledek se vrátí modelu
 - [ ] 463 🟡 **Iterativní vyšetřování** — smyčka hypotéza → diagnostika → vyhodnocení → další krok (max N kol, s rozpočtem tokenů)
 - [ ] 464 🟢 **Graf incidentu v UI** — vizualizace vztahů mezi issues (příčina/následek/duplicita)
-- [ ] 465 🟡 **Zpětná korelace při vyřešení** — když issue zmizí, ověřit, zda zmizely i navázané, a potvrdit tím správnost hypotézy
+- [X] 465 🟡 **Zpětná korelace při vyřešení** — když issue zmizí, ověřit, zda zmizely i navázané, a potvrdit tím správnost hypotézy
 
 ## B. Hledání problémů & prevence (466–485)
 
