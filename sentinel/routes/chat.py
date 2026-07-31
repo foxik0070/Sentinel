@@ -45,6 +45,17 @@ def create_blueprint(service):
         )
         return jsonify({"success": ok})
 
+    @bp.route('/api/ai/runtime_stats', methods=['GET'])
+    @requires_auth
+    def ai_runtime_stats():
+        """525/523/518: cache, rozpočet tokenů a nekonzistence."""
+        from .. import ai_runtime
+        budgets = {}
+        for task in ai_runtime.DEFAULT_TOKEN_BUDGET:
+            left, used, cap = ai_runtime.token_budget_left(task)
+            budgets[task] = {"left": left, "used": used, "cap": cap}
+        return jsonify({"cache": ai_runtime.cache_stats(), "token_budgets": budgets})
+
     @bp.route('/api/ai/feedback/stats', methods=['GET'])
     @requires_auth
     def ai_feedback_stats():
