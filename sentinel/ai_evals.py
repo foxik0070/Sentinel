@@ -76,6 +76,73 @@ _run_lock = threading.Lock()
 _running = {"active": False, "progress": 0, "total": 0}
 
 
+def generate_from_incidents(fix_attempts, history, max_cases: int = 20) -> list:
+    """529: Testy z reálných incidentů místo šesti ručně napsaných.
+
+    Ručně psaná sada testuje, co nás napadlo — ne to, co se v téhle
+    infrastruktuře opravdu děje. Z incidentu s OVĚŘENOU opravou (486) víme
+    obojí: zadání i to, co ho skutečně vyřešilo.
+
+    Bez ověřených oprav nevznikne nic. To je záměr: test, u kterého neznáme
+    správnou odpověď, měří jen mnohomluvnost modelu.
+    """
+    by_key = {}
+    for h in history or []:
+        if isinstance(h, dict) and h.get('key'):
+            by_key.setdefault(h['key'], h)
+
+    seen, cases = set(), []
+    for a in fix_attempts or []:
+        if not isinstance(a, dict) or a.get('status') != 'worked':
+            continue
+        cmd = (a.get('command') or '').strip()
+        issue = by_key.get(a.get('problem_key'))
+        if not cmd or not issue:
+            continue
+        message = (issue.get('last_line') or '').strip()
+        if not message:
+            continue
+
+        keywords = _command_keywords(cmd)
+        if not keywords:
+            continue
+        sig = (issue.get('plugin_name') or '', ' '.join(sorted(keywords)))
+        if sig in seen:
+            continue                     # tentýž typ incidentu netestovat 10×
+        seen.add(sig)
+
+        cases.append({
+            "id": f"incident_{issue.get('plugin_name') or 'x'}_{len(cases)}",
+            "prompt": (f"Systémový alert: [{issue.get('plugin_name')}] "
+                       f"{issue.get('host')}: {message[:200]}\n"
+                       f"Jaký příkaz problém vyřeší? Odpověz stručně."),
+            "expect_any": sorted(keywords),
+            "min_hits": 1,
+            "forbid": [],
+            "source": "incident",
+            "evidence_command": cmd,
+        })
+        if len(cases) >= max_cases:
+            break
+    return cases
+
+
+def _command_keywords(command: str) -> list:
+    """Významové části příkazu, které od modelu čekáme.
+
+    Přeskakuje přepínače a příliš obecná slova — kdyby se očekávalo „-n"
+    nebo „a", prošlo by skoro cokoli a test by neměřil nic.
+    """
+    skip = {'sudo', 'the', 'and', 'run', '&&', '||'}
+    out = []
+    for tok in str(command or '').replace('|', ' ').split():
+        t = tok.strip().lower()
+        if not t or t.startswith('-') or t in skip or len(t) < 3:
+            continue
+        out.append(t.split('/')[-1])
+    return list(dict.fromkeys(out))[:6]
+
+
 def load_evals() -> list:
     evals = list(DEFAULT_EVALS)
     try:
