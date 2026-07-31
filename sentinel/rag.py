@@ -251,11 +251,27 @@ class RAGEngine:
             try:
                 with open(path, 'r', encoding='utf-8', errors='replace') as f:
                     content = f.read()
-                raw = content.split("<<<SENTINEL_ENTRY>>>")
-                chunks.extend(c.strip() for c in raw if c.strip())
+                if "<<<SENTINEL_ENTRY>>>" in content:
+                    raw = content.split("<<<SENTINEL_ENTRY>>>")
+                    chunks.extend(c.strip() for c in raw if c.strip())
+                else:
+                    # 514: hlavní KB nemá oddělovače — dělit podle sekcí, ne
+                    # po pevných blocích. Pevná délka rozsekne postup uprostřed
+                    # a model dostane půlku návodu.
+                    from . import rag_utils
+                    chunks.extend(rag_utils.split_by_structure(content))
             except Exception as e:
                 utils.log_message(f"RAG chunk load error ({path}): {e}")
         if chunks:
+            # 513: tentýž poznatek uložený třikrát sní kontext na úkor jiného
+            try:
+                from . import rag_utils
+                before = len(chunks)
+                chunks = rag_utils.dedupe_chunks(chunks)
+                if before != len(chunks):
+                    utils.log_message(f"RAG: {before - len(chunks)} duplicitních chunků zahozeno")
+            except Exception as e:
+                utils.log_message(f"RAG dedupe failed: {e}")
             self.kb_chunks = chunks
             self._build_idf_index()
 
@@ -271,6 +287,11 @@ class RAGEngine:
                 f.write("\n<<<SENTINEL_ENTRY>>>\n" + text + "\n")
         except Exception as e:
             utils.log_message(f"RAG learned-file write error: {e}")
+        # 513: nepřidávat, co už tam je — duplicita jen sní kontext
+        if any(' '.join(text.lower().split()) == ' '.join(c.lower().split())
+               for c in self.kb_chunks[-200:]):
+            utils.log_message("RAG: naučený chunk je duplicita, přeskočeno")
+            return True
         self.kb_chunks.append(text)
         self._build_idf_index()
         if self.client and self.collection:
@@ -512,6 +533,23 @@ class RAGEngine:
             "rag_chunks_loaded": len(self.kb_chunks)
         }
 
+    def _rerank_docs(self, query, docs, dists, n_results):
+        """511/515: Přerovná dokumenty a zapamatuje si citace (512).
+
+        Selhání nesmí shodit hledání — bez přerovnání je výsledek horší,
+        ale pořád použitelný.
+        """
+        try:
+            from . import rag_utils
+            cands = [{"doc": d, "distance": (dists[i] if dists and i < len(dists) else None)}
+                     for i, d in enumerate(docs)]
+            top = rag_utils.rerank(query, cands, top_n=n_results)
+            self.last_citations = rag_utils.build_citations(top)
+            return [c['doc'] for c in top]
+        except Exception as e:
+            utils.log_message(f"RAG rerank failed: {e}")
+            return docs[:n_results]
+
     def search(self, query, n_results=3, max_distance=None):
         """510: Vrátí jen chunky, které s dotazem opravdu souvisí.
 
@@ -532,11 +570,14 @@ class RAGEngine:
 
                 if emb:
                     with self.db_lock:
+                        # 515: brát širší výběr a přerovnat — vektory dají hrubé
+                        # pořadí, doslovná shoda (hostname, kód chyby) ho opraví.
                         res = self.collection.query(
-                            query_embeddings=[emb], n_results=n_results,
+                            query_embeddings=[emb], n_results=max(n_results * 4, 12),
                             include=['documents', 'distances'])
                         docs, dists = filter_by_distance(res, limit)
                         if docs:
+                            docs = self._rerank_docs(query, docs, dists, n_results)
                             self.stats['rag_filtered'] = self.stats.get('rag_filtered', 0) + \
                                 (len((res or {}).get('documents', [[]])[0] or []) - len(docs))
                             return "\n\n".join(docs)

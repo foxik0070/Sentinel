@@ -85,13 +85,13 @@ Priorita: 🔴 vysoká (řeší dnešní bolest) · 🟡 střední · 🟢 nice-
 - [X] 506 🔴 **Strukturovaný výstup místo textu** — HOTOVO (41876f8): extract_json (párování závorek) + ask_json s retry — přechod na JSON schema pro analýzy (dnes se parsuje volný text regexem a `_ai_reply_ok` čichá k prefixům)
 - [X] 507 🔴 **execute_ollama vrací (ok, text)** — HOTOVO (7f15a72): AIResult(str) s .ok/.error, zpětně kompatibilní — místo chybové hlášky jako obsahu; odstraní prefix-sniffing napříč kódem *(známý accepted-risk)*
 - [X] 508 🔴 **Kontextové okno podle úlohy** — krátký prompt pro klasifikaci severity, velký pro korelaci; dnes se posílá stejně velký kontext
-- [ ] 509 🟡 **Komprese kontextu** — před odesláním zkrátit opakující se log řádky (`... 47× stejný řádek`) místo ořezu na N znaků
+- [X] 509 🟡 **Komprese kontextu** — před odesláním zkrátit opakující se log řádky (`... 47× stejný řádek`) místo ořezu na N znaků
 - [X] 510 🔴 **RAG relevance filtr** — zahodit chunky pod prahem podobnosti (dnes se vrací top-N i když nesouvisí a model se jimi nechá zmást)
-- [ ] 511 🟡 **Hybridní vyhledávání** — kombinovat vektory s klíčovými slovy (hostname, kód chyby); dnes je fallback jen textový
-- [ ] 512 🟡 **Citace zdroje v odpovědi** — u AI odpovědi ukázat, ze kterého KB chunku/incidentu čerpá
-- [ ] 513 🟡 **RAG čistota** — deduplikace a expirace naučených chunků (`learned_kb.txt` roste bez limitu)
-- [ ] 514 🟡 **Chunking podle struktury** — dělit KB podle sekcí, ne po pevných blocích
-- [ ] 515 🟢 **Reranking** — druhý průchod nad top-20 pro lepší pořadí
+- [X] 511 🟡 **Hybridní vyhledávání** — kombinovat vektory s klíčovými slovy (hostname, kód chyby); dnes je fallback jen textový
+- [X] 512 🟡 **Citace zdroje v odpovědi** — u AI odpovědi ukázat, ze kterého KB chunku/incidentu čerpá
+- [X] 513 🟡 **RAG čistota** — deduplikace a expirace naučených chunků (`learned_kb.txt` roste bez limitu)
+- [X] 514 🟡 **Chunking podle struktury** — dělit KB podle sekcí, ne po pevných blocích
+- [X] 515 🟢 **Reranking** — druhý průchod nad top-20 pro lepší pořadí
 - [X] 516 🔴 **Detekce halucinace** — ověřit, že hostnamy/služby/cesty v odpovědi reálně existují v DB; jinak označit
 - [ ] 517 🟡 **Odmítnutí bez dat** — model má říct „nevím, chybí mi X" místo pravděpodobné smyšlenky (eval 434 to už částečně testuje)
 - [ ] 518 🟡 **Konzistence napříč dotazy** — stejná otázka nemá dávat protichůdné odpovědi; cache + kontrola

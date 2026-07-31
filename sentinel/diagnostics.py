@@ -153,8 +153,13 @@ def interpret_prompt(host: str, message: str, hypothesis: str, results: list) ->
     """Prompt, kterým AI vyhodnotí výstupy diagnostiky."""
     from .ai_guard import wrap_untrusted
     blocks = []
+    from .rag_utils import compress_lines
     for r in results:
         output = (r.get("output") or "").strip()
+        # 509: padesát stejných řádků nese stejnou informaci jako jeden, jen
+        # sní okno. Sbalit PŘED ořezem, ať se vejde víc podstatného.
+        if output.count("\n") > 5:
+            output = compress_lines(output.splitlines())
         if len(output) > 1500:                       # ať se vejdeme do kontextu
             output = output[:1500] + "\n…(zkráceno)"
         status = "" if r.get("ok") else "  [PŘÍKAZ SELHAL]"
