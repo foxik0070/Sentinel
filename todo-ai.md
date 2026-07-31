@@ -62,21 +62,21 @@ Priorita: 🔴 vysoká (řeší dnešní bolest) · 🟡 střední · 🟢 nice-
 - [X] 486 🔴 **Ověření, že oprava fungovala** — po remediaci AI zkontroluje, zda problém opravdu zmizel (dnes se jen přepne na `validating`)
 - [X] 487 🔴 **Vysvětlení odmítnutí** — když safety klasifikátor/allowlist zablokuje příkaz, AI vysvětlí proč a navrhne povolenou alternativu
 - [X] 488 🔴 **Postupná remediace** — nejdřív nejmenší zásah (restart služby), teprve při neúspěchu větší; ne rovnou reboot
-- [ ] 489 🟡 **Rollback plán** — ke každému návrhu i postup, jak změnu vrátit, pokud nepomůže
+- [X] 489 🟡 **Rollback plán** — ke každému návrhu i postup, jak změnu vrátit, pokud nepomůže
 - [X] 490 🔴 **Návrh pravidla do allowlistu** — když AI opakovaně navrhuje stejný bezpečný příkaz, nabídnout jeho přidání (s diffem sudoers dopadu)
-- [ ] 491 🟡 **Odhad rizika v kontextu** — riziko `systemctl restart` závisí na tom, co ta služba dělá; AI zohlední kritičnost hosta
-- [ ] 492 🟡 **Dry-run diff** — u příkazů, které to umí (`apt -s`, `mount --fake`), ukázat, co by se stalo, ještě před schválením
+- [X] 491 🟡 **Odhad rizika v kontextu** — riziko `systemctl restart` závisí na tom, co ta služba dělá; AI zohlední kritičnost hosta
+- [X] 492 🟡 **Dry-run diff** — u příkazů, které to umí (`apt -s`, `mount --fake`), ukázat, co by se stalo, ještě před schválením
 - [X] 493 🔴 **Učení z ručních zásahů** — když admin problém vyřeší přes SSH sám, AI z historie příkazů odvodí postup a nabídne ho příště
 - [ ] 494 🟡 **Runbook generátor z incidentu** — z vyřešeného incidentu vygenerovat runbook a navázat na typ issue (tabulka `runbooks` existuje)
-- [ ] 495 🟡 **Odhad doby řešení** — na základě historie podobných issues predikovat, jak dlouho to zabere
+- [X] 495 🟡 **Odhad doby řešení** — na základě historie podobných issues predikovat, jak dlouho to zabere
 - [ ] 496 🟡 **Návrh preventivního opatření** — po vyřešení: co udělat, aby se to nestalo znovu (cron, logrotate, alert, kvóta)
-- [ ] 497 🟢 **Batch remediace** — stejný problém na N hostech vyřešit jedním schváleným plánem místo N kliknutí
-- [ ] 498 🟡 **Kontrola maintenance okna** — AI nenavrhne restart produkce v pracovní době, pokud problém není kritický
+- [X] 497 🟢 **Batch remediace** — stejný problém na N hostech vyřešit jedním schváleným plánem místo N kliknutí
+- [X] 498 🟡 **Kontrola maintenance okna** — AI nenavrhne restart produkce v pracovní době, pokud problém není kritický
 - [X] 499 🔴 **Eskalace s kontextem** — když AI neví, sestavit shrnutí pro člověka: co zkusila, co vyloučila, co doporučuje ověřit
-- [ ] 500 🟡 **Rozpoznání "neřešitelného"** — odlišit problém vyžadující fyzický zásah (výměna disku) a nenabízet SSH příkazy
+- [X] 500 🟡 **Rozpoznání "neřešitelného"** — odlišit problém vyžadující fyzický zásah (výměna disku) a nenabízet SSH příkazy
 - [ ] 501 🟢 **Koordinace s Ansible** — u opakovaného problému navrhnout trvalou opravu jako Ansible task, ne jednorázový příkaz
-- [ ] 502 🟡 **Prioritizace fronty práce** — AI seřadí otevřené issues podle dopadu × jistoty řešení a navrhne, čím začít
-- [ ] 503 🟡 **Detekce protichůdných akcí** — varovat, když by nová akce zrušila předchozí (restart služby, kterou někdo právě maskoval)
+- [X] 502 🟡 **Prioritizace fronty práce** — AI seřadí otevřené issues podle dopadu × jistoty řešení a navrhne, čím začít
+- [X] 503 🟡 **Detekce protichůdných akcí** — varovat, když by nová akce zrušila předchozí (restart služby, kterou někdo právě maskoval)
 - [ ] 504 🟢 **Simulace dopadu** — „co se stane, když tenhle host vypnu" na základě topologie a závislostí
 - [X] 505 🔴 **Auto-remediace s postupným rozšiřováním důvěry** — příkaz, který 10× uspěl bez následného problému, navrhnout k povýšení na `auto_execute`
 
