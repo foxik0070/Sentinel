@@ -37,8 +37,8 @@ Priorita: 🔴 vysoká (řeší dnešní bolest) · 🟡 střední · 🟢 nice-
 ## B. Hledání problémů & prevence (466–485)
 
 - [ ] 466 🔴 **AI čte nezachycené logy** — periodicky nechat model projít vzorek řádků, které NEmatchnul žádný detektor, a navrhnout nové patterny (endpoint `/api/patterns/suggest` existuje, ale nemá volající — viz bug)
-- [ ] 467 🔴 **Detekce tiché degradace** — pomalý růst latence/chyb, který nepřekročí práh, ale trend je jasný; AI hlásí dřív než threshold
-- [ ] 468 🔴 **Chybějící signál** — alert na to, co PŘESTALO chodit (log se přestal plnit, metrika zmizela, cron nedoběhl) — dnes se detekuje jen přítomnost problému
+- [X] 467 🔴 **Detekce tiché degradace** — pomalý růst latence/chyb, který nepřekročí práh, ale trend je jasný; AI hlásí dřív než threshold
+- [X] 468 🔴 **Chybějící signál** — alert na to, co PŘESTALO chodit (log se přestal plnit, metrika zmizela, cron nedoběhl) — dnes se detekuje jen přítomnost problému
 - [ ] 469 🟡 **Baseline profil hosta** — AI si drží popis "jak vypadá normální den" per host a hlásí odchylky od profilu, ne od σ
 - [ ] 470 🟡 **Sezónnost nad rámec 397** — kromě po-pá/víkend i denní doba, konec měsíce, backup okna
 - [ ] 471 🔴 **Prediktivní kapacita s AI kontextem** — k lineární regresi (`/api/predictions/capacity`) přidat vysvětlení, co růst způsobuje, a doporučení

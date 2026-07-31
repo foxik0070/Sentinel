@@ -1080,6 +1080,33 @@ def create_blueprint(service):
         return jsonify({"suggestions": policy.suggest_auto_execute(attempts, rules, safety),
                         "min_successes": policy.MIN_SUCCESSES_FOR_AUTO})
 
+    @bp.route('/api/analytics/degradation', methods=['GET'])
+    @requires_auth
+    def api_degradation():
+        """467: Metriky, které prokazatelně rostou, ale práh ještě nepřekročily."""
+        from .. import trend_detect
+        series = state.get_metric_series(hours=int_param('hours', 24, 1, 720))
+        items = trend_detect.detect_degradation(
+            series, min_growth_pct=float(int_param('min_growth', 15, 1, 1000)))
+        return jsonify({"degrading": items,
+                        "described": [trend_detect.describe_degradation(i) for i in items[:10]],
+                        "analyzed_metrics": len(series)})
+
+    @bp.route('/api/analytics/missing_signals', methods=['GET'])
+    @requires_auth
+    def api_missing_signals():
+        """468: Metriky, které přestaly chodit.
+
+        Ticho po výpadku sběru vypadá stejně jako ticho po vyřešení problému
+        — tohle je rozliší.
+        """
+        from .. import trend_detect
+        series = state.get_metric_series(hours=int_param('hours', 24, 1, 720))
+        items = trend_detect.detect_missing(series)
+        return jsonify({"missing": items,
+                        "described": [trend_detect.describe_missing(i) for i in items[:10]],
+                        "analyzed_metrics": len(series)})
+
     @bp.route('/api/analytics/false_alarms', methods=['GET'])
     @requires_auth
     def api_false_alarms():
