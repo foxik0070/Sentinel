@@ -1080,6 +1080,65 @@ def create_blueprint(service):
         return jsonify({"suggestions": policy.suggest_auto_execute(attempts, rules, safety),
                         "min_successes": policy.MIN_SUCCESSES_FOR_AUTO})
 
+    @bp.route('/api/issues/<key_b64>/changes', methods=['GET'])
+    @requires_auth
+    def api_issue_changes(key_b64):
+        """450: Co se změnilo těsně před vznikem problému.
+
+        Časová souvislost není důkaz příčiny — proto se vrací seznam změn,
+        ne verdikt.
+        """
+        from .. import correlate
+        try:
+            key = base64.b64decode(key_b64).decode()
+        except Exception:
+            return jsonify({"error": "bad key"}), 400
+        prob = state.get_problem(key)
+        if not prob:
+            return jsonify({"error": "issue neexistuje"}), 404
+        changes = correlate.collect_changes(
+            state, prob, window_min=int_param('window_min', correlate.DEFAULT_WINDOW_MIN, 5, 1440))
+        return jsonify({"changes": changes, "count": len(changes)})
+
+    @bp.route('/api/issues/<key_b64>/causal_chain', methods=['POST'])
+    @requires_auth
+    def api_causal_chain(key_b64):
+        """447: Řetěz příčina → následek jako strom, ne odstavec."""
+        from .. import correlate, ai_profiles
+        try:
+            key = base64.b64decode(key_b64).decode()
+        except Exception:
+            return jsonify({"error": "bad key"}), 400
+        prob = state.get_problem(key)
+        if not prob:
+            return jsonify({"error": "issue neexistuje"}), 404
+
+        changes = correlate.collect_changes(state, prob)
+        tele = ''
+        try:
+            ctx = state.get_telemetry_context(prob.get('host', ''), prob.get('last_seen'))
+            metrics = (ctx or {}).get('metrics', [])[:3]
+            if metrics:
+                tele = "TELEMETRIE: " + ", ".join(
+                    f"{m.get('metric')} {m.get('delta_pct'):+.0f}%" for m in metrics
+                    if isinstance(m.get('delta_pct'), (int, float))) + "\n"
+        except Exception:
+            pass
+
+        prof = ai_profiles.for_task('correlate')
+        ok, data, raw = service.ask_json(
+            correlate.chain_prompt(prob, changes, tele),
+            required_keys=('root_cause',),
+            num_ctx=prof['num_ctx'], max_tokens=prof['max_tokens'])
+        if not ok:
+            return jsonify({"error": "AI nevrátila použitelnou strukturu",
+                            "raw": (raw or '')[:400]}), 502
+        chain = correlate.normalize_chain(data)
+        if not chain:
+            return jsonify({"error": "řetěz se nepodařilo srovnat",
+                            "raw": (raw or '')[:400]}), 502
+        return jsonify({"chain": chain, "changes": changes[:5]})
+
     @bp.route('/api/analytics/degradation', methods=['GET'])
     @requires_auth
     def api_degradation():
