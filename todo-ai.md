@@ -93,15 +93,15 @@ Priorita: 🔴 vysoká (řeší dnešní bolest) · 🟡 střední · 🟢 nice-
 - [X] 514 🟡 **Chunking podle struktury** — dělit KB podle sekcí, ne po pevných blocích
 - [X] 515 🟢 **Reranking** — druhý průchod nad top-20 pro lepší pořadí
 - [X] 516 🔴 **Detekce halucinace** — ověřit, že hostnamy/služby/cesty v odpovědi reálně existují v DB; jinak označit
-- [ ] 517 🟡 **Odmítnutí bez dat** — model má říct „nevím, chybí mi X" místo pravděpodobné smyšlenky (eval 434 to už částečně testuje)
-- [ ] 518 🟡 **Konzistence napříč dotazy** — stejná otázka nemá dávat protichůdné odpovědi; cache + kontrola
-- [ ] 519 🟡 **Jazyk odpovědi dle uživatele** — dnes prompty míchají češtinu a angličtinu podle místa v kódu
+- [X] 517 🟡 **Odmítnutí bez dat** — model má říct „nevím, chybí mi X" místo pravděpodobné smyšlenky (eval 434 to už částečně testuje)
+- [X] 518 🟡 **Konzistence napříč dotazy** — stejná otázka nemá dávat protichůdné odpovědi; cache + kontrola
+- [X] 519 🟡 **Jazyk odpovědi dle uživatele** — dnes prompty míchají češtinu a angličtinu podle místa v kódu
 - [ ] 520 🟡 **Prompt verzování** — prompty v `PROMPTS`/prompt_library verzovat a měřit dopad změny přes eval suite
-- [ ] 521 🟢 **Few-shot z reálných incidentů** — do promptu přidat 2–3 vyřešené příklady ze stejné kategorie
-- [ ] 522 🟡 **Routing podle složitosti** — triviální klasifikace na malý rychlý model, korelace na velký (fallback chain 426 rozšířit o volbu dle úlohy)
-- [ ] 523 🟡 **Rozpočet tokenů per úloha** — limit a měření (435 sbírá data, chybí strop)
+- [X] 521 🟢 **Few-shot z reálných incidentů** — do promptu přidat 2–3 vyřešené příklady ze stejné kategorie
+- [X] 522 🟡 **Routing podle složitosti** — triviální klasifikace na malý rychlý model, korelace na velký (fallback chain 426 rozšířit o volbu dle úlohy)
+- [X] 523 🟡 **Rozpočet tokenů per úloha** — limit a měření (435 sbírá data, chybí strop)
 - [ ] 524 🟢 **Streamování dlouhých analýz** — postmortem/digest streamovat do UI, ne čekat na celek
-- [ ] 525 🟡 **Cache odpovědí** — stejný alert do X minut neanalyzovat znovu (šetří NPU i čas)
+- [X] 525 🟡 **Cache odpovědí** — stejný alert do X minut neanalyzovat znovu (šetří NPU i čas)
 
 ## E. Učení, zpětná vazba & evaluace (526–545)
 

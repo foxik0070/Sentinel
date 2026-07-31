@@ -1047,7 +1047,7 @@ def create_blueprint(service):
             ok, data, _raw = service.ask_json(
                 remediation.plan_prompt(prob.get('host', ''), prob.get('plugin_name', ''),
                                         (prob.get('last_line') or '')[:300]),
-                required_keys=('situation',))
+                required_keys=('situation',), task='classify')
             if not ok:
                 return jsonify({"error": "AI neurčila kategorii problému"}), 502
             situation = str(data.get('situation') or '').strip()
@@ -1128,7 +1128,7 @@ def create_blueprint(service):
         prof = ai_profiles.for_task('correlate')
         ok, data, raw = service.ask_json(
             correlate.chain_prompt(prob, changes, tele),
-            required_keys=('root_cause',),
+            required_keys=('root_cause',), task='causal_chain',
             num_ctx=prof['num_ctx'], max_tokens=prof['max_tokens'])
         if not ok:
             return jsonify({"error": "AI nevrátila použitelnou strukturu",
