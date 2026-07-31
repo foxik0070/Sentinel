@@ -1139,6 +1139,79 @@ def create_blueprint(service):
                             "raw": (raw or '')[:400]}), 502
         return jsonify({"chain": chain, "changes": changes[:5]})
 
+    @bp.route('/api/predictions/capacity_context', methods=['GET'])
+    @requires_auth
+    def api_capacity_context():
+        """471: Ke kdy dojde místo přidá, co ten růst nejspíš žene."""
+        from .. import trend_detect, foresight, ai_profiles
+        series = state.get_metric_series(hours=int_param('hours', 168, 1, 720))
+        items = foresight.build_capacity_items(
+            trend_detect.detect_degradation(series),
+            limit=float(int_param('limit', 100, 1, 1000000)))
+        if not items:
+            return jsonify({"items": [], "insight": None,
+                            "message": "Žádná metrika neroste průkazně."})
+        insight = None
+        if request.args.get('ai') == '1':
+            prof = ai_profiles.for_task('correlate')
+            ok, data, _ = service.ask_json(
+                foresight.capacity_prompt(items), required_keys=('likely_cause',),
+                num_ctx=prof['num_ctx'], max_tokens=prof['max_tokens'])
+            insight = data if ok else None
+        return jsonify({"items": items, "insight": insight})
+
+    @bp.route('/api/analytics/health_forecast', methods=['GET'])
+    @requires_auth
+    def api_health_forecast():
+        """474: Týdenní přehled — co se pravděpodobně pokazí příště."""
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        from .. import trend_detect, foresight, ai_profiles
+        snapshot = foresight.build_snapshot(state, trend_detect)
+        outlook = None
+        if request.args.get('ai', '1') == '1':
+            prof = ai_profiles.for_task('summarize')
+            ok, data, _ = service.ask_json(
+                foresight.health_prompt(snapshot), required_keys=('focus',),
+                num_ctx=prof['num_ctx'], max_tokens=prof['max_tokens'])
+            outlook = data if ok else None
+        return jsonify({"snapshot": snapshot, "outlook": outlook})
+
+    @bp.route('/api/patterns/unmatched', methods=['GET'])
+    @requires_auth
+    def api_unmatched_lines():
+        """466: Řádky, které vypadají jako problém, ale nikdo je nezachytil."""
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        from .. import unmatched
+        return jsonify({"samples": unmatched.top(int_param('limit', 20, 1, 200)),
+                        "stats": unmatched.stats()})
+
+    @bp.route('/api/patterns/unmatched/suggest', methods=['POST'])
+    @requires_auth
+    def api_unmatched_suggest():
+        """466: Nechá AI navrhnout pattern pro nezachycené řádky.
+
+        Návrhy se NEAKTIVUJÍ — špatný pattern buď zaplaví systém šumem,
+        nebo tiše překryje detektor, který fungoval. Příliš obecné regexy
+        se navíc označí jako zamítnuté.
+        """
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        from .. import unmatched, ai_profiles
+        items = unmatched.top(15)
+        if not items:
+            return jsonify({"suggestions": [], "message": "Žádné nezachycené řádky."})
+        prof = ai_profiles.for_task('analyze')
+        ok, data, raw = service.ask_json(
+            unmatched.suggest_prompt(items), expect='array',
+            num_ctx=prof['num_ctx'], max_tokens=prof['max_tokens'])
+        if not ok or not isinstance(data, list):
+            return jsonify({"suggestions": [], "message": "AI nevrátila použitelný JSON",
+                            "raw": (raw or '')[:300]}), 502
+        return jsonify({"suggestions": unmatched.validate_suggestions(data, items),
+                        "based_on": len(items)})
+
     @bp.route('/api/analytics/playbooks', methods=['GET'])
     @requires_auth
     def api_playbooks():
