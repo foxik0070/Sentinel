@@ -1139,6 +1139,50 @@ def create_blueprint(service):
                             "raw": (raw or '')[:400]}), 502
         return jsonify({"chain": chain, "changes": changes[:5]})
 
+    @bp.route('/api/analytics/work_queue', methods=['GET'])
+    @requires_auth
+    def api_work_queue():
+        """502/497/500: fronta podle dopadu × jistoty + co jde řešit hromadně."""
+        from .. import remediation_plan as rp, playbooks
+        issues = state.get_active_issues() or []
+        try:
+            books = playbooks.derive(state.get_issue_history_rows(days=90),
+                                     ssh_log=state.get_ssh_execute_log(),
+                                     actions=state.list_actions(limit=500))
+        except Exception:
+            books = []
+        ranked = rp.prioritize(issues, playbooks=books)
+        physical = [{"key": i.get('key'), "host": i.get('host'),
+                     **rp.needs_physical_intervention(i.get('last_line'))}
+                    for i in issues if rp.needs_physical_intervention(i.get('last_line'))['physical']]
+        return jsonify({"queue": ranked[:int_param('limit', 30, 1, 200)],
+                        "batchable": rp.group_for_batch(issues),
+                        "needs_physical": physical})
+
+    @bp.route('/api/actions/plan_context', methods=['POST'])
+    @requires_auth
+    def api_action_plan_context():
+        """489/491/492/498/503: co o zásahu víme, než ho někdo pustí."""
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        from .. import remediation_plan as rp, safety
+        body = request.get_json(silent=True) or {}
+        cmd = str(body.get('command') or '').strip()
+        if not cmd:
+            return jsonify({"error": "chybí command"}), 400
+        base, _ = safety.classify(cmd)
+        recent = [{"command": a.get('command'), "at": a.get('executed_at')}
+                  for a in (state.list_actions(limit=100) or [])
+                  if a.get('status') == 'executed']
+        return jsonify({
+            "rollback": rp.rollback_for(cmd),
+            "risk": rp.contextual_risk(cmd, base_score=base,
+                                       dependents=int(body.get('dependents') or 0)),
+            "dry_run": rp.dry_run_for(cmd),
+            "window": rp.in_maintenance_window(severity=body.get('severity') or ''),
+            "conflicts": rp.conflicts_with(cmd, recent),
+        })
+
     @bp.route('/api/analytics/incident_patterns', methods=['GET'])
     @requires_auth
     def api_incident_patterns():
