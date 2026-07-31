@@ -2,6 +2,59 @@
 
 Tento dokument zaznamenává breaking changes a nové endpointy mezi verzemi.
 
+## v2026.07.001 (2026-07-31)
+
+**Bez breaking changes.** Všechny stávající endpointy zachovány beze změny tvaru odpovědi.
+
+### Diagnostika a remediace
+- `POST /api/issues/<key_b64>/diagnose` — AI navrhne diagnostické kroky z pevného katalogu (nic nespouští)
+- `POST /api/issues/<key_b64>/diagnose/run` — spustí schválené kroky a nechá AI vyhodnotit reálné výstupy
+- `POST /api/issues/<key_b64>/remediation_plan` — žebřík zásahů (pozorování → reload → restart → reboot) + doporučený další krok
+- `POST /api/issues/<key_b64>/fix_attempt` — zaznamenat zásah k pozdějšímu ověření (admin)
+- `GET  /api/issues/<key_b64>/fix_attempts` — historie zásahů na issue + úspěšnost
+- `POST /api/fix_attempts/verify_now` — ruční spuštění vyhodnocení dozrálých pokusů (admin)
+- `GET  /api/fix_attempts/stats` — kolik zásahů reálně zabralo
+- `POST /api/actions/plan_context` — k příkazu: rollback plán, riziko v kontextu, dry-run náhled, maintenance okno, protichůdné akce (admin)
+
+### Korelace a analýza incidentu
+- `POST /api/issues/<key_b64>/causal_chain` — řetěz příčina→následek jako strom (ne odstavec)
+- `GET  /api/issues/<key_b64>/changes` — co se změnilo těsně před vznikem problému
+- `GET  /api/issues/<key_b64>/incident_timeline` — chronologie ze všech zdrojů (**nový**, vedle staršího `/timeline`, který zůstává beze změny)
+- `POST /api/issues/<key_b64>/hypotheses` — 2–3 hypotézy s pravděpodobností a způsobem ověření
+- `GET  /api/issues/<key_b64>/telemetry_context` — metriky incidentu proti baseline
+- `GET  /api/analytics/incident_patterns` — společný jmenovatel, cross-host vzorce, kaskády
+- `GET  /api/api/incidents`, `POST /api/incidents/analyze` — seskupení incidentů a jejich rozbor
+
+### Detekce
+- `GET /api/analytics/degradation?hours=N&min_growth=P` — metriky s prokazatelným růstem pod prahem
+- `GET /api/analytics/missing_signals?hours=N` — metriky, které přestaly chodit
+- `GET /api/analytics/false_alarms?days=N&min_occurrences=K` — alerty, co se opakovaně řeší samy
+- `GET /api/analytics/baseline?hours=N&season_days=D` — sezónnost, rozpojené metriky, nesledované stroje
+- `GET /api/hosts/<host>/profile?hours=N` — jak u tohoto stroje vypadá normální den
+- `GET /api/patterns/unmatched` — řádky, které vypadají jako problém a nikdo je nezachytil
+- `POST /api/patterns/unmatched/suggest` — návrh patternů (příliš obecné se vrátí označené jako zamítnuté) (admin)
+
+### Plánování a předpověď
+- `GET /api/analytics/work_queue?limit=N` — fronta podle dopadu × jistoty, hromadně řešitelné skupiny, problémy vyžadující fyzický zásah
+- `GET /api/analytics/playbooks?days=N&min_evidence=K` — postupy odvozené z ručních zásahů (admin)
+- `GET /api/predictions/capacity_context?hours=N&ai=1` — kdy dojde mez + co růst žene
+- `GET /api/analytics/health_forecast?ai=1` — týdenní výhled „co se nejspíš pokazí" (admin)
+
+### AI kvalita a bezpečnost
+- `POST /api/ai/feedback` — hodnocení AI odpovědi (`rating`: up/down/rejected/applied)
+- `GET  /api/ai/feedback/stats?days=N` — podíl užitečných odpovědí
+- `GET  /api/ai/audit?kind=&problem_key=&executed=1` — co model dostal, vrátil a co se z toho vykonalo (admin; prompty nesou obsah logů)
+- `GET  /api/ai/runtime_stats` — cache hit rate, rozpočet tokenů per úloha
+- `POST /api/ai/explain_block` — proč byl příkaz zablokován + **povolená** alternativa
+- `GET  /api/ai/allowlist_suggestions?min_count=K` — příkazy vhodné k přidání do allowlistu (admin)
+- `GET  /api/allowlist/auto_execute_suggestions` — pravidla s prokázanou úspěšností k povýšení na `auto_execute` (admin)
+- `GET  /api/ai/evals/from_incidents?days=N` — testy vygenerované z incidentů s ověřenou opravou (admin)
+
+### Poznámky
+- Návrhy nikdy nic nemění samy. `allowlist_suggestions`, `auto_execute_suggestions` a `unmatched/suggest` vracejí **návrhy ke schválení**.
+- Endpointy nad AI auditem a prompty jsou admin-only, protože obsahují úryvky logů z monitorovaných strojů.
+- `playbooks`, `evals/from_incidents` a `auto_execute_suggestions` vracejí prázdno, dokud se nenasbírají provozní data (ověřené opravy, ruční zásahy).
+
 ## v2026.06.031 (2026-07-25)
 
 ### Nové endpointy

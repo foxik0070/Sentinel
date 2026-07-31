@@ -2,10 +2,10 @@
 
 ![Sentinel Commander](sentinel_master.png)
 
-![Version](https://img.shields.io/badge/version-v2026.06.031-blue)
+![Version](https://img.shields.io/badge/version-v2026.07.001-blue)
 ![License: MIT](https://img.shields.io/badge/License-MIT-cyan.svg)
 ![Python](https://img.shields.io/badge/python-3.13%2B-blue)
-![Tests](https://img.shields.io/badge/tests-192%20passing-green)
+![Tests](https://img.shields.io/badge/tests-938%20passing-green)
 
 **Hybrid AI Log Monitor & Analyzer for Linux Infrastructure**
 
@@ -21,10 +21,15 @@ Sentinel Commander is an advanced AI-powered monitoring system for Linux and ent
 | **AI analysis** | Ollama LLM integration, Hailo NPU (hailo-ollama), ChromaDB RAG |
 | **AI Autofix** | SSH-based remediation with safety classifier, modal approval, AI confidence score |
 | **AI insights** | RAG learning from resolved issues, daily digest, eval suite, per-user chat memory, token tracking |
+| **AI diagnostics** | Fixed read-only command catalog — the model picks IDs, never writes shell; executes and interprets real output |
+| **AI verification** | Every fix attempt is re-checked after ~15 min (deterministic, time-based); failures feed back so the same command is flagged next time |
+| **AI safety** | Prompt-injection defence for untrusted log content, hourly action cap, loop detection, hallucination check, full decision audit trail |
+| **AI correlation** | Causal chains, change correlation, cascade detection, cross-host patterns, incident timelines, ranked hypotheses |
+| **Sub-threshold detection** | Silent degradation (regression + r²), missing signals, per-host baselines, distributed brute-force, false-alarm mining |
 | **Push agents** | REST ingest: sentinel-agent nodes (`/api/v1/agent/ingest`), Windows agents (`/api/ingest/windows`) |
 | **Alerts** | 13 channels — Teams, Slack, ntfy, SMTP, Telegram, Matrix, HA, Gotify, PagerDuty, MQTT, Syslog, Webhook, SMS |
 | **Security** | LDAP/AD auth, 2FA TOTP, bcrypt passwords, CSRF, API keys, audit trail, **least-privilege SSH remediation** (dedicated `sentinel` user + sudo whitelist) |
-| **Observability** | Prometheus `/metrics`, Swagger UI `/api/docs`, health `/healthz`, SLO error budgets, DNS/webhook delivery monitoring |
+| **Observability** | Prometheus `/metrics`, Swagger UI `/api/docs`, health `/api/status_check`, SLO error budgets, DNS/webhook delivery monitoring |
 | **Dashboard** | Real-time Socket.IO web UI, topology map, analytics, runbooks, drag-drop widgets |
 | **CLI** | `sentinel-cli` — stdlib-only client (status, issues, ack/resolve, agents, digest, slo) via REST API |
 
@@ -118,6 +123,28 @@ sentinel/
 ├── watcher.py           # inotify log tailing, FIM
 ├── plugin_manager.py    # Plugin hot-reload
 ├── analytics.py         # Reporting, trends
+│
+│   # AI layer (2026.07)
+├── ai_guard.py          # Prompt-injection defence, action cap, loop detection
+├── ai_verify.py         # Hallucination check against known infrastructure
+├── ai_profiles.py       # Context-window profiles per task
+├── ai_runtime.py        # Response cache, consistency, token budget, routing
+├── diagnostics.py       # Fixed read-only catalog — AI picks IDs, not shell
+├── fix_verify.py        # Did the fix actually work? (deterministic)
+├── remediation.py       # Graduated ladder: observe → reload → restart → reboot
+├── remediation_plan.py  # Rollback, contextual risk, dry-run, work queue
+├── policy.py            # Block explanation, allowlist/auto-execute proposals
+├── escalation.py        # Escalation with context (what was already tried)
+├── correlate.py         # Change correlation, causal chains
+├── incident_analysis.py # Common denominator, timeline, cascades, hypotheses
+├── trend_detect.py      # Silent degradation, missing signals
+├── baseline.py          # Per-host normal, seasonality, auth-log audit
+├── alert_quality.py     # False-alarm detection from history
+├── playbooks.py         # Procedures learned from manual fixes
+├── foresight.py         # Capacity forecast, weekly outlook
+├── unmatched.py         # Sampling of log lines nobody catches
+├── rag_utils.py         # Compression, hybrid search, citations, chunking
+│
 ├── plugins/             # Detector plugins
 ├── routes/              # Flask blueprints (issues, agents, chat, ...)
 ├── static/              # JS, CSS
