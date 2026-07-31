@@ -2347,6 +2347,34 @@ def get_issue_history_rows(days: int = 30, limit: int = 20000) -> list:
         return []
 
 
+def get_metric_series(hours: int = 24, max_metrics: int = 200,
+                      min_points: int = 8) -> dict:
+    """467/468: Časové řady metrik pro analýzu trendu a výpadku sběru.
+
+    Vrací {"category.metric": [(timestamp, value), ...]} seřazené v čase.
+    """
+    try:
+        with _get_conn() as conn:
+            rows = conn.execute(
+                "SELECT category, metric, timestamp, value FROM telemetry "
+                "WHERE timestamp >= datetime('now', ?) ORDER BY timestamp",
+                (f'-{int(hours)} hours',)).fetchall()
+    except Exception as e:
+        logger.error(f"get_metric_series: {e}")
+        return {}
+
+    series: dict = {}
+    for cat, metric, ts, val in rows:
+        series.setdefault(f"{cat}.{metric}", []).append((ts, val))
+    # Krátké řady zahodit — z pěti bodů se trend určit nedá a jen by
+    # zaplevelily výstup.
+    trimmed = {k: v for k, v in series.items() if len(v) >= min_points}
+    if len(trimmed) <= max_metrics:
+        return trimmed
+    top = sorted(trimmed.items(), key=lambda kv: -len(kv[1]))[:max_metrics]
+    return dict(top)
+
+
 def get_resolution_time_stats(days: int = 30) -> list:
     """258: Průměrná doba řešení issue per plugin (z issue_history)."""
     try:
