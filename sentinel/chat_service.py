@@ -1141,7 +1141,8 @@ class ChatService(threading.Thread):
         return None
 
     def ask_json(self, prompt: str, required_keys=None, expect: str = 'object',
-                 num_ctx: int = 2048, max_tokens: int = 500, retry: bool = True):
+                 num_ctx: int = 2048, max_tokens: int = 500, retry: bool = True,
+                 task: str = None, use_cache: bool = True):
         """506: Zeptá se AI a vrátí ROZPARSOVANÝ JSON, ne text k luštění.
 
         Vrací (ok, data, raw):
@@ -1151,6 +1152,21 @@ class ChatService(threading.Thread):
         Při nevalidní odpovědi jednou zopakuje dotaz s korekcí — malé modely
         (qwen2.5-coder:1.5b) často napoprvé přidají vysvětlující větu navíc.
         """
+        # 525: tentýž dotaz do pár minut nepočítat znovu — na RPi5 stojí
+        # každý dotaz desítky sekund. Cache je zapnutá jen tam, kde volající
+        # předá `task`, aby se nesdílely nesouvisející dotazy.
+        from . import ai_runtime as _rt
+        cache_task = task or ''
+        if use_cache and cache_task:
+            cached = _rt.cache_get(cache_task, prompt)
+            if cached is not None:
+                data = self.extract_json(cached, expect=expect)
+                if data is not None:
+                    missing = [k for k in (required_keys or []) if k not in data] \
+                        if isinstance(data, dict) else []
+                    if not missing:
+                        return True, data, str(cached)
+
         attempt_prompt = prompt
         raw = ""
         for attempt in (1, 2):
@@ -1162,6 +1178,13 @@ class ChatService(threading.Thread):
                 missing = [k for k in (required_keys or []) if k not in data] \
                     if isinstance(data, dict) else []
                 if not missing:
+                    if use_cache and cache_task:
+                        # 518: rozpor se nepřepíše tiše — je to signál, že se
+                        # na model v téhle věci nedá spolehnout.
+                        conflict = _rt.cache_put(cache_task, prompt, str(raw))
+                        if conflict:
+                            logger.warning(f"[518] nekonzistentní odpověď ({cache_task}): "
+                                           f"{conflict['note']}")
                     return True, data, str(raw)
                 logger.debug(f"ask_json: chybí klíče {missing} (pokus {attempt})")
             if not retry or attempt == 2:
