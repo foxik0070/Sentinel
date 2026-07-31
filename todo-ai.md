@@ -120,10 +120,10 @@ Priorita: 🔴 vysoká (řeší dnešní bolest) · 🟡 střední · 🟢 nice-
 - [ ] 538 🟡 **Auto-tuning prahů** — z historie FP/FN navrhnout lepší prahy detektorů
 - [ ] 539 🟡 **Vysvětlitelnost** — u každé AI akce logovat, jaký kontext dostala (pro audit i ladění)
 - [ ] 540 🟢 **Denní přehled kvality AI** — kolik dotazů, jaká úspěšnost, kolik tokenů, kde to selhalo
-- [ ] 541 🟡 **Detekce zacyklení** — AI navrhuje stále totéž bez efektu → zastavit a eskalovat
+- [X] 541 🟡 **Detekce zacyklení** — AI navrhuje stále totéž bez efektu → zastavit a eskalovat
 - [ ] 542 🟢 **Sdílení znalostí mezi instancemi** — export/import naučené KB pro víc Sentinelů
-- [ ] 543 🟡 **Ochrana proti prompt injection z logů** — obsah logu je nedůvěryhodný vstup; oddělit ho od instrukcí a testovat evalem
-- [ ] 544 🟡 **Limit dopadu AI** — strop akcí za hodinu (AI nesmí spustit lavinu remediací)
+- [X] 543 🟡 **Ochrana proti prompt injection z logů** — obsah logu je nedůvěryhodný vstup; oddělit ho od instrukcí a testovat evalem
+- [X] 544 🟡 **Limit dopadu AI** — strop akcí za hodinu (AI nesmí spustit lavinu remediací)
 - [X] 545 🔴 **Audit stopa AI rozhodnutí** — co model dostal, co vrátil, co se z toho vykonalo — dohledatelné zpětně
 
 ---
