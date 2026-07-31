@@ -1260,10 +1260,14 @@ class ChatService(threading.Thread):
                             # zkusilo a nezabralo. Holé „aktivní 26h → HIGH"
                             # tomu, kdo problém přebírá, nepomůže.
                             try:
-                                from . import escalation
+                                from . import escalation, ai_profiles
+                                _prof = ai_profiles.for_task('summarize')
                                 msg = escalation.build(
                                     state, issue, age_hours, target_sev,
-                                    ask_ai=lambda p: self.execute_ollama(p, num_ctx=1024, max_tokens=150))
+                                    ask_ai=lambda p: self.execute_ollama(
+                                        p, num_ctx=_prof['num_ctx'],
+                                        max_tokens=_prof['max_tokens'],
+                                        temperature=_prof['temperature']))
                             except Exception as _ee:
                                 logger.error(f"[escalation] kontext selhal, posílám holou zprávu: {_ee}")
                                 msg = (
