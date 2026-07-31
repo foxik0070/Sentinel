@@ -66,7 +66,7 @@ Priorita: 🔴 vysoká (řeší dnešní bolest) · 🟡 střední · 🟢 nice-
 - [X] 490 🔴 **Návrh pravidla do allowlistu** — když AI opakovaně navrhuje stejný bezpečný příkaz, nabídnout jeho přidání (s diffem sudoers dopadu)
 - [ ] 491 🟡 **Odhad rizika v kontextu** — riziko `systemctl restart` závisí na tom, co ta služba dělá; AI zohlední kritičnost hosta
 - [ ] 492 🟡 **Dry-run diff** — u příkazů, které to umí (`apt -s`, `mount --fake`), ukázat, co by se stalo, ještě před schválením
-- [ ] 493 🔴 **Učení z ručních zásahů** — když admin problém vyřeší přes SSH sám, AI z historie příkazů odvodí postup a nabídne ho příště
+- [X] 493 🔴 **Učení z ručních zásahů** — když admin problém vyřeší přes SSH sám, AI z historie příkazů odvodí postup a nabídne ho příště
 - [ ] 494 🟡 **Runbook generátor z incidentu** — z vyřešeného incidentu vygenerovat runbook a navázat na typ issue (tabulka `runbooks` existuje)
 - [ ] 495 🟡 **Odhad doby řešení** — na základě historie podobných issues predikovat, jak dlouho to zabere
 - [ ] 496 🟡 **Návrh preventivního opatření** — po vyřešení: co udělat, aby se to nestalo znovu (cron, logrotate, alert, kvóta)
@@ -108,7 +108,7 @@ Priorita: 🔴 vysoká (řeší dnešní bolest) · 🟡 střední · 🟢 nice-
 - [X] 526 🔴 **Palec nahoru/dolů u AI odpovědi** — sbírat hodnocení a ukládat s kontextem; bez zpětné vazby se kvalita neměří
 - [X] 527 🔴 **Učení z odmítnutých návrhů** — když admin autofix zamítne, zaznamenat proč a nenabízet totéž znovu
 - [ ] 528 🟡 **Sledování úspěšnosti návrhů** — poměr „návrh → provedeno → problém zmizel" per typ issue
-- [ ] 529 🔴 **Eval suite z reálných incidentů** — generovat testy z vyřešených incidentů, ne jen 6 ručních (434)
+- [X] 529 🔴 **Eval suite z reálných incidentů** — generovat testy z vyřešených incidentů, ne jen 6 ručních (434)
 - [ ] 530 🟡 **Regresní brána při změně modelu** — nedovolit přepnutí modelu, pokud skóre klesne pod baseline (dnes 5/6)
 - [ ] 531 🟡 **A/B porovnání modelů** — pustit stejný dotaz přes 2 modely a porovnat (benchmark UI už umí měřit rychlost, chybí kvalita)
 - [ ] 532 🟡 **Kalibrace confidence** — porovnat deklarovanou jistotu (429) se skutečnou úspěšností a korigovat

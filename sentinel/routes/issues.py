@@ -1139,6 +1139,42 @@ def create_blueprint(service):
                             "raw": (raw or '')[:400]}), 502
         return jsonify({"chain": chain, "changes": changes[:5]})
 
+    @bp.route('/api/analytics/playbooks', methods=['GET'])
+    @requires_auth
+    def api_playbooks():
+        """493: Postupy odvozené z ručních zásahů, po kterých problém zmizel.
+
+        Návrhy pro člověka — nic se nespouští samo.
+        """
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        from .. import playbooks
+        history = state.get_issue_history_rows(days=int_param('days', 90, 1, 365))
+        try:
+            ssh_log = state.get_ssh_execute_log(limit=1000)
+        except Exception:
+            ssh_log = []
+        books = playbooks.derive(
+            history, ssh_log=ssh_log, actions=state.list_actions(limit=500),
+            min_evidence=int_param('min_evidence', playbooks.MIN_EVIDENCE, 1, 20))
+        return jsonify({"playbooks": books, "count": len(books),
+                        "analyzed_issues": len(history)})
+
+    @bp.route('/api/ai/evals/from_incidents', methods=['GET'])
+    @requires_auth
+    def api_evals_from_incidents():
+        """529: Testy vygenerované z incidentů s ověřenou opravou."""
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        from .. import ai_evals
+        cases = ai_evals.generate_from_incidents(
+            state.get_fix_attempts(limit=1000),
+            state.get_issue_history_rows(days=int_param('days', 90, 1, 365)))
+        return jsonify({"cases": cases, "count": len(cases),
+                        "note": ("Vzniká jen z incidentů s ověřenou opravou (486). "
+                                 "Bez nich nevznikne nic — test bez známé správné "
+                                 "odpovědi neměří kvalitu.")})
+
     @bp.route('/api/analytics/degradation', methods=['GET'])
     @requires_auth
     def api_degradation():
