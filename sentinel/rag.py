@@ -16,6 +16,33 @@ import collections
 from . import config
 from . import utils
 
+# 510: Nad touhle kosinovou vzdáleností chunk s dotazem nesouvisí a do
+# kontextu nepatří. 0 = shodné, 1 = kolmé, 2 = opačné. Hodnota 0.6 je
+# záměrně mírná — spíš pustit hraniční chunk než zahodit užitečný;
+# smyslem je odfiltrovat zjevné nesmysly, ne dolaďovat relevanci.
+RAG_MAX_DISTANCE = float(getattr(config, 'RAG_MAX_DISTANCE', 0.6) or 0.6)
+
+
+def filter_by_distance(result, max_distance):
+    """Vytáhne z ChromaDB odpovědi jen dost blízké dokumenty.
+
+    Vrací (dokumenty, vzdálenosti). `vzdálenosti` je None, když je odpověď
+    prázdná nebo neobsahuje vzdálenosti — volající pak nemá co filtrovat
+    a musí se zachovat jako dřív (jinak by tichá změna formátu odpovědi
+    znamenala, že RAG přestane vracet cokoli).
+    """
+    if not result:
+        return [], None
+    docs_all = (result.get('documents') or [[]])[0] or []
+    dists_all = (result.get('distances') or [None])[0]
+    if not docs_all:
+        return [], None
+    if not dists_all or len(dists_all) != len(docs_all):
+        return list(docs_all), None          # bez vzdáleností nefiltrujeme
+    keep = [d for d, dist in zip(docs_all, dists_all) if dist is not None
+            and dist <= max_distance]
+    return keep, list(dists_all)
+
 
 class HailoEmbedder:
     """
@@ -456,6 +483,16 @@ class RAGEngine:
             scored.append((score, chunk))
 
         scored.sort(key=lambda x: x[0], reverse=True)
+
+        # 510: filtr relevance musí platit i tady. Nenulové skóre samo nic
+        # neznamená — česká předložka („na", „s") se trefí skoro do všeho,
+        # takže i úplně nesouvisející dotaz dostal odpověď. Vyžadujeme, aby
+        # se v chunku objevil aspoň jeden VÝZNAMOVÝ výraz z dotazu.
+        significant = [t for t in q_terms if len(t) >= 4]
+        if significant:
+            scored = [(s, c) for s, c in scored
+                      if any(t in c.lower() for t in significant)]
+
         results = [x[1] for x in scored[:limit]]
 
         if results: return "\n\n".join(results)
@@ -475,22 +512,44 @@ class RAGEngine:
             "rag_chunks_loaded": len(self.kb_chunks)
         }
 
-    def search(self, query, n_results=3):
+    def search(self, query, n_results=3, max_distance=None):
+        """510: Vrátí jen chunky, které s dotazem opravdu souvisí.
+
+        Dřív se vracelo top-N vždy — i když nejbližší chunk s dotazem neměl
+        nic společného. Model to pak bral jako kontext a nechal se zmást.
+        Radši prázdno než nesouvisející kontext: bez něj model řekne „nevím",
+        s ním si vymyslí odpověď opřenou o cizí text.
+
+        Kolekce používá kosinovou vzdálenost (0 = shodné, 1 = nesouvisí).
+        """
         if not self.is_ready:
             return self._text_fallback(query, n_results)
 
+        limit = RAG_MAX_DISTANCE if max_distance is None else max_distance
         if self.client and self.collection:
             try:
                 emb = self._get_embedding(query)
-                
+
                 if emb:
                     with self.db_lock:
-                        res = self.collection.query(query_embeddings=[emb], n_results=n_results)
-                        if res and res['documents'] and res['documents'][0]:
-                            return "\n\n".join(res['documents'][0])
+                        res = self.collection.query(
+                            query_embeddings=[emb], n_results=n_results,
+                            include=['documents', 'distances'])
+                        docs, dists = filter_by_distance(res, limit)
+                        if docs:
+                            self.stats['rag_filtered'] = self.stats.get('rag_filtered', 0) + \
+                                (len((res or {}).get('documents', [[]])[0] or []) - len(docs))
+                            return "\n\n".join(docs)
+                        if dists is not None:
+                            # Něco se našlo, ale nic dost blízkého — mlčet je
+                            # správná odpověď, ne sáhnout po fallbacku.
+                            utils.log_message(
+                                f"RAG: zahozeno vše, nejbližší vzdálenost "
+                                f"{min(dists):.2f} > práh {limit}")
+                            return ""
             except Exception as e:
                 utils.log_message(f"RAG Vector Search failed: {e}")
-        
+
         return self._text_fallback(query, n_results)
 
 rag_system = RAGEngine()
