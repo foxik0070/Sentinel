@@ -956,6 +956,116 @@ Pokud `auto_severity_enabled: true`:
 
 ---
 
+### 8.14 AI vrstva 2026.07 — jak Sentinel přemýšlí
+
+Od verze 2026.07.001 tvoří AI ucelenou smyčku: **zjisti data → navrhni → ověř výsledek → uč se**.
+Následující zásady platí napříč celou vrstvou a jsou důvodem, proč je bezpečné dát AI přístup
+k produkci.
+
+#### Základní pravidlo: model negeneruje příkazy
+
+Model **nikdy nepíše shell a nerozhoduje o oprávnění**. Vybírá pouze ID z pevných katalogů:
+
+| Katalog | Modul | Obsah |
+|---|---|---|
+| Diagnostika | `diagnostics.py` | 16 read-only příkazů (`df -h`, `journalctl -p err`, …) |
+| Remediace | `remediation.py` | Žebříky zásahů per kategorie problému |
+
+Cokoli mimo katalog se zahodí. Tím odpadá injection i „kreativní" destruktivní příkaz —
+i kdyby model halucinoval nebo mu někdo podstrčil instrukci, spustit se dá jen položka z katalogu.
+
+#### Bezpečnost — vrstvy, ne jediná pojistka
+
+1. **Prompt injection** (`ai_guard.py`) — obsah logu je nedůvěryhodný vstup. Kdokoli, kdo umí
+   zapsat řádek do sledovaného logu, může zkusit modelu podstrčit pokyn. Cizí text jde do promptu
+   ohraničený a označený jako DATA; injection fráze se **označí, nemažou** (mazáním bychom zahodili
+   obsah skutečné chyby a zakryli, že se někdo pokusil).
+2. **Strop zásahů** — max. 10 zásahů AI za klouzavou hodinu. Chyba v detekci nesmí rozjet lavinu.
+3. **Detekce zacyklení** — opakovaný neúspěšný zásah není vytrvalost; počítají se selhání
+   od posledního úspěchu.
+4. **Detekce halucinací** (`ai_verify.py`) — ověří, že stroje/služby v odpovědi existují.
+   Záměrně opatrné: hlásí „tohle neznám, ověř si to", ne „lež". Planý poplach je horší než
+   přehlédnutá halucinace, protože podkope důvěru ve varování.
+5. **Audit stopa** (`ai_audit`) — co model dostal, vrátil a co se z toho vykonalo, **i u nevykonaných
+   návrhů**. Právě to je dohledatelnost.
+
+> **Past, kterou je nutné znát:** skóre `safety.py` samo o sobě NIKDY nestačí jako podmínka
+> pro bezobslužný běh. `rm -rf /var` dostane 25 bodů (pod prahem REVIEW), `systemctl restart nginx`
+> dokonce 0. Klasifikátor hodnotí *tvar* příkazu, ne oprávnění. Proto se u návrhů do allowlistu
+> (490) a povýšení na `auto_execute` (505) vyžaduje druhá nezávislá podmínka — read-only test
+> nebo denylist nástrojů.
+
+#### Smyčka: diagnostika → remediace → ověření → učení
+
+```
+issue
+  │
+  ├─ 462 diagnostics.py ....... AI vybere ID z katalogu, kroky se spustí,
+  │                             výstupy se vrátí modelu k vyhodnocení
+  ├─ 488 remediation.py ....... žebřík: pozorování → reload → restart → reboot
+  │                             (vyšší stupeň až po OVĚŘENÉM neúspěchu)
+  ├─ 486 fix_verify.py ........ po ~15 min: vrátil se problém?
+  │                             verdikt DETERMINISTICKÝ (porovnání časů), ne AI
+  ├─ 527 ................... co nezabralo → zapsáno jako odmítnuté
+  │                             (autofix to příště označí)
+  └─ 505 policy.py ............ co 10× zabralo bez selhání → návrh na auto_execute
+```
+
+Klíčové rozhodnutí: **verdikt „zabralo to?" počítá kód, ne model.** U otázky „vrátil se problém"
+je časové razítko spolehlivější než jazykový model. Pravidlo: `last_seen > applied_at` ⇒ nezabralo.
+
+#### Detekce pod prahem
+
+Klasický práh je binární — buď hodnota přeteče, nebo ne. Tyhle moduly hledají problém tam,
+kde jednotlivá hodnota práh nepřekročí:
+
+| Modul | Co najde |
+|---|---|
+| `trend_detect.py` | Pomalý růst (regrese + r²) a metriky, které **přestaly chodit** |
+| `baseline.py` | Odchylku od normálu *tohoto* stroje, sezónnost, rozprostřený brute force |
+| `alert_quality.py` | Alerty, které se opakovaně řeší samy (návrh **zdržení**, ne vypnutí) |
+| `unmatched.py` | Řádky vypadající jako problém, které nikdo nezachytil |
+| `incident_analysis.py` | Společný jmenovatel, kaskády, cross-host vzorce |
+
+> Ticho po výpadku sběru vypadá stejně jako ticho po vyřešení problému. Bez detekce
+> chybějícího signálu (468) je nula alertů nejednoznačná.
+
+#### Co je deterministické a co dělá model
+
+| Otázka | Kdo odpovídá |
+|---|---|
+| Souvisí spolu tyhle alerty? | **Kód** (počty, časy) |
+| Zabral zásah? | **Kód** (porovnání časových razítek) |
+| Je tenhle alert falešný poplach? | **Kód** (statistika z historie) |
+| Roste ta metrika? | **Kód** (regrese + r²) |
+| *Proč* to spolu souvisí? | Model |
+| Co zkusit dál? | Model (výběr z katalogu) |
+| Jak to vysvětlit člověku? | Model |
+
+Model dostane spočítaná fakta jako podklad. Nikde nerozhoduje o tom, jestli vztah existuje —
+jen ho popisuje.
+
+#### Provozní poznámky
+
+- **Hailo NPU shodí jakýkoli `\n` v promptu** (HTTP 500, všechny endpointy). `execute_ollama`
+  zalomení pro NPU odstraňuje, takže služba tím netrpí — ale při ladění přes `curl` je nutné
+  je odstranit také, jinak se honíte za přeludem.
+- **`qwen2.5-coder:1.5b` píše špatně česky** (míchá jazyky). Na strukturu a JSON je vhodný,
+  na text pro lidi je lepší CPU `llama3.2`.
+- **Malé modely vracejí ID ve formátu z promptu** — `id="disk_full"` nebo pořadové číslo místo
+  ID. Každý parser to musí normalizovat.
+- Cache odpovědí (525) šetří desítky sekund na dotaz; zapíná se jen tam, kde volající předá
+  `task`, aby se nesdílely nesouvisející dotazy.
+
+#### Co se projeví až po čase
+
+Moduly `playbooks.py` (493), generování evalů z incidentů (529) a návrhy na `auto_execute` (505)
+staví na provozních datech — ověřených opravách a ručních zásazích. **Po nasazení vracejí prázdno**
+a naplní se během několika týdnů provozu. Není to chyba; test bez známé správné odpovědi by měřil
+jen mnohomluvnost modelu.
+
+---
+
 ## 9. Telemetrie a metriky
 
 ### 9.1 Ukládání telemetrie
