@@ -85,9 +85,21 @@ def load_plugins():
 def dispatch(file_path: str, lines: list):
     """Dispatches lines to all plugins matching the file pattern."""
     fname = os.path.basename(file_path)
+    handled = False
     for regex, plugin in active_plugins:
         if regex.match(fname):
+            handled = True
             try:
                 plugin.process(lines, file_path)
             except Exception as e:
                 utils.log_message(f"[!] Runtime error in plugin {plugin.name}: {e}")
+
+    # 466: soubor, který nesleduje žádný plugin — chybějící alert není vidět,
+    # takže si aspoň odložíme vzorek řádků, co vypadají jako problém.
+    # Nesmí to shodit ani zpomalit watcher, proto vlastní try a levný test.
+    if not handled:
+        try:
+            from . import unmatched
+            unmatched.record(file_path, lines)
+        except Exception as e:
+            utils.log_message(f"[466] vzorkování nezachycených řádků selhalo: {e}")
