@@ -11,6 +11,24 @@ Priorita: 🔴 vysoká (řeší dnešní bolest) · 🟡 střední · 🟢 nice-
 
 ---
 
+## Stav k 2026-07-31 (v2026.07.001)
+
+**Hotovo 66 ze 100, včetně všech 19 🔴 položek.** 938 testů, 21 nových modulů.
+
+Zbývá 34 (🟡/🟢). Většina čeká na něco mimo tenhle repo nebo na provozní data:
+
+| Skupina | Položky | Blokuje |
+|---|---|---|
+| Vyžaduje SSH/externí API | 452, 478, 483, 484, 501 | systemd závislosti, PBS API, SMART z agentů, Ansible |
+| Vyžaduje topologii | 451, 457, 458, 460, 464, 504 | CDP/LLDP data, vizualizace v UI |
+| Čeká na provozní data | 528, 530–540 | `fix_attempts`/`ai_feedback` se teprve plní |
+| Zbytek | 463, 472, 477, 479, 482, 485, 494, 496, 520, 524, 531, 534, 542 | — |
+
+**Pozn.:** položky „čeká na provozní data" nemá smysl psát dřív, než bude co měřit —
+jinak by se ladily proti prázdné množině.
+
+---
+
 ## A. Root cause & souvislosti (446–465)
 
 - [X] 446 🔴 **Incident grouping napříč hosty** — HOTOVO: analytics.group_incidents + GET /api/incidents — issues ze stejného časového okna (±2 min) na různých hostech sloučit do jednoho "incidentu" s vlastním ID; AI dostane celou skupinu místo izolovaných alertů

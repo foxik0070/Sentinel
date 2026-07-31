@@ -1,5 +1,70 @@
 # Historie změn
 
+## [2026.07.001] - 2026-07-31
+
+**Souhrn:** Kompletní AI vrstva — 66 ze 100 položek roadmapy `todo-ai.md` včetně **všech 19 prioritních**, 21 nových modulů, +5331 řádků. 938 testů OK (bylo 317). Těžiště: AI si sama dojde pro data, ověřuje si výsledek a učí se z něj — a nikde negeneruje shell.
+
+### Princip, který drží celou vrstvu
+Model **nikdy nerozhoduje o oprávnění a negeneruje příkazy** — vybírá ID z pevných katalogů (462, 488) a statistiku počítá SQL. Vše, co mění stav nebo rozšiřuje oprávnění, je návrh pro člověka, ne automatika.
+
+### Bezpečnost AI
+- **543** — Ochrana proti prompt injection z logů (`ai_guard.py`). Obsah logu je nedůvěryhodný vstup: kdokoli, kdo umí zapsat řádek do sledovaného logu, může zkusit podstrčit instrukci. Tři vrstvy: oddělení (cizí text jako DATA s výslovnou poznámkou), zneškodnění (injection fráze se **označí**, nemažou — mazáním bychom zahodili obsah chyby a zakryli pokus), nedůvěra k výstupu. Ověřeno útokem proti llama3.2 — neprošel.
+- **544** — Strop zásahů AI za hodinu (klouzavé okno, ne kalendářní).
+- **541** — Detekce zacyklení: počítají se jen selhání **od posledního úspěchu**.
+- **516** — Detekce halucinací (`ai_verify.py`): ověří, že stroje/služby v odpovědi existují. Záměrně opatrné — hlásí „tohle neznám", ne „lež".
+- **545** — Audit stopa AI rozhodnutí (tabulka `ai_audit`), i u nevykonaných návrhů.
+- **487/490/505** — Vysvětlení bloku s **povolenou** alternativou (z allowlistu, ne od modelu); návrh pravidla do allowlistu; povýšení na `auto_execute` podle track recordu. **Skóre klasifikátoru samo NIKDY nestačí** — `rm -rf /var` má 25, `systemctl restart nginx` 0; nutná druhá podmínka (read-only / denylist nástrojů).
+
+### Diagnostika a remediace
+- **462** — Diagnostický plán (`diagnostics.py`): pevný katalog 16 read-only příkazů, AI vybírá jen ID. Spustí a vyhodnotí reálné výstupy.
+- **486** — Ověření, že oprava fungovala (`fix_verify.py`): verdikt **deterministický** (porovnání časů), ne AI. Výsledek se propisuje do 527 → systém se učí z reálných výsledků.
+- **488** — Postupná remediace (`remediation.py`): pozorování → reload → restart → reboot. Vyšší stupeň až po **ověřeném** neúspěchu; nedostupný stupeň žebřík zastaví (jinak by chybějící parametr propadl na `reboot`).
+- **489/491/492/495/497/498/500/502/503** — (`remediation_plan.py`) rollback plán, riziko podle **významu cíle**, dry-run náhled, odhad doby, batch remediace, maintenance okno, rozpoznání fyzického zásahu, fronta podle dopadu × jistoty, protichůdné akce.
+- **499** — Eskalace s kontextem: hlavně **co už se zkusilo a nezabralo**.
+
+### Detekce
+- **467/468** (`trend_detect.py`) — tichá degradace (regrese + r²; směrnice sama nestačí) a chybějící signál (očekávaný odstup z historie **každé metriky zvlášť**).
+- **469/470/473/475/476/481** (`baseline.py`) — profil normálního dne per host, sezónnost, audit auth logu (rozprostřený brute force, user spray, úspěch po sérii selhání), příčina flappingu, rozpojené metriky, nesledované stroje.
+- **480** (`alert_quality.py`) — falešné poplachy z historie. Nikdy se nenavrhne to, co řešil člověk. Návrh je **zdržení, ne vypnutí**.
+- **466** (`unmatched.py`) — vzorkování řádků, které nikdo nezachytil; běží nad každým řádkem logu, tedy jen test podřetězcem a ohraničená paměť.
+
+### Korelace a analýza
+- **446/447/450** — seskupení incidentů, kauzální řetěz jako **strom** místo odstavce, korelace se změnami (časová souvislost ≠ důkaz příčiny).
+- **453/454/455/456/459/461/465** (`incident_analysis.py`) — společný jmenovatel, časová osa ze všech zdrojů, diff proti minulému výskytu, cross-host vzorec, kaskády (jedna notifikace místo dvaceti), hypotézy s pravděpodobností, zpětná korelace při vyřešení.
+- **449** — telemetrický kontext incidentu.
+
+### AI runtime a RAG
+- **506/507** — brace-balanced JSON parser + `AIResult` s příznakem chyby.
+- **508/509/510/511/512/513/514/515** — profily kontextu podle úlohy, komprese opakujících se řádků (**98 % úspora**), relevance filtr (i ve fallbacku), hybridní hledání, citace zdroje, deduplikace a expirace KB, chunking podle sekcí, reranking.
+- **517/518/519/521/522/523/525** (`ai_runtime.py`) — odmítnutí bez dat, detekce nekonzistence, jednotný jazyk, few-shot z ověřených incidentů, routing podle složitosti, rozpočet tokenů, cache odpovědí.
+- **526/527** — zpětná vazba (👍/👎) a paměť odmítnutých návrhů (shoda přes **normalizovaný** otisk).
+- **493/529** — postupy z ručních zásahů; evaly z incidentů s ověřenou opravou.
+- **471/474** (`foresight.py`) — kapacita s kontextem, týdenní výhled.
+
+### Opravené chyby
+- **Kruhový import okrádal fasádu `state` o ~60 funkcí** (119 jmen místo 180). `config.load_config()` běží při importu a tahal si fasádu `state`; při importu `state_agents` jako prvního se `from .state_agents import *` provedlo nad polovičním modulem. Selhávalo až za běhu a jen při některém pořadí. Regrese hlídána v 6 pořadích importu.
+- Chybějící parametr propadal žebříkem remediace až na `reboot`.
+- `Current_Pending_Sector` (název SMART atributu) neprošel regexem — `\b` neplatí za podtržítkem. Týkalo se detekce umírajícího disku.
+- `systemctl restart mariadb` vycházel jako „medium" — restart DB je výpadek všeho, co na ní stojí.
+- Přeludná sezónnost: dimenzi lze posuzovat jen tehdy, když ji data pokrývají; a počítat se musí z historie, ne z aktivních issue.
+- Důkazy pro postupy (493) se počítaly jako dvojice incident×příkaz → kvadratický růst.
+- Kolize endpointu `/api/issues/<k>/timeline` (Flask spadl při startu; zachytily testy).
+
+### Nálezy v produkci
+- `audit_detector` hlásí „Pending security updates" na **25 z 30 hostů** — jeden systémový problém, ne 25 lokálních (celkem 6 skupin k hromadnému řešení).
+- `agent_services_monitor`/docs vygeneroval **1032 alertů, medián trvání 1,2 min**, vždy vyřešeno samo — z 2799 záznamů historie je 1895 alertů utišitelných.
+- 6 problémů vyžaduje fyzický zásah (3 stroje nedostupné přes ICMP).
+- Uživatel `sentinel` **není** ve skupině `systemd-journal` → 2 z 16 diagnostických příkazů vracejí prázdno (řeší se v Ansible).
+
+### Chování malých modelů (ověřeno laděním)
+- Vracejí ID ve formátu z promptu — `id="host_unreachable"` nebo pořadové číslo místo ID. Vždy normalizovat.
+- Verbose pole usekne JSON na `max_tokens`.
+- **Hailo NPU shodí JAKÝKOLI `\n` v promptu** (HTTP 500, všechny endpointy). `execute_ollama` to už ošetřuje; při ladění přes curl je nutné zalomení odstranit, jinak se honíš za přeludem.
+- `qwen2.5-coder:1.5b` píše špatně česky — na českou prózu je vhodnější CPU `llama3.2`.
+
+### Zbývá
+34 položek `todo-ai.md`, převážně 🟡/🟢. Většina potřebuje zdroje mimo tenhle repo (systemd závislosti přes SSH, SMART z agentů, PBS API, Ansible, topologie CDP/LLDP) nebo provozní data, která se teprve sbírají (měření kvality 528–540).
+
 ## [2026.06.031] - 2026-07-25
 
 **Souhrn:** Velký červencový milestone — least-privilege SSH remediace, dokončení AI sekce (426–435), monitoring (DNS/SLO/webhook log), CLI klient, řada UI/UX vylepšení a issue lifecycle. 192 testů OK.
