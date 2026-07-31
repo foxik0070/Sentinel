@@ -203,3 +203,101 @@ class TestSuggestAllowlistRules(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
+
+
+def fix(cmd, status='worked', n=1):
+    return [{'command': cmd, 'status': status} for _ in range(n)]
+
+
+class TestSuggestAutoExecute(unittest.TestCase):
+    """505: povýšení na bezobslužný běh podle prokázané úspěšnosti (486).
+
+    Poslední místo, kde do smyčky vstupuje člověk — podmínky jsou schválně
+    přísné a jakákoli pochybnost musí návrh zabít.
+    """
+
+    RULES = [
+        {'id': 1, 'pattern': 'systemctl restart nginx', 'description': 'restart',
+         'auto_execute': False},
+        {'id': 2, 'pattern': 'df -h', 'description': 'disk', 'auto_execute': True},
+    ]
+
+    def test_proven_command_suggested(self):
+        s = policy.suggest_auto_execute(fix('systemctl restart nginx', n=12),
+                                        self.RULES, safety)
+        self.assertEqual(len(s), 1)
+        self.assertEqual(s[0]['successes'], 12)
+        self.assertEqual(s[0]['rule_id'], 1)
+
+    def test_below_threshold_not_suggested(self):
+        n = policy.MIN_SUCCESSES_FOR_AUTO - 1
+        self.assertEqual(
+            policy.suggest_auto_execute(fix('systemctl restart nginx', n=n),
+                                        self.RULES, safety), [])
+
+    def test_single_failure_kills_trust(self):
+        """Bezobslužný zásah, který občas nefunguje, je horší než žádný."""
+        attempts = fix('systemctl restart nginx', n=50) + fix('systemctl restart nginx', 'failed')
+        self.assertEqual(policy.suggest_auto_execute(attempts, self.RULES, safety), [])
+
+    def test_uncertain_result_blocks(self):
+        attempts = fix('systemctl restart nginx', n=50) + fix('systemctl restart nginx', 'uncertain')
+        self.assertEqual(policy.suggest_auto_execute(attempts, self.RULES, safety), [])
+
+    def test_pending_result_blocks(self):
+        attempts = fix('systemctl restart nginx', n=50) + fix('systemctl restart nginx', 'pending')
+        self.assertEqual(policy.suggest_auto_execute(attempts, self.RULES, safety), [])
+
+    def test_command_not_in_allowlist_not_suggested(self):
+        """Bez schváleného pravidla není co povyšovat."""
+        self.assertEqual(
+            policy.suggest_auto_execute(fix('systemctl restart neco-jineho', n=50),
+                                        self.RULES, safety), [])
+
+    def test_already_auto_not_suggested(self):
+        self.assertEqual(policy.suggest_auto_execute(fix('df -h', n=50), self.RULES, safety), [])
+
+    def test_risky_command_never_promoted(self):
+        rules = [{'id': 9, 'pattern': 'rm -rf /var/log', 'auto_execute': False}]
+        self.assertEqual(policy.suggest_auto_execute(fix('rm -rf /var/log', n=99),
+                                                     rules, safety), [])
+
+    def test_impact_states_evidence(self):
+        s = policy.suggest_auto_execute(fix('systemctl restart nginx', n=11),
+                                        self.RULES, safety)
+        self.assertIn('11', s[0]['impact'])
+        self.assertIn('0', s[0]['impact'])
+
+    def test_sorted_by_successes(self):
+        rules = self.RULES + [{'id': 3, 'pattern': 'systemctl restart sshd',
+                               'auto_execute': False}]
+        attempts = fix('systemctl restart nginx', n=11) + fix('systemctl restart sshd', n=30)
+        s = policy.suggest_auto_execute(attempts, rules, safety)
+        self.assertEqual(s[0]['command'], 'systemctl restart sshd')
+
+    def test_empty_and_malformed(self):
+        for a in (None, [], [None], [{}], [{'command': None}]):
+            self.assertEqual(policy.suggest_auto_execute(a, self.RULES, safety), [])
+
+    def test_destructive_tools_never_promoted_regardless_of_record(self):
+        """Skóre nestačí: `rm -rf /var/log` má jen 25, tedy pod prahem REVIEW.
+        Denylist nástrojů to musí zastavit i po 99 úspěších."""
+        for cmd in ('rm -rf /var/log', 'dd if=/dev/zero of=/tmp/x', 'chmod 777 /srv',
+                    'reboot', 'apt-get -y upgrade', 'iptables -F', 'mount /dev/sdb1 /mnt',
+                    'truncate -s 0 /var/log/syslog', 'sysctl -w vm.swappiness=10'):
+            rules = [{'id': 9, 'pattern': cmd, 'auto_execute': False}]
+            self.assertEqual(policy.suggest_auto_execute(fix(cmd, n=99), rules, safety), [],
+                             f"povýšeno k bezobslužnému běhu: {cmd}")
+
+    def test_chained_command_never_promoted(self):
+        """Řetězení mění dopad na něco, co nikdo neposoudil."""
+        for cmd in ('systemctl restart nginx && curl x', 'df -h | sh',
+                    'systemctl restart nginx; rm -rf /'):
+            rules = [{'id': 9, 'pattern': cmd, 'auto_execute': False}]
+            self.assertEqual(policy.suggest_auto_execute(fix(cmd, n=99), rules, safety), [], cmd)
+
+    def test_legitimate_restart_still_promotable(self):
+        """Přitvrzení nesmí zabít smysl funkce."""
+        rules = [{'id': 1, 'pattern': 'systemctl restart nginx', 'auto_execute': False}]
+        self.assertTrue(policy.suggest_auto_execute(fix('systemctl restart nginx', n=12),
+                                                    rules, safety))

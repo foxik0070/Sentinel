@@ -170,6 +170,99 @@ def suggest_allowlist_rules(audit_entries: list, allowlist: list, safety,
     return sorted(out, key=lambda x: -x['times_suggested'])
 
 
+# 505: Kolik ověřených úspěchů musí příkaz mít, než ho nabídneme k povýšení
+# na auto_execute. Vysoko schválně — tohle je poslední místo, kde do smyčky
+# vstupuje člověk.
+MIN_SUCCESSES_FOR_AUTO = 10
+
+# Nástroje, které se nesmí spouštět bez člověka, ať mají jakékoli skóre
+# a jakkoli dlouhou historii úspěchů. Skóre samo nestačí: klasifikátor dá
+# `rm -rf /var/log` jen 25, tedy pod prahem REVIEW — a přesně tohle je
+# příkaz, u kterého má vždycky rozhodnout člověk.
+_NEVER_AUTOMATIC = {
+    'rm', 'rmdir', 'dd', 'mkfs', 'fdisk', 'parted', 'shred', 'wipefs',
+    'reboot', 'shutdown', 'halt', 'poweroff', 'init',
+    'chmod', 'chown', 'chgrp', 'truncate',
+    'userdel', 'usermod', 'passwd', 'visudo',
+    'iptables', 'nft', 'ufw', 'firewall-cmd',
+    'mount', 'umount', 'swapoff', 'sysctl',
+    'apt', 'apt-get', 'dpkg', 'yum', 'dnf', 'pip', 'npm',
+}
+
+
+def _is_never_automatic(command: str) -> bool:
+    """Patří příkaz mezi ty, co vždy vyžadují člověka?"""
+    cmd = str(command or '')
+    if any(ch in cmd for ch in ('>', '|', '&', ';', '`', '$(')):
+        return True                      # přesměrování a řetězení = neposouzený dopad
+    b = _binary(cmd)
+    return b.split('.')[0] in _NEVER_AUTOMATIC or b in _NEVER_AUTOMATIC
+
+
+def suggest_auto_execute(fix_attempts: list, allowlist: list, safety) -> list:
+    """505: Pravidla, která si zaslouží povýšení na bezobslužné spouštění.
+
+    Důkazem je track record z ověřování oprav (486), ne odhad modelu.
+
+    Podmínky jsou schválně přísné a AND-ované:
+      - příkaz UŽ je v allowlistu (někdo ho jednou posoudil)
+      - má aspoň MIN_SUCCESSES_FOR_AUTO ověřených úspěchů
+      - NIKDY neselhal; jediné selhání důvěru ruší, protože bezobslužný
+        zásah, který občas nefunguje, je horší než žádný
+      - není nad prahem rizika a nečeká na ověření
+
+    Vrací návrhy pro admina; nic se nepovyšuje samo.
+    """
+    stats: dict = {}
+    for a in fix_attempts or []:
+        cmd = (a or {}).get('command')
+        if not cmd:
+            continue
+        s = stats.setdefault(cmd, {"worked": 0, "failed": 0, "other": 0})
+        status = a.get('status')
+        if status == 'worked':
+            s['worked'] += 1
+        elif status == 'failed':
+            s['failed'] += 1
+        else:
+            s['other'] += 1
+
+    out = []
+    for cmd, s in stats.items():
+        if s['failed'] or s['worked'] < MIN_SUCCESSES_FOR_AUTO:
+            continue
+        if s['other']:
+            continue                     # nejasné výsledky = zatím nevíme
+        rule = _match_allowlist(cmd, allowlist)
+        if not rule:
+            continue                     # bez schváleného pravidla není co povyšovat
+        if rule.get('auto_execute'):
+            continue                     # už povýšeno
+        try:
+            score, reasons = safety.classify(cmd)
+        except Exception:
+            continue
+        # Tři nezávislé podmínky — každá sama o sobě nestačí:
+        #   skóre 0        … klasifikátor nenašel nic rizikového
+        #   ne v denylistu … nástroje, co vždy patří člověku
+        #   ne is_blocked  … pojistka, kdyby se prahy někdy změnily
+        if score > 0 or _is_never_automatic(cmd) or safety.is_blocked(cmd):
+            continue
+        out.append({
+            "command": cmd,
+            "rule_id": rule.get('id'),
+            "rule_pattern": rule.get('pattern'),
+            "successes": s['worked'],
+            "failures": s['failed'],
+            "risk_score": score,
+            "risk_reasons": reasons,
+            "impact": (f"Příkaz by se napříště spouštěl bez schválení. "
+                       f"Podklad: {s['worked']}× ověřeně vyřešil problém, "
+                       f"0× selhal."),
+        })
+    return sorted(out, key=lambda x: -x['successes'])
+
+
 def _extract_command(entry) -> str:
     """Vytáhne příkaz z auditního záznamu (odpověď modelu je JSON nebo text)."""
     if isinstance(entry, str):
