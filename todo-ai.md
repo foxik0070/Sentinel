@@ -39,19 +39,19 @@ Priorita: 🔴 vysoká (řeší dnešní bolest) · 🟡 střední · 🟢 nice-
 - [X] 466 🔴 **AI čte nezachycené logy** — periodicky nechat model projít vzorek řádků, které NEmatchnul žádný detektor, a navrhnout nové patterny (endpoint `/api/patterns/suggest` existuje, ale nemá volající — viz bug)
 - [X] 467 🔴 **Detekce tiché degradace** — pomalý růst latence/chyb, který nepřekročí práh, ale trend je jasný; AI hlásí dřív než threshold
 - [X] 468 🔴 **Chybějící signál** — alert na to, co PŘESTALO chodit (log se přestal plnit, metrika zmizela, cron nedoběhl) — dnes se detekuje jen přítomnost problému
-- [ ] 469 🟡 **Baseline profil hosta** — AI si drží popis "jak vypadá normální den" per host a hlásí odchylky od profilu, ne od σ
-- [ ] 470 🟡 **Sezónnost nad rámec 397** — kromě po-pá/víkend i denní doba, konec měsíce, backup okna
+- [X] 469 🟡 **Baseline profil hosta** — AI si drží popis "jak vypadá normální den" per host a hlásí odchylky od profilu, ne od σ
+- [X] 470 🟡 **Sezónnost nad rámec 397** — kromě po-pá/víkend i denní doba, konec měsíce, backup okna
 - [X] 471 🔴 **Prediktivní kapacita s AI kontextem** — k lineární regresi (`/api/predictions/capacity`) přidat vysvětlení, co růst způsobuje, a doporučení
 - [ ] 472 🟡 **Detekce konfiguračního driftu** — porovnat config/balíčky/kernel napříč podobnými hosty a hlásit odchylky
-- [ ] 473 🟡 **AI audit bezpečnostních logů** — vzory v auth.log/fail2ban, které jednotlivě neprojdou prahem (pomalý brute-force, distribuovaný sken)
+- [X] 473 🟡 **AI audit bezpečnostních logů** — vzory v auth.log/fail2ban, které jednotlivě neprojdou prahem (pomalý brute-force, distribuovaný sken)
 - [X] 474 🔴 **Proaktivní kontrola zdraví** — týdenní AI průchod stavem infrastruktury s otázkou „co se pravděpodobně pokazí příště"
-- [ ] 475 🟡 **Detekce flappingu s příčinou** — `/api/analytics/flapping` říká CO flapuje; AI má říct PROČ
-- [ ] 476 🟡 **Anomálie ve vztazích metrik** — CPU roste, ale requests ne; disk I/O bez růstu dat — porušení očekávaných korelací
+- [X] 475 🟡 **Detekce flappingu s příčinou** — `/api/analytics/flapping` říká CO flapuje; AI má říct PROČ
+- [X] 476 🟡 **Anomálie ve vztazích metrik** — CPU roste, ale requests ne; disk I/O bez růstu dat — porušení očekávaných korelací
 - [ ] 477 🟢 **Detekce zombie zdrojů** — služby/kontejnery/VM, které běží a nikdo je nepoužívá (žádný provoz, žádné logy)
 - [ ] 478 🟡 **Kontrola konzistence záloh** — AI ověří, že zálohy reálně běží a rostou (PBS), ne jen že job skončil OK
 - [ ] 479 🟡 **Certifikáty a expirace v kontextu** — kromě data expirace i kdo cert používá a co spadne, když vyprší
 - [X] 480 🔴 **Rozpoznání falešných poplachů** — AI označí alerty, které historicky vždy samy zmizely, a navrhne úpravu prahu/patternu místo notifikace
-- [ ] 481 🟡 **Detekce chybějícího monitoringu** — které hosty/služby nikdo nesleduje (běží, ale nemá agenta ani detektor)
+- [X] 481 🟡 **Detekce chybějícího monitoringu** — které hosty/služby nikdo nesleduje (běží, ale nemá agenta ani detektor)
 - [ ] 482 🟢 **Analýza logů po restartu** — po každém rebootu nechat AI porovnat, zda vše naběhlo jako minule
 - [ ] 483 🟡 **Detekce hardware degradace** — SMART, teploty, ECC chyby → trend a odhad zbývající životnosti (dnes je jen prahový alert)
 - [ ] 484 🟡 **Analýza dopadu aktualizací** — po apt upgrade porovnat chování před/po a hlásit regrese

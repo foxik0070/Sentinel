@@ -1139,6 +1139,44 @@ def create_blueprint(service):
                             "raw": (raw or '')[:400]}), 502
         return jsonify({"chain": chain, "changes": changes[:5]})
 
+    @bp.route('/api/analytics/baseline', methods=['GET'])
+    @requires_auth
+    def api_baseline():
+        """469/470/476/481: normál hosta, sezónnost, rozpojené metriky, tichá místa."""
+        from .. import baseline as bl
+        series = state.get_metric_series(hours=int_param('hours', 336, 1, 720))
+        issues = state.get_active_issues() or []
+        agents = state.get_all_agents() or []
+        # Hosty ze všech zdrojů — mimo ně o žádném stroji nevíme
+        known = {a.get('hostname') for a in agents if a.get('hostname')}
+        known |= {i.get('host') for i in issues if i.get('host')}
+        known |= {n.split('.')[1] for n in series if '.' in n}
+        tele_hosts = {n.split('.')[1] for n in series if '.' in n}
+        # Sezónnost se počítá z HISTORIE, ne z aktivních issue: ty jsou
+        # z definice čerstvé, takže by každý běh ukázal „špičku" v posledních
+        # dnech — vzorec, který o rozvrhu nevypovídá nic.
+        history = state.get_issue_history_rows(days=int_param('season_days', 90, 7, 365))
+        return jsonify({
+            "seasonality": bl.seasonal_profile(history),
+            "relation_anomalies": bl.relation_anomalies(series),
+            "missing_monitoring": bl.missing_monitoring(
+                sorted(h for h in known if h), agents, issues, tele_hosts),
+            "analyzed_metrics": len(series),
+        })
+
+    @bp.route('/api/hosts/<host>/profile', methods=['GET'])
+    @requires_auth
+    def api_host_profile(host):
+        """469: Jak u TOHOHLE stroje vypadá normální den.
+
+        Absolutní práh sedí jen na část strojů; profil z vlastní historie
+        pozná, že stroj běžně jede na 45 a 60 je u něj problém.
+        """
+        from .. import baseline as bl
+        series = state.get_metric_series(hours=int_param('hours', 336, 1, 720))
+        own = {k: v for k, v in series.items() if f'.{host}' in k or k.endswith(host)}
+        return jsonify({"profile": bl.build_host_profile(host, own)})
+
     @bp.route('/api/analytics/work_queue', methods=['GET'])
     @requires_auth
     def api_work_queue():
