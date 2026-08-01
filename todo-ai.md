@@ -48,7 +48,7 @@ jinak by se ladily proti prázdné množině.
 - [ ] 460 🟢 **Korelace s SLO** — spojit issue s dopadem na error budget (404) a podle toho řadit
 - [X] 461 🟡 **Hypotézy s pravděpodobností** — místo jedné odpovědi vrátit 2–3 hypotézy s odhadem jistoty a návrhem, čím je ověřit
 - [X] 462 🔴 **Diagnostický plán** — HOTOVO: diagnostics.py katalog + POST /api/issues/<k>/diagnose{,/run} — AI navrhne posloupnost read-only příkazů k potvrzení hypotézy; spustí se jedním kliknutím a výsledek se vrátí modelu
-- [ ] 463 🟡 **Iterativní vyšetřování** — smyčka hypotéza → diagnostika → vyhodnocení → další krok (max N kol, s rozpočtem tokenů)
+- [X] 463 🟡 **Iterativní vyšetřování** — smyčka hypotéza → diagnostika → vyhodnocení → další krok (max N kol, s rozpočtem tokenů)
 - [ ] 464 🟢 **Graf incidentu v UI** — vizualizace vztahů mezi issues (příčina/následek/duplicita)
 - [X] 465 🟡 **Zpětná korelace při vyřešení** — když issue zmizí, ověřit, zda zmizely i navázané, a potvrdit tím správnost hypotézy
 
@@ -85,9 +85,9 @@ jinak by se ladily proti prázdné množině.
 - [X] 491 🟡 **Odhad rizika v kontextu** — riziko `systemctl restart` závisí na tom, co ta služba dělá; AI zohlední kritičnost hosta
 - [X] 492 🟡 **Dry-run diff** — u příkazů, které to umí (`apt -s`, `mount --fake`), ukázat, co by se stalo, ještě před schválením
 - [X] 493 🔴 **Učení z ručních zásahů** — když admin problém vyřeší přes SSH sám, AI z historie příkazů odvodí postup a nabídne ho příště
-- [ ] 494 🟡 **Runbook generátor z incidentu** — z vyřešeného incidentu vygenerovat runbook a navázat na typ issue (tabulka `runbooks` existuje)
+- [X] 494 🟡 **Runbook generátor z incidentu** — z vyřešeného incidentu vygenerovat runbook a navázat na typ issue (tabulka `runbooks` existuje)
 - [X] 495 🟡 **Odhad doby řešení** — na základě historie podobných issues predikovat, jak dlouho to zabere
-- [ ] 496 🟡 **Návrh preventivního opatření** — po vyřešení: co udělat, aby se to nestalo znovu (cron, logrotate, alert, kvóta)
+- [X] 496 🟡 **Návrh preventivního opatření** — po vyřešení: co udělat, aby se to nestalo znovu (cron, logrotate, alert, kvóta)
 - [X] 497 🟢 **Batch remediace** — stejný problém na N hostech vyřešit jedním schváleným plánem místo N kliknutí
 - [X] 498 🟡 **Kontrola maintenance okna** — AI nenavrhne restart produkce v pracovní době, pokud problém není kritický
 - [X] 499 🔴 **Eskalace s kontextem** — když AI neví, sestavit shrnutí pro člověka: co zkusila, co vyloučila, co doporučuje ověřit
@@ -114,7 +114,7 @@ jinak by se ladily proti prázdné množině.
 - [X] 517 🟡 **Odmítnutí bez dat** — model má říct „nevím, chybí mi X" místo pravděpodobné smyšlenky (eval 434 to už částečně testuje)
 - [X] 518 🟡 **Konzistence napříč dotazy** — stejná otázka nemá dávat protichůdné odpovědi; cache + kontrola
 - [X] 519 🟡 **Jazyk odpovědi dle uživatele** — dnes prompty míchají češtinu a angličtinu podle místa v kódu
-- [ ] 520 🟡 **Prompt verzování** — prompty v `PROMPTS`/prompt_library verzovat a měřit dopad změny přes eval suite
+- [X] 520 🟡 **Prompt verzování** — prompty v `PROMPTS`/prompt_library verzovat a měřit dopad změny přes eval suite
 - [X] 521 🟢 **Few-shot z reálných incidentů** — do promptu přidat 2–3 vyřešené příklady ze stejné kategorie
 - [X] 522 🟡 **Routing podle složitosti** — triviální klasifikace na malý rychlý model, korelace na velký (fallback chain 426 rozšířit o volbu dle úlohy)
 - [X] 523 🟡 **Rozpočet tokenů per úloha** — limit a měření (435 sbírá data, chybí strop)
@@ -131,7 +131,7 @@ jinak by se ladily proti prázdné množině.
 - [ ] 531 🟡 **A/B porovnání modelů** — pustit stejný dotaz přes 2 modely a porovnat (benchmark UI už umí měřit rychlost, chybí kvalita)
 - [ ] 532 🟡 **Kalibrace confidence** — porovnat deklarovanou jistotu (429) se skutečnou úspěšností a korigovat
 - [ ] 533 🟡 **Detekce driftu kvality** — sledovat skóre evalů v čase a hlásit zhoršení
-- [ ] 534 🟢 **Anotace pro fine-tuning** — sbírat dvojice (incident → správné řešení) v exportovatelném formátu
+- [X] 534 🟢 **Anotace pro fine-tuning** — sbírat dvojice (incident → správné řešení) v exportovatelném formátu
 - [ ] 535 🟡 **Metrika falešných poplachů AI** — kolik AI-generovaných issues bylo označeno jako FP
 - [ ] 536 🟡 **Srovnání AI vs. člověk** — u incidentů řešených ručně porovnat, zda AI navrhla totéž
 - [ ] 537 🟢 **Kvalita per kategorie** — skóre zvlášť pro disk/síť/služby/bezpečnost, ať je vidět slabina
@@ -139,7 +139,7 @@ jinak by se ladily proti prázdné množině.
 - [ ] 539 🟡 **Vysvětlitelnost** — u každé AI akce logovat, jaký kontext dostala (pro audit i ladění)
 - [ ] 540 🟢 **Denní přehled kvality AI** — kolik dotazů, jaká úspěšnost, kolik tokenů, kde to selhalo
 - [X] 541 🟡 **Detekce zacyklení** — AI navrhuje stále totéž bez efektu → zastavit a eskalovat
-- [ ] 542 🟢 **Sdílení znalostí mezi instancemi** — export/import naučené KB pro víc Sentinelů
+- [X] 542 🟢 **Sdílení znalostí mezi instancemi** — export/import naučené KB pro víc Sentinelů
 - [X] 543 🟡 **Ochrana proti prompt injection z logů** — obsah logu je nedůvěryhodný vstup; oddělit ho od instrukcí a testovat evalem
 - [X] 544 🟡 **Limit dopadu AI** — strop akcí za hodinu (AI nesmí spustit lavinu remediací)
 - [X] 545 🔴 **Audit stopa AI rozhodnutí** — co model dostal, co vrátil, co se z toho vykonalo — dohledatelné zpětně
