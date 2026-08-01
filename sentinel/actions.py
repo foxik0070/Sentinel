@@ -258,22 +258,35 @@ def process_ai_proposal(context, ai_response):
     except Exception as e:
         utils.log_message(f"Error processing AI proposal: {e}")
 
-def _record_fix_attempt_for_action(action_id, command, mgmt_node):
+def _record_fix_attempt_for_action(action_id, command, mgmt_node, failed=False,
+                                   detail=''):
     """486: Zásah proběhl — nechat si ho ověřit.
 
-    Volá se jen po ÚSPĚŠNÉM reálném vykonání; dry-run ani selhaný příkaz
-    nemá smysl ověřovat, protože se na stroji nic nestalo. Bez problem_key
-    není co porovnávat (ruční příkaz mimo issue), takže se přeskočí.
+    Volá se po REÁLNÉM vykonání, ať dopadlo jakkoli. Rozlišuj:
+
+      - příkaz se vůbec nespustil (dry-run, blokace, SSH selhalo) → nezapisuje
+        se, na stroji se nic nestalo a není co ověřovat
+      - příkaz proběhl a vrátil nenulu → ZAPISUJE se rovnou jako `failed`.
+        Něco se stalo a už teď víme, že to nepomohlo — čekat 15 minut na
+        potvrzení nemá smysl. Zápis je navíc podklad pro detekci zacyklení
+        (541) a pro paměť odmítnutých návrhů (527), aby se tentýž nefunkční
+        příkaz nenabízel znovu.
+
+    Bez problem_key není co porovnávat (ruční příkaz mimo issue) → přeskočí se.
     """
     try:
         act = state.get_action(action_id) or {}
         key = act.get('problem_key')
         if not key:
             return
-        state.record_fix_attempt(
+        aid = state.record_fix_attempt(
             problem_key=key, command=command,
             host=act.get('node') or mgmt_node,
             applied_by=act.get('executed_by') or 'action')
+        if failed and aid:
+            state.close_fix_attempt(
+                aid, 'failed',
+                detail or 'Příkaz proběhl, ale skončil chybou — oprava nezabrala.')
     except Exception as e:
         utils.log_message(f"[486] Nelze zaznamenat pokus o opravu: {e}")
 
@@ -379,6 +392,9 @@ def run_ssh_command_real(cluster, command, action_id=None, timeout: int = 30, in
             if action_id is not None:
                 state.log_action_event(action_id, "failed",
                                        details={"mgmt_node": mgmt_node, "rc": result.returncode})
+                _record_fix_attempt_for_action(
+                    action_id, command, mgmt_node, failed=True,
+                    detail=f"Příkaz skončil s kódem {result.returncode} — oprava nezabrala.")
             return False, err
 
     except subprocess.TimeoutExpired:
