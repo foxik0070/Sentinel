@@ -365,7 +365,17 @@ def run_ssh_command_real(cluster, command, action_id=None, timeout: int = 30, in
                 _record_fix_attempt_for_action(action_id, command, mgmt_node)
             return True, out
         else:
-            err = f"STDERR: {result.stderr.strip()}"
+            # Nenulový návratový kód NEZNAMENÁ, že není co číst. `systemctl
+            # status` vrací 3 u neběžící jednotky, `grep` 1 když nic nenajde,
+            # `journalctl` nenulu u prázdného výsledku — a užitečný text je
+            # přitom ve STDOUT. Dřív se zahazoval a diagnostika vracela prázdno
+            # právě v okamžiku, kdy problém existoval.
+            parts = []
+            if result.stdout.strip():
+                parts.append(f"STDOUT: {result.stdout.strip()}")
+            if result.stderr.strip():
+                parts.append(f"STDERR: {result.stderr.strip()}")
+            err = "\n".join(parts) or f"(bez výstupu, návratový kód {result.returncode})"
             if action_id is not None:
                 state.log_action_event(action_id, "failed",
                                        details={"mgmt_node": mgmt_node, "rc": result.returncode})
