@@ -120,6 +120,55 @@ class TestRunSshCommandReal(unittest.TestCase):
             _, out = actions.run_ssh_command_real('docs', 'df -h', internal=True)
         self.assertIn('7', out)
 
+class TestFixAttemptRecording(unittest.TestCase):
+    """486: co se zaznamen\u00e1v\u00e1 jako pokus o opravu."""
+
+    def setUp(self):
+        self._args = getattr(actions.config, 'ARGS', {})
+        actions.config.ARGS = {}
+        self.recorded, self.closed = [], []
+        self._get = actions.state.get_action
+        self._rec = actions.state.record_fix_attempt
+        self._close = actions.state.close_fix_attempt
+        actions.state.get_action = lambda aid: {
+            'id': aid, 'problem_key': 'K1', 'node': 'rpi', 'mode': 'approved',
+            'executed_by': 'foxik'}
+        actions.state.record_fix_attempt = lambda **kw: (self.recorded.append(kw), 7)[1]
+        actions.state.close_fix_attempt = lambda aid, st, detail='': self.closed.append((aid, st))
+
+    def tearDown(self):
+        actions.config.ARGS = self._args
+        actions.state.get_action = self._get
+        actions.state.record_fix_attempt = self._rec
+        actions.state.close_fix_attempt = self._close
+
+    def test_success_recorded_as_pending(self):
+        with patch.object(actions.subprocess, 'run', return_value=_Result(rc=0, out='ok')):
+            actions.run_ssh_command_real('rpi', 'systemctl restart x', action_id=1)
+        self.assertEqual(len(self.recorded), 1)
+        self.assertEqual(self.closed, [])          # ov\u011b\u0159\u00ed se pozd\u011bji
+
+    def test_executed_but_failed_recorded_as_failed(self):
+        """P\u0159\u00edkaz probehl a vratil nenulu \u2014 u\u017e ted\u00ed v\u00edme, \u017ee nepomohl."""
+        with patch.object(actions.subprocess, 'run',
+                          return_value=_Result(rc=1, out='', err='Job failed')):
+            actions.run_ssh_command_real('rpi', 'systemctl restart x', action_id=1)
+        self.assertEqual(len(self.recorded), 1)
+        self.assertEqual(self.closed, [(7, 'failed')])
+
+    def test_dry_run_not_recorded(self):
+        """Nic se nestalo \u2014 nen\u00ed co ov\u011b\u0159ovat."""
+        with patch.object(actions.subprocess, 'run', return_value=_Result()) as run:
+            actions.run_ssh_command_real('rpi', 'rm -rf /', action_id=1)
+        run.assert_not_called()
+        self.assertEqual(self.recorded, [])
+
+    def test_timeout_not_recorded(self):
+        with patch.object(actions.subprocess, 'run',
+                          side_effect=actions.subprocess.TimeoutExpired('ssh', 30)):
+            actions.run_ssh_command_real('rpi', 'systemctl restart x', action_id=1)
+        self.assertEqual(self.recorded, [])
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
