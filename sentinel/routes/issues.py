@@ -1139,6 +1139,84 @@ def create_blueprint(service):
                             "raw": (raw or '')[:400]}), 502
         return jsonify({"chain": chain, "changes": changes[:5]})
 
+    @bp.route('/api/issues/<key_b64>/runbook', methods=['GET'])
+    @requires_auth
+    def api_issue_runbook(key_b64):
+        """494/496: Runbook z incidentu s ověřeným řešením + prevence.
+
+        Bez ověřeného řešení se runbook negeneruje — návod opsaný ze špatné
+        opravy je horší než žádný.
+        """
+        from .. import knowledge as kn, incident_analysis as ia, correlate
+        try:
+            key = base64.b64decode(key_b64).decode()
+        except Exception:
+            return jsonify({"error": "bad key"}), 400
+        prob = state.get_problem(key) or {}
+        attempts = state.get_fix_attempts(key, limit=50)
+        changes = []
+        try:
+            changes = correlate.collect_changes(state, prob) if prob else []
+        except Exception:
+            pass
+        rb = kn.build_runbook(prob, attempts,
+                              timeline=ia.build_timeline(prob, changes, attempts),
+                              changes=changes)
+        return jsonify({
+            "runbook": rb,
+            "markdown": kn.runbook_markdown(rb),
+            "prevention": kn.suggest_prevention(prob, prob.get('recurring_count') or 1),
+            "note": None if rb else "Chybí ověřené řešení — runbook se negeneruje.",
+        })
+
+    @bp.route('/api/ai/training_export', methods=['GET'])
+    @requires_auth
+    def api_training_export():
+        """534: Dvojice (incident → ověřené řešení) pro fine-tuning."""
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        from .. import knowledge as kn
+        pairs = kn.export_training_pairs(
+            state.get_issue_history_rows(days=int_param('days', 180, 1, 365)),
+            state.get_fix_attempts(limit=2000))
+        if request.args.get('format') == 'jsonl':
+            return Response(kn.training_jsonl(pairs), mimetype='application/x-ndjson')
+        return jsonify({"pairs": pairs, "count": len(pairs),
+                        "note": "Jen ověřená řešení — neověřená by naučila model dnešní chyby."})
+
+    @bp.route('/api/ai/kb/export', methods=['GET'])
+    @requires_auth
+    def api_kb_export():
+        """542: Naučená KB pro přenos na jinou instanci."""
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        from .. import knowledge as kn
+        from ..rag import rag_system
+        return jsonify(kn.export_kb(getattr(rag_system, 'kb_chunks', []),
+                                    source=getattr(config, 'INSTANCE_NAME', 'sentinel')))
+
+    @bp.route('/api/ai/kb/import', methods=['POST'])
+    @requires_auth
+    def api_kb_import():
+        """542: Import cizí KB — ověřuje se formát i kontrolní součet.
+
+        Cizí KB je cizí vstup: poškozený soubor by otrávil znalostní bázi,
+        ze které pak model odpovídá.
+        """
+        if g.user_role != 'superadmin':
+            return jsonify({"error": "Forbidden — jen superadmin"}), 403
+        from .. import knowledge as kn
+        from ..rag import rag_system
+        result = kn.import_kb(request.get_json(silent=True),
+                              existing=getattr(rag_system, 'kb_chunks', []))
+        if not result.get('ok'):
+            return jsonify(result), 400
+        if request.args.get('apply') == '1':
+            added = sum(1 for c in result.get('chunks', [])
+                        if rag_system.add_learned_chunk(c, source='import'))
+            result['applied'] = added
+        return jsonify(result)
+
     @bp.route('/api/analytics/baseline', methods=['GET'])
     @requires_auth
     def api_baseline():
