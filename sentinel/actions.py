@@ -334,7 +334,11 @@ def run_ssh_command_real(cluster, command, action_id=None, timeout: int = 30, in
         # „BLOCKED" vedlo k tomu, že si to lidi udělali ručně mimo Sentinel
         # (a přišli o audit), nebo si allowlist otevřeli šířeji než bylo třeba.
         try:
-            from . import safety, policy
+            # POZOR: NEimportovat tu `safety` — je už importované na úrovni
+            # modulu a lokální import by z něj udělal lokální proměnnou pro
+            # CELÉ tělo funkce. `safety.is_blocked()` výš by pak spadlo na
+            # UnboundLocalError a rozbilo veškeré spouštění SSH příkazů.
+            from . import policy
             info = policy.explain_block(command, safety, state.list_allowed_commands())
             if info.get('reasons'):
                 err += f"\nDůvod: {', '.join(info['reasons'][:3])}"
