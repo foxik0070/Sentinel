@@ -96,6 +96,30 @@ class TestRunSshCommandReal(unittest.TestCase):
                              f"lokální import '{name}' zastíní modulový — "
                              f"UnboundLocalError na dřívějším použití")
 
+    def test_stdout_kept_on_nonzero_exit(self):
+        """`systemctl status` vraci 3 u neběžící jednotky — a text je ve STDOUT.
+
+        Dřív se stdout zahazoval a diagnostika vracela prázdno právě tehdy,
+        když problém existoval.
+        """
+        with patch.object(actions.subprocess, 'run',
+                          return_value=_Result(rc=3, out='Active: failed', err='')):
+            ok, out = actions.run_ssh_command_real('docs', 'systemctl status x', internal=True)
+        self.assertFalse(ok)
+        self.assertIn('Active: failed', out)
+
+    def test_both_streams_kept(self):
+        with patch.object(actions.subprocess, 'run',
+                          return_value=_Result(rc=1, out='vystup', err='varovani')):
+            _, out = actions.run_ssh_command_real('docs', 'df -h', internal=True)
+        self.assertIn('vystup', out)
+        self.assertIn('varovani', out)
+
+    def test_empty_output_reports_exit_code(self):
+        with patch.object(actions.subprocess, 'run', return_value=_Result(rc=7, out='', err='')):
+            _, out = actions.run_ssh_command_real('docs', 'df -h', internal=True)
+        self.assertIn('7', out)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
