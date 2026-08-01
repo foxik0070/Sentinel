@@ -1139,6 +1139,54 @@ def create_blueprint(service):
                             "raw": (raw or '')[:400]}), 502
         return jsonify({"chain": chain, "changes": changes[:5]})
 
+    @bp.route('/api/analytics/config_drift', methods=['GET'])
+    @requires_auth
+    def api_config_drift():
+        """472: Stroje, které se rozešly od většiny.
+
+        Sběr přes pevný katalog read-only příkazů. Většina není totéž co
+        správnost — hlásí se „liší se", ne „je špatně".
+        """
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        from .. import infra_audit as ia
+        hosts = [h for h in (request.args.get('hosts') or '').split(',') if h.strip()]
+        if not hosts:
+            hosts = sorted({a.get('hostname') for a in (state.get_all_agents() or [])
+                            if a.get('hostname') and a.get('status') == 'ONLINE'})[:12]
+        facts = {}
+        for host in hosts:
+            got = {}
+            for name, cmd in ia.AUDIT_COMMANDS.items():
+                try:
+                    ok, out = actions.run_ssh_command_real(host, cmd, timeout=15, internal=True)
+                except Exception as e:
+                    logger.debug(f"472: {host}/{name}: {e}")
+                    continue
+                if ok:
+                    got[name] = out.replace('STDOUT: ', '').strip()
+            if got:
+                facts[host] = got
+        return jsonify({"hosts_polled": list(facts),
+                        "drift": ia.detect_drift(facts),
+                        "unit_gaps": ia.diff_unit_lists(facts)})
+
+    @bp.route('/api/analytics/docs_check', methods=['POST'])
+    @requires_auth
+    def api_docs_check():
+        """485: Co dokumentace tvrdí a co už neplatí.
+
+        Zastaralý runbook je nebezpečnější než žádný — člověk podle něj
+        jedná v krizi, kdy nemá čas ověřovat.
+        """
+        from .. import infra_audit as ia
+        text = str((request.get_json(silent=True) or {}).get('text') or '')
+        if not text.strip():
+            return jsonify({"error": "chybí text"}), 400
+        hosts = {a.get('hostname') for a in (state.get_all_agents() or []) if a.get('hostname')}
+        hosts |= {i.get('host') for i in (state.get_active_issues() or []) if i.get('host')}
+        return jsonify({"findings": ia.check_docs_against_reality(text, sorted(h for h in hosts if h))})
+
     @bp.route('/api/issues/<key_b64>/runbook', methods=['GET'])
     @requires_auth
     def api_issue_runbook(key_b64):
