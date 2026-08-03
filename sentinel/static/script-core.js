@@ -639,7 +639,7 @@ async function _sendStreaming(text, thinkingEl) {
             return;
         }
 
-        if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
+        // thinkingEl removed on first token — keeps spinner visible during reasoning phase
 
         // Create streaming bot message div
         botDiv = document.createElement('div');
@@ -649,6 +649,7 @@ async function _sendStreaming(text, thinkingEl) {
         botDiv.appendChild(contentEl);
         chatHistory.appendChild(botDiv);
 
+        let thinkEl = null;
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
@@ -668,8 +669,21 @@ async function _sendStreaming(text, thinkingEl) {
                 try {
                     const ev = JSON.parse(raw);
                     if (ev.token) {
-                        accumulated += ev.token;
-                        contentEl.innerHTML = _formatStreamOutput(accumulated);
+                        if (ev.reasoning) {
+                            if (!thinkEl) {
+                                if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
+                                thinkEl = document.createElement('div');
+                                thinkEl.style.cssText = 'color:var(--text-muted);font-style:italic;font-size:0.8em;margin-bottom:4px;max-height:80px;overflow-y:auto;border-left:2px solid var(--text-muted);padding-left:6px;opacity:0.75;';
+                                thinkEl._raw = '';
+                                contentEl.before(thinkEl);
+                            }
+                            thinkEl._raw += ev.token;
+                            thinkEl.innerHTML = '&#129300; ' + _formatStreamOutput(thinkEl._raw);
+                        } else {
+                            if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
+                            accumulated += ev.token;
+                            contentEl.innerHTML = _formatStreamOutput(accumulated);
+                        }
                         chatHistory.scrollTop = chatHistory.scrollHeight;
                     }
                     if (ev.done) {
