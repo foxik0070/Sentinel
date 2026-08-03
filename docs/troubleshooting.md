@@ -145,6 +145,10 @@ curl -X POST -u admin:PASS -H 'Content-Type: application/json' \
 
 ## AI vrstva (2026.07)
 
+> Většina potíží s kvalitou AI odpovědí pochází z nepřipraveného cílového
+> stroje, ne z modelu. Než začneš ladit prompty, projdi
+> [host-setup.md](host-setup.md) — hlavně skupinu `systemd-journal`.
+
 ### Hailo NPU vrací HTTP 500 na každý reálný prompt
 
 **Příčina: jakýkoli `\n` v promptu.** Není to délkou — krátký prompt s jedním zalomením padá,
