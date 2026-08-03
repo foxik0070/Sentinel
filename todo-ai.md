@@ -36,14 +36,14 @@ jinak by se ladily proti prázdné množině.
 - [X] 448 🔴 **Rozlišení příčina vs. symptom** — HOTOVO: POST /api/incidents/analyze (staví na 446 + ask_json) — u skupiny alertů označit, který je kořen (např. disk full → služba spadla → healthcheck selhal); symptomy sbalit pod příčinu
 - [X] 449 🔴 **Korelace s telemetrií** — HOTOVO: get_telemetry_context + prompt v reanalyze + GET /api/issues/<k>/telemetry_context — k issue automaticky přiložit průběh CPU/RAM/disk/teploty ±30 min a nechat AI hledat souběh (dnes AI vidí jen text alertu)
 - [X] 450 🔴 **Korelace se změnami** — spojit issue s tím, co se před ním změnilo: config_history, deploy (Gitea webhook), apt upgrade, restart služby
-- [ ] 451 🟡 **Topologická korelace** — využít `topology.py` (CDP/LLDP sousedi) k dohledání, zda výpadky sdílí switch/uplink/hypervizor
+- [X] 451 🟡 **Topologická korelace** — využít `topology.py` (CDP/LLDP sousedi) k dohledání, zda výpadky sdílí switch/uplink/hypervizor
 - [ ] 452 🟡 **Závislostní graf služeb** — z `depends_on` + systemd `After=/Requires=` (přes SSH) postavit graf a potlačit alerty následných služeb
 - [X] 453 🟡 **Detekce společného jmenovatele** — u N alertů najít sdílený atribut (stejný balíček, kernel, mountpoint, VLAN) a nabídnout ho jako hypotézu
 - [X] 454 🟡 **Časová osa incidentu** — chronologie ze všech zdrojů (logy, telemetrie, akce, notifikace) jako podklad pro AI i postmortem
 - [X] 455 🟡 **"Co se změnilo od posledně"** — u opakujícího se issue diff proti minulému výskytu (jiná zpráva? jiný host? jiná hodnota?)
 - [X] 456 🟡 **Cross-host pattern** — stejný alert na >30 % hostů = systémový problém, ne lokální; eskalovat jinak a nespamovat per-host
 - [ ] 457 🟢 **Korelace s externími vlivy** — teplota v místnosti (HA senzory) vs. throttling; výpadek proudu vs. restart hostů
-- [ ] 458 🟡 **Blast radius** — AI odhadne, koho ještě problém zasáhne (závislé služby, uživatelé) a to řídí prioritu
+- [X] 458 🟡 **Blast radius** — AI odhadne, koho ještě problém zasáhne (závislé služby, uživatelé) a to řídí prioritu
 - [X] 459 🟡 **Detekce kaskád** — rozpoznat lavinu (1 příčina → 20 alertů do 60 s) a poslat JEDNU notifikaci se souhrnem
 - [ ] 460 🟢 **Korelace s SLO** — spojit issue s dopadem na error budget (404) a podle toho řadit
 - [X] 461 🟡 **Hypotézy s pravděpodobností** — místo jedné odpovědi vrátit 2–3 hypotézy s odhadem jistoty a návrhem, čím je ověřit
@@ -95,7 +95,7 @@ jinak by se ladily proti prázdné množině.
 - [ ] 501 🟢 **Koordinace s Ansible** — u opakovaného problému navrhnout trvalou opravu jako Ansible task, ne jednorázový příkaz
 - [X] 502 🟡 **Prioritizace fronty práce** — AI seřadí otevřené issues podle dopadu × jistoty řešení a navrhne, čím začít
 - [X] 503 🟡 **Detekce protichůdných akcí** — varovat, když by nová akce zrušila předchozí (restart služby, kterou někdo právě maskoval)
-- [ ] 504 🟢 **Simulace dopadu** — „co se stane, když tenhle host vypnu" na základě topologie a závislostí
+- [X] 504 🟢 **Simulace dopadu** — „co se stane, když tenhle host vypnu" na základě topologie a závislostí
 - [X] 505 🔴 **Auto-remediace s postupným rozšiřováním důvěry** — příkaz, který 10× uspěl bez následného problému, navrhnout k povýšení na `auto_execute`
 
 ## D. Kvalita odpovědí, kontext & RAG (506–525)
