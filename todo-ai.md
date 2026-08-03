@@ -11,18 +11,21 @@ Priorita: 🔴 vysoká (řeší dnešní bolest) · 🟡 střední · 🟢 nice-
 
 ---
 
-## Stav k 2026-07-31 (v2026.07.001)
+## Stav k 2026-08-03 (v2026.08.001)
 
-**Hotovo 66 ze 100, včetně všech 19 🔴 položek.** 938 testů, 21 nových modulů.
+**Hotovo 80 ze 100, včetně všech 19 🔴 položek.** 1050 testů, 25 nových modulů.
 
-Zbývá 34 (🟡/🟢). Většina čeká na něco mimo tenhle repo nebo na provozní data:
+Zbývá 20 (🟡/🟢):
 
 | Skupina | Položky | Blokuje |
 |---|---|---|
-| Vyžaduje SSH/externí API | 452, 478, 483, 484, 501 | systemd závislosti, PBS API, SMART z agentů, Ansible |
-| Vyžaduje topologii | 451, 457, 458, 460, 464, 504 | CDP/LLDP data, vizualizace v UI |
-| Čeká na provozní data | 528, 530–540 | `fix_attempts`/`ai_feedback` se teprve plní |
-| Zbytek | 463, 472, 477, 479, 482, 485, 494, 496, 520, 524, 531, 534, 542 | — |
+| Čeká na provozní data | 528, 530–540 | `fix_attempts` má 0 záznamů — dnes by měřily prázdno |
+| Vyžaduje cizí rozhraní | 452, 478, 483, 484, 501 | systemd závislosti, PBS API, SMART z agentů, Ansible |
+| Frontend / integrace | 457, 460, 464, 524, 531 | HA senzory, vazba na SLO, vizualizace, streamování |
+
+**Pozn. k 451/458/504:** vyřešeno jinak, než zadání předpokládalo — CDP/LLDP
+data v instalaci nejsou, takže se závislosti odvozují ze sdíleného jádra
+a souběžných výpadků (viz `dependencies.py`).
 
 **Pozn.:** položky „čeká na provozní data" nemá smysl psát dřív, než bude co měřit —
 jinak by se ladily proti prázdné množině.
