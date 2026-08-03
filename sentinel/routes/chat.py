@@ -424,7 +424,7 @@ def create_blueprint(service):
                     yield from _stream_hailo_or_fallback()
 
                 elif config.ARGS.get("EXTERNAL_OLLAMA"):
-                    is_v1 = "/v1/" in config.OLLAMA_URL
+                    is_v1 = "/v1/" in config.OLLAMA_URL or bool(config.OLLAMA_API_KEY)
                     if is_v1:
                         payload = {"model": config.OLLAMA_MODEL,
                                    "messages": [{"role": "user", "content": prompt or user_msg}],
@@ -449,12 +449,16 @@ def create_blueprint(service):
                                 try:
                                     chunk = json.loads(raw)
                                     # v1 OpenAI format
-                                    token = chunk.get('choices', [{}])[0].get('delta', {}).get('content', '')
+                                    delta = chunk.get('choices', [{}])[0].get('delta', {})
+                                    token = delta.get('content', '')
+                                    reasoning = delta.get('reasoning_content', '')
                                     # legacy /api/generate format
                                     if not token:
                                         token = chunk.get('response', '')
                                     if token:
                                         yield f"data: {json.dumps({'token': token})}\n\n"
+                                    elif reasoning:
+                                        yield f"data: {json.dumps({'token': reasoning, 'reasoning': True})}\n\n"
                                     if chunk.get('done'):
                                         break
                                 except Exception:
