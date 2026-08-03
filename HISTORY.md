@@ -1,6 +1,62 @@
 # Historie změn
 
+## [2026.08.001] - 2026-08-03
+
+**Souhrn:** Tři opravy chyb odhalené ostrým provozem (jedna z nich dva dny blokovala veškeré SSH), tři dávky AI funkcí a dokumentace přípravy monitorovaného stroje. 1050 testů OK (bylo 938). Z roadmapy `todo-ai.md` hotovo 80 ze 100.
+
+### Opravy — všechny odhalilo ověřování na produkci, ne testy
+
+- **Lokální import zastínil modulový a rozbil VEŠKERÉ spouštění SSH příkazů.** Ve `run_ssh_command_real` přibylo `from . import safety, policy` uvnitř funkce, jenže `safety` je importované už na úrovni modulu. Python tím udělal ze `safety` lokální proměnnou pro celé tělo a `safety.is_blocked()` o třicet řádků výš spadlo na `UnboundLocalError`. **Nefungovala auto-remediace, ruční akce ani diagnostika, od 30. 7. do 1. 8.** 938 testů to nezachytilo — žádný nevolal tu funkci až k tomu místu. Přidán `tests/test_actions_ssh.py`, který volá skutečnou funkci s podvrženým subprocess a prochází všemi větvemi; navíc kontroluje zdroják na stínění modulových jmen.
+- **Zahazoval se STDOUT při nenulovém návratovém kódu.** Vracelo se jen STDERR — jenže `systemctl status` vrací 3 u neběžící jednotky, `grep` 1 bez shody, `journalctl` nenulu u prázdna, a užitečný text je přitom ve STDOUT. **Diagnostika tak vracela prázdno právě tehdy, když problém existoval.** Na reálné poruše: před opravou prázdno, po opravě 1043 znaků.
+- **Zásah, který proběhl a selhal, se nezaznamenal.** Pokus se ukládal jen při návratovém kódu 0 s odůvodněním „nic se nestalo". To platí pro příkaz, který se nespustil — ne pro ten, co proběhl a vrátil chybu. Nově: nespustil se → nezapisuje; rc 0 → `pending` k ověření; rc != 0 → rovnou `failed`. Bez toho by detekce zacyklení nikdy nepoznala opakovaný nefunkční restart.
+
+### AI — vytěžit z incidentu něco trvalého (`knowledge.py`)
+- **463** Iterativní vyšetřování: smyčka se zastaví při potvrzené hypotéze, po třech kolech, nebo když se **jistota mezi koly nezvýší** — model pak jen opisuje totéž jinými slovy.
+- **494** Runbook z incidentu: příznak, ověřené řešení a — stejně důležité — co NEfungovalo. Markdown do wiki.
+- **496** Prevence: u jednorázového problému se nenavrhuje. U opakovaného podle typu (disk → journald limit, služba → `Restart=on-failure`, paměť → `MemoryMax`).
+- **520** Verzování promptů + porovnání skóre mezi verzemi.
+- **534** Trénovací dvojice jen z ověřených oprav.
+- **542** Přenos KB mezi instancemi s kontrolním součtem; import je superadmin-only.
+
+> Napříč modulem platí: **bez ověřeného řešení se nic negeneruje.** Runbook opsaný ze špatné opravy je horší než žádný, protože ho někdo příště poslechne.
+
+### AI — audit infrastruktury (`infra_audit.py`)
+- **472** Konfigurační drift. Většina není totéž co správnost, proto se hlásí „liší se", ne „je špatně". Když se „většina" skládá z poloviny, hlásí se rozpad, ne výjimka.
+- **477** Zombie zdroje — bez důkazu (aktivita ani spojení) se nehádá.
+- **479** Certifikáty s dopadem: priorita podle toho, jestli na portu někdo poslouchá.
+- **482** Kontrola po restartu — co nenaběhlo.
+- **485** Dokumentace vs. realita: zastaralý runbook je nebezpečnější než žádný.
+
+> **Opraveno během vývoje:** u certifikátů se „nemáme data o portech" hlásilo jako „nikdo neposlouchá" se severity `low`. Chybějící sběr nesmí vypadat jako důkaz — rozlišuje se `None` (nevíme) od `False` (ověřeně nikdo).
+
+### AI — odvozené závislosti (`dependencies.py`)
+CDP/LLDP sousednost v této instalaci **není** (topologie prázdná, agenti bez skupin, `depends_on` nenastaven). Místo psaní kódu proti neexistujícím datům se závislosti odvozují z toho, co skutečně existuje, a u každé je vidět zdroj i jistota:
+- **451** Sdílené jádro (LXC kontejnery sdílejí jádro hypervizoru) + souběžné výpadky. Podíl se počítá vůči méně častému z dvojice, aby hlučný host nevypadal jako závislý na všem.
+- **458** Blast radius nad prahem jistoty.
+- **504** Simulace vypnutí rozlišuje, co spadne **určitě** (kontejnery na hostiteli) a co je nejisté. Opačný směr neplatí — vypnutí kontejneru hypervizor neshodí.
+
+> Odvozená závislost **není fakt** — všude se vrací `confidence` a formulace „pravděpodobně". Souběh se výslovně označuje jako sdílená příčina, ne jako závislost.
+
+### Dokumentace
+- **`docs/host-setup.md`** — příprava monitorovaného stroje pro AI funkce. Vysvětluje CO nastavit a PROČ: dedikovaný účet místo roota, skupina `systemd-journal` (nejčastěji opomenutý krok — `journalctl` místo chyby vrátí zdvořilou hlášku a AI usoudí, že v logu nic není), sudoers jako podmnožina aplikačního whitelistu, potřebné balíčky, logy aplikací mimo journal, ověřovací postup. Tabulka „co vyžaduje sudo" odvozena z `ssh_utils._SUDO_PREFIXES`. Všechny uvedené příkazy ověřeny proti hostu `docs`.
+- Provázáno z README, sekce 8.14 hlavní dokumentace a troubleshootingu.
+
+### Nálezy z ostrého provozu
+- **`rpi-backup.service` na `proxmox-backup-server` selhává** — skript končí exit 1 po ~12 s. Padá 31. 7. i 1. 8., takže záloha RPi do PBS neběží. Příčinu nelze přečíst: `/var/log/rpi-backup/` má práva `drwxr-x--- root` a `sentinel` tam nemá přístup ani přes sudo (správné chování least-privilege).
+- **`SERVICE_FAILED|minecraft|minecraft-backup.service` je falešný poplach** — oneshot spouštěný timerem, poslední běh `status=0/SUCCESS`, timer aktivní.
+- **Auto-remediace se spouští jen při VZNIKU nového issue**, ne u existujících. Proto zůstává `fix_attempts` prázdná — není to porucha.
+- **`proxmox02` je hypervizor** `docs`/`gitea`/`server` (odvozeno ze sdíleného jádra, jistota 85). Jeho vypnutím spadnou všechny tři.
+- Nejsilnější odvozená vazba ze souběhu: `rpi5` + `rpi5_wifi` (77 %) — tentýž stroj se dvěma rozhraními, což metodu potvrzuje.
+
+### Poznámka k bezpečnosti
+Bezpečnostní kontrola zablokovala pokus zavolat `approve_action_mode()` programově, tedy obejít schvalovací bránu v kódu. Blok byl oprávněný a odblokoval se až výslovným pojmenováním stroje a služby uživatelem. Princip „co mění stav, schvaluje člověk" musí platit i pro nástroj, který ten systém staví.
+
+### Zbývá
+20 položek `todo-ai.md`. Deset z nich (528, 530–540, měření kvality AI) čeká na provozní data, která se teprve sbírají — dnes by měřily prázdno. Zbytek potřebuje cizí rozhraní (PBS API, SMART z agentů, Ansible) nebo práci ve frontendu.
+
 ## [2026.07.001] - 2026-07-31
+
+> ⚠️ **Tuto verzi nepoužívat.** Obsahuje chybu, která blokuje veškeré spouštění SSH příkazů (auto-remediace, ruční akce i diagnostika) — opraveno v 2026.08.001.
 
 **Souhrn:** Kompletní AI vrstva — 66 ze 100 položek roadmapy `todo-ai.md` včetně **všech 19 prioritních**, 21 nových modulů, +5331 řádků. 938 testů OK (bylo 317). Těžiště: AI si sama dojde pro data, ověřuje si výsledek a učí se z něj — a nikde negeneruje shell.
 

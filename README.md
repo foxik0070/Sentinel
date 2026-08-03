@@ -2,10 +2,10 @@
 
 ![Sentinel Commander](sentinel_master.png)
 
-![Version](https://img.shields.io/badge/version-v2026.07.001-blue)
+![Version](https://img.shields.io/badge/version-v2026.08.001-blue)
 ![License: MIT](https://img.shields.io/badge/License-MIT-cyan.svg)
 ![Python](https://img.shields.io/badge/python-3.13%2B-blue)
-![Tests](https://img.shields.io/badge/tests-938%20passing-green)
+![Tests](https://img.shields.io/badge/tests-1050%20passing-green)
 
 **Hybrid AI Log Monitor & Analyzer for Linux Infrastructure**
 
@@ -147,6 +147,9 @@ sentinel/
 ├── foresight.py         # Capacity forecast, weekly outlook
 ├── unmatched.py         # Sampling of log lines nobody catches
 ├── rag_utils.py         # Compression, hybrid search, citations, chunking
+├── knowledge.py         # Runbooks, prevention, training pairs, KB transfer
+├── infra_audit.py       # Config drift, zombies, certs, post-reboot, docs check
+├── dependencies.py      # Inferred host dependencies, blast radius, shutdown sim
 │
 ├── plugins/             # Detector plugins
 ├── routes/              # Flask blueprints (issues, agents, chat, ...)
