@@ -39,6 +39,9 @@ Sentinel Commander is an advanced AI-powered monitoring system for Linux and ent
 
 ### Requirements
 
+> Monitored hosts need a small amount of preparation for the AI diagnostics —
+> see [docs/host-setup.md](docs/host-setup.md).
+
 - Python 3.13+
 - [Ollama](https://ollama.ai) (local LLM) or Hailo NPU
 - SQLite (built-in)
@@ -165,6 +168,17 @@ make build  # minify JS/CSS
 ## Documentation
 
 Full documentation (EN + CS): **https://sentinel-docs.foxik-iot.cz**
+
+| Document | What it covers |
+|---|---|
+| [docs/host-setup.md](docs/host-setup.md) | **Preparing a monitored host so the AI features work** — `sentinel` user, `systemd-journal` group, sudoers scope, required packages |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | Operational pitfalls, including the AI layer |
+| [docs/api-changelog.md](docs/api-changelog.md) | New endpoints per release |
+| [docs/SENTINEL_COMPLETE_DOCUMENTATION.md](docs/SENTINEL_COMPLETE_DOCUMENTATION.md) | Complete reference (CS), section 8.14 explains how the AI reasons |
+
+> **Without the host setup above, Sentinel still reports problems but cannot
+> investigate them** — diagnostics return nothing and the AI answers from a
+> single log line. Start there.
 
 ---
 

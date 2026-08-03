@@ -958,6 +958,11 @@ Pokud `auto_severity_enabled: true`:
 
 ### 8.14 AI vrstva 2026.07 — jak Sentinel přemýšlí
 
+> **Předpoklad:** AI si data zjišťuje po SSH z monitorovaných strojů. Bez
+> přípravy cílového stroje (účet `sentinel`, skupina `systemd-journal`,
+> rozsah sudoers) vrací diagnostika prázdno a model odpovídá z jediné řádky
+> logu. Postup je v [host-setup.md](host-setup.md).
+
 Od verze 2026.07.001 tvoří AI ucelenou smyčku: **zjisti data → navrhni → ověř výsledek → uč se**.
 Následující zásady platí napříč celou vrstvou a jsou důvodem, proč je bezpečné dát AI přístup
 k produkci.
