@@ -2,6 +2,34 @@
 
 Tento dokument zaznamenává breaking changes a nové endpointy mezi verzemi.
 
+## v2026.08.001 (2026-08-03)
+
+**Bez breaking changes.** Žádný stávající endpoint nezměnil tvar odpovědi.
+
+> **Oprava chování, ne rozhraní:** `run_ssh_command_real` dřív při nenulovém
+> návratovém kódu vracela jen STDERR. Nově vrací obě roury — `systemctl status`
+> vrací 3 u neběžící jednotky a užitečný text je ve STDOUT. Endpointy nad
+> diagnostikou tak nově vracejí obsah tam, kde dřív mlčely.
+
+### Znalosti z incidentů
+- `GET  /api/issues/<key_b64>/runbook` — runbook z incidentu s ověřeným řešením + návrh prevence. Bez ověřeného řešení vrací `runbook: null` a vysvětlení.
+- `GET  /api/ai/training_export?days=N&format=jsonl` — dvojice (incident → ověřené řešení) pro fine-tuning (admin)
+- `GET  /api/ai/kb/export` — naučená KB pro přenos na jinou instanci (admin)
+- `POST /api/ai/kb/import?apply=1` — import cizí KB; ověřuje formát i kontrolní součet (**superadmin**)
+
+### Audit infrastruktury
+- `GET  /api/analytics/config_drift?hosts=a,b,c` — stroje odchýlené od většiny + chybějící jednotky (admin)
+- `POST /api/analytics/docs_check` — co dokumentace tvrdí a co už neplatí; tělo `{"text": "..."}`
+
+### Závislosti
+- `GET  /api/analytics/dependencies?hosts=a,b,c` — odvozené vazby se zdrojem a jistotou (admin)
+- `GET  /api/hosts/<host>/blast_radius?hosts=a,b,c` — koho problém zasáhne + simulace vypnutí (admin)
+
+### Poznámky
+- Endpointy s parametrem `hosts` sbírají data po SSH v reálném čase; bez parametru se použijí online agenti. U větší infrastruktury počítej s několika sekundami na stroj.
+- `dependencies` a `blast_radius` vracejí u každé vazby `confidence` a `via`. **Odvozená závislost není fakt** — CDP/LLDP data v instalaci nejsou, vazby se odvozují ze sdíleného jádra a souběžných výpadků.
+- `runbook`, `training_export` a `kb/export` vracejí prázdno, dokud nejsou ověřené opravy.
+
 ## v2026.07.001 (2026-07-31)
 
 **Bez breaking changes.** Všechny stávající endpointy zachovány beze změny tvaru odpovědi.
