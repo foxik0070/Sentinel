@@ -1139,6 +1139,58 @@ def create_blueprint(service):
                             "raw": (raw or '')[:400]}), 502
         return jsonify({"chain": chain, "changes": changes[:5]})
 
+    def _dependency_graph(hosts=None):
+        """451: Odvozené závislosti. CDP/LLDP data nejsou, tak se odvozuje
+        ze sdíleného jádra (LXC) a ze souběžných výpadků."""
+        from .. import dependencies as dp, infra_audit as ia
+        facts = {}
+        for host in (hosts or []):
+            try:
+                out = {}
+                for name in ('kernel', 'os'):
+                    ok, res = actions.run_ssh_command_real(
+                        host, ia.AUDIT_COMMANDS[name], timeout=15, internal=True)
+                    if ok:
+                        out[name] = res.replace('STDOUT: ', '').strip()
+                if out:
+                    facts[host] = out
+            except Exception as e:
+                logger.debug(f"451: {host}: {e}")
+        return dp.build_graph(
+            kernel_links=dp.infer_from_kernel(facts),
+            cofailure_links=dp.infer_from_cofailure(
+                state.get_issue_history_rows(days=90))), facts
+
+    @bp.route('/api/analytics/dependencies', methods=['GET'])
+    @requires_auth
+    def api_dependencies():
+        """451: Odvozené vazby mezi stroji — se zdrojem a jistotou.
+
+        Odvozená závislost NENÍ fakt; u každé je vidět, odkud pochází.
+        """
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        from .. import dependencies as dp
+        hosts = [h for h in (request.args.get('hosts') or '').split(',') if h.strip()]
+        graph, facts = _dependency_graph(hosts)
+        return jsonify({"graph": graph, "polled": list(facts),
+                        "cofailure": dp.infer_from_cofailure(
+                            state.get_issue_history_rows(days=90))[:20]})
+
+    @bp.route('/api/hosts/<host>/blast_radius', methods=['GET'])
+    @requires_auth
+    def api_blast_radius(host):
+        """458/504: Koho problém zasáhne a co spadne při vypnutí."""
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        from .. import dependencies as dp
+        hosts = [h for h in (request.args.get('hosts') or '').split(',') if h.strip()]
+        graph, _ = _dependency_graph(hosts)
+        return jsonify({
+            "blast_radius": dp.blast_radius(host, graph),
+            "shutdown": dp.simulate_shutdown(host, graph, agents=state.get_all_agents()),
+        })
+
     @bp.route('/api/analytics/config_drift', methods=['GET'])
     @requires_auth
     def api_config_drift():
