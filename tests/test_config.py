@@ -160,9 +160,26 @@ class TestConfigLoad(unittest.TestCase):
         self._write_and_load({"snapshot_logs": ["sv3.log", "racks.log"]})
         self.assertEqual(config.SNAPSHOT_LOGS, ["sv3.log", "racks.log"])
 
-    def test_snapshot_logs_defaults_empty(self):
-        self._write_and_load({"instance_name": "TEST"})
-        self.assertEqual(config.SNAPSHOT_LOGS, [])
+    def test_snapshot_logs_absent_key_keeps_current(self):
+        """Chybějící klíč hodnotu nepřepisuje — stejná konvence jako u ostatních
+        seznamů (ignored_failed_services…). Nastavuje se explicitně, aby test
+        nezávisel na tom, jaký config modul načetl při importu."""
+        orig = config.SNAPSHOT_LOGS
+        config.SNAPSHOT_LOGS = ["puvodni.log"]
+        try:
+            self._write_and_load({"instance_name": "TEST"})
+            self.assertEqual(config.SNAPSHOT_LOGS, ["puvodni.log"])
+        finally:
+            config.SNAPSHOT_LOGS = orig
+
+    def test_snapshot_logs_non_list_ignored(self):
+        orig = config.SNAPSHOT_LOGS
+        config.SNAPSHOT_LOGS = []
+        try:
+            self._write_and_load({"snapshot_logs": "sv3.log"})  # string, ne list
+            self.assertEqual(config.SNAPSHOT_LOGS, [])
+        finally:
+            config.SNAPSHOT_LOGS = orig
 
 
 if __name__ == "__main__":
