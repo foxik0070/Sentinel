@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import fnmatch
@@ -12,6 +13,7 @@ from . import rag
 
 IGNORE_REGEXES = []
 WATCH_REGEXES = []
+SNAPSHOT_REGEXES = []
 
 # 314: Lines parsed tracking for telemetry report
 _lines_parsed_count = 0
@@ -35,12 +37,13 @@ def _track_lines_parsed(n: int):
             _lines_parsed_last_flush = now
 
 def compile_patterns():
-    global IGNORE_REGEXES, WATCH_REGEXES
+    global IGNORE_REGEXES, WATCH_REGEXES, SNAPSHOT_REGEXES
     def to_regex(patterns):
         return [re.compile(fnmatch.translate(p)) for p in patterns]
-    
+
     IGNORE_REGEXES = to_regex(config.IGNORE_PATTERNS)
     WATCH_REGEXES = to_regex(config.WATCH_PATTERNS)
+    SNAPSHOT_REGEXES = to_regex(getattr(config, 'SNAPSHOT_LOGS', []) or [])
     utils.log_message(f"Watcher: Patterns recompiled.")
 
 compile_patterns()
@@ -52,6 +55,11 @@ def should_process_file(path):
     for regex in WATCH_REGEXES:
         if regex.match(name): return True
     return False
+
+def is_snapshot_file(path) -> bool:
+    """Soubor, který sběrač pokaždé přepíše celý (viz config.SNAPSHOT_LOGS)."""
+    name = os.path.basename(path)
+    return any(regex.match(name) for regex in SNAPSHOT_REGEXES)
 
 def _reinit_ldap():
     """Po reloadu configu znovu inicializuje LDAP manager pokud je LDAP zapnutý."""
@@ -158,6 +166,78 @@ class ConfigHandler(FileSystemEventHandler):
             t = threading.Thread(target=run_reindex, daemon=True, name="RAG-HotReload")
             t.start()
 
+# Pozice ve sledovaných logách přežívají restart. Bez toho startovní sken
+# přehrál posledních 200 řádků každého logu znovu a issue, které dávno neplatí
+# (dokončená root session, teplota zpátky v limitu, testovací zpráva), vstalo
+# z mrtvých s čerstvým last_seen — takže na něj nesáhl ani stale TTL.
+OFFSETS_SETTING = 'watcher.offsets'
+
+
+def load_offsets() -> dict:
+    """{cesta: offset} z posledního běhu; {} když nic nebo je záznam poškozený."""
+    try:
+        from . import state
+        raw = state.get_setting(OFFSETS_SETTING)
+        data = json.loads(raw) if raw else {}
+        if not isinstance(data, dict):
+            return {}
+        return {str(k): int(v) for k, v in data.items()}
+    except Exception as e:
+        utils.log_message(f"[!] Watcher: pozice logů nelze načíst ({e}) — startuji od konce souborů")
+        return {}
+
+
+def save_offsets(positions: dict):
+    """Uloží pozice; smazané soubory zapomene, ať záznam neroste bez konce."""
+    try:
+        from . import state
+        alive = {p: int(off) for p, off in positions.items() if os.path.exists(p)}
+        state.set_setting(OFFSETS_SETTING, json.dumps(alive))
+    except Exception as e:
+        utils.log_message(f"[!] Watcher: pozice logů nelze uložit: {e}")
+
+
+def seed_positions(log_dir: str) -> dict:
+    """{cesta: výchozí pozice} pro všechny *.log v `log_dir`.
+
+    Musí proběhnout před observer.start(): jinak první inotify event u souboru,
+    který ještě není v _file_positions, přečte soubor od nuly a přehraje celou
+    jeho historii. Neznámý soubor začíná na konci — historii nehlásíme.
+    """
+    import glob
+    saved = load_offsets()
+    positions = {}
+    for path in glob.glob(os.path.join(log_dir, "*.log")):
+        try:
+            # Snapshot začíná vždy na nule — jeho obsah je aktuální stav,
+            # ne historie, takže ho po startu chceme přečíst celý.
+            positions[path] = 0 if is_snapshot_file(path) else saved.get(path, os.path.getsize(path))
+        except OSError:
+            continue
+    return positions
+
+
+def read_new_lines(path: str, saved_offset, max_lines: int = 200):
+    """Řádky přidané od `saved_offset` + nová pozice.
+
+    saved_offset None = soubor jsme ještě neviděli → nic nečteme, jen se
+    posuneme na konec (historii logu nemá smysl hlásit jako aktuální problém).
+    Offset větší než soubor = rotace → čteme od začátku.
+    """
+    size = os.path.getsize(path)
+    if saved_offset is None and not is_snapshot_file(path):
+        return [], size
+    if saved_offset is None:
+        saved_offset = 0
+    start = 0 if int(saved_offset) > size else int(saved_offset)
+    if start >= size:
+        return [], size
+    with open(path, "r", errors="replace") as f:
+        f.seek(start)
+        lines = f.readlines()
+        return lines[-max_lines:], f.tell()
+
+
 class LogHandler(FileSystemEventHandler):
     def __init__(self):
         self._file_positions = {}
@@ -192,16 +272,24 @@ class LogHandler(FileSystemEventHandler):
                 return
 
             current_size = os.path.getsize(path)
-            
+            is_snapshot = is_snapshot_file(path)
+
             # Pokud prepisujeme cely soubor atomicky, last_pos je 0
             last_pos = 0 if is_new_file else self._file_positions.get(path, 0)
-            
-            # Ochrana proti logrotaci (velikost je mensi nez minuly stav)
-            if current_size < last_pos: 
-                last_pos = 0 
 
-            # Pokud se velikost nezmenila, neprovadime zadnou IO operaci
-            if current_size == last_pos: 
+            # Ochrana proti logrotaci (velikost je mensi nez minuly stav)
+            if current_size < last_pos:
+                last_pos = 0
+
+            if is_snapshot:
+                # Snapshot nese celý aktuální stav, ne přírůstek — číst od nuly
+                # a dispatchovat i při nezměněné velikosti. Sběrač zapisuje
+                # `: > file` + append, takže po přepsání stejně dlouhým obsahem
+                # velikost sedí na starou pozici; časná návratová větev níž pak
+                # detektoru nezavolá process() a jeho resolve nemá kdy proběhnout.
+                last_pos = 0
+            elif current_size == last_pos:
+                # Pokud se velikost nezmenila, neprovadime zadnou IO operaci
                 return
 
             with open(path, "r", errors="replace") as f:

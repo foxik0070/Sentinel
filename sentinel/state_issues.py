@@ -831,6 +831,37 @@ def delete_problem(key, resolved_by: str = ''):
             logger.error(f"DB Error delete_problem: {e}")
             return False
 
+# Sloupce tabulky problems jsou autoritativní. details JSON je jen kopie payloadu
+# detektoru — jeho 'last_seen'/'status' přepisovaly skutečný stav, takže issue
+# v UI viselo s cizím časem a stale TTL i recheck se počítaly od něj.
+# severity sloupec plní až klasifikace, prázdný proto necháme doplnit z details.
+_AUTHORITATIVE_FIELDS = (
+    'key', 'status', 'last_seen', 'first_seen', 'occurrence_count',
+    'missing_count', 'channel_type', 'plugin_name', 'host', 'last_line',
+    'severity', 'snoozed_until', 'acknowledged_by', 'acknowledged_at',
+    'label_color', 'merged_into', 'assigned_to', 'depends_on',
+)
+
+
+def _merge_problem_row(row) -> dict:
+    """Řádek z problems + details JSON → dict, kde sloupce přebijí details."""
+    d = dict(row)
+    raw = d.pop('details', None)
+    details = {}
+    if raw:
+        try:
+            loaded = json.loads(raw)
+            if isinstance(loaded, dict):
+                details = loaded
+        except Exception:
+            details = {}
+    for k, v in details.items():
+        if k in _AUTHORITATIVE_FIELDS and d.get(k) not in (None, ''):
+            continue
+        d[k] = v
+    return d
+
+
 def get_problem(key):
     try:
         conn = _get_conn()
@@ -840,12 +871,7 @@ def get_problem(key):
         row = c.fetchone()
         conn.close()
         if row:
-            d = dict(row)
-            if d['details']: 
-                try: d.update(json.loads(d['details']))
-                except: pass
-            del d['details']
-            return d
+            return _merge_problem_row(row)
         return None
     except: return None
 
@@ -880,26 +906,38 @@ def save_problem(key, data):
             c.execute("SELECT status FROM problems WHERE key=?", (key,))
             row = c.fetchone()
             is_new = True
-            if row and row[0] in ['active', 'validating']:
+            if row and row[0] in ['active', 'validating', 'acknowledged']:
                 is_new = False
             
             is_new_issue = is_new  
            
+            # missing_count se dřív do sloupce nezapisoval vůbec — detektory,
+            # co si jím počítají "kolikrát po sobě chybí", se trefovaly jen do
+            # details JSON a fungovaly, dokud details stínilo sloupce. Když ho
+            # payload neuvede, musí zůstat stávající hodnota: jinak by běžné
+            # hlášení vynulovalo počítadlo, které vede reconcile_agent_issues().
+            mc = data.get('missing_count')
+            mc = int(mc) if mc is not None else None
+
             conn.execute("""
                 INSERT INTO problems (key, status, channel_type, last_seen, missing_count, details, snoozed_until, plugin_name, host, last_line, occurrence_count, first_seen)
-                VALUES (?, 'active', ?, ?, 0, ?, NULL, ?, ?, ?, 1, ?)
+                VALUES (?, 'active', ?, ?, COALESCE(?, 0), ?, NULL, ?, ?, ?, 1, ?)
                 ON CONFLICT(key) DO UPDATE SET
-                    status='active',
+                    -- Potvrzení ani snooze re-detekce neruší: jinak se issue
+                    -- odsnoozovalo při prvním dalším hlášení (u detektoru, co
+                    -- běží každou minutu, tedy hned) a ack ztrácel delší TTL.
+                    status=CASE WHEN problems.status='acknowledged'
+                                THEN 'acknowledged' ELSE 'active' END,
                     channel_type=excluded.channel_type,
                     last_seen=excluded.last_seen,
                     details=excluded.details,
-                    snoozed_until=NULL,
+                    missing_count=COALESCE(?, problems.missing_count),
                     plugin_name=excluded.plugin_name,
                     host=excluded.host,
                     last_line=excluded.last_line,
-                    occurrence_count=CASE WHEN problems.status IN ('active','validating') THEN problems.occurrence_count+1 ELSE 1 END,
+                    occurrence_count=CASE WHEN problems.status IN ('active','validating','acknowledged') THEN problems.occurrence_count+1 ELSE 1 END,
                     first_seen=CASE WHEN problems.first_seen IS NULL THEN excluded.first_seen ELSE problems.first_seen END
-            """, (key, channel, now, details_json, data['plugin_name'], host, msg, now))
+            """, (key, channel, now, mc, details_json, data['plugin_name'], host, msg, now, mc))
  
             conn.commit()
             conn.close()
@@ -1182,21 +1220,7 @@ def get_active_issues(include_snoozed: bool = False):
         conn.close()
         suppress = _get_suppress_rules()
         for row in rows:
-            d = dict(row)
-            # Save authoritative column values before details merge
-            col_channel    = d.get('channel_type')
-            col_plugin     = d.get('plugin_name')
-            col_host       = d.get('host')
-            col_last_line  = d.get('last_line')
-            if d.get('details'):
-                try: d.update(json.loads(d['details']))
-                except: pass
-            # Restore columns as authoritative (override whatever was in details JSON)
-            if col_channel:   d['channel_type'] = col_channel
-            if col_plugin:    d['plugin_name']  = col_plugin
-            if col_host:      d['host']         = col_host
-            if col_last_line: d['last_line']    = col_last_line
-            del d['details']
+            d = _merge_problem_row(row)
             if suppress and _is_suppressed(d.get('host', ''), d.get('plugin_name', ''), suppress):
                 continue
             issues.append(d)
