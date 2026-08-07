@@ -1,5 +1,30 @@
 # Historie změn
 
+## [2026.08.003] - 2026-08-07
+
+**Souhrn:** Issues visely v UI, i když už dávno neplatily — šest nezávislých příčin, každá stačila sama. Testovací zpráva z `testpc` z 3. 7. i vyřešená teplota SV3 byly projevy téhož. Ověřeno proti ostrému provozu: `issue_history` ukazovala u SV3 resolve se zpožděním 11–15 h a u `ROOT_LOGIN` **135× `stale_auto` a ani jednou `detector_ok`** — resolve větev toho detektoru nikdy nesepnula. 1113 testů OK (bylo 1069).
+
+### Opravy
+
+- **Zotavení hlášené detektorem se ukládalo jako aktivní problém.** `detector_windows` hlásí návrat pod práh přes `report_problem(key, {'status': 'resolved'})`, jenže `report_problem()` status nikdy nečetl a `save_problem()` řádek bezpodmínečně zapsal jako `status='active'`. Payload zotavení navíc nemá `last_line`, takže ho `save_problem()` zahodil ještě dřív (`return False`) — CPU/RAM/disk issue tedy nešlo zavřít vůbec ničím kromě ruky. Nově `report_problem()` na `resolved`/`ok`/`cleared`/`recovered` issue archivuje a smaže.
+- **`details` JSON přebíjel sloupce tabulky.** `get_problem()` dělal `d.update(json.loads(details))`, takže `last_seen` z payloadu detektoru přepsalo skutečný čas uložení. Karta v UI proto ukazovala `2026-07-03 09:00:01Z`, zatímco sloupec byl čerstvý — a `resolve_stale_problems()` počítající stáří ze sloupce neměl co uklidit. Stejnou cestou šlo přepsat i `status`. Sloupce jsou nově autoritativní (`_merge_problem_row()`), z `details` se doplňují jen pole, pro která sloupec není (`cluster`, `log_file`). `get_active_issues()` mělo částečnou obranu pro čtyři pole — sjednoceno.
+- **Restart přehrál posledních 200 řádků každého logu.** Startovní sken dispatchoval tail bez ohledu na to, co se už zpracovalo, takže dávno neplatné issue vstalo z mrtvých s čerstvým `last_seen` — a tím se samo chránilo před stale TTL. Do té doby se to schovávalo za předchozí bod: v UI svítil starý čas z `details`, takže nikoho nenapadlo, že se záznam právě obnovil. Pozice v logách se nově ukládají do `kv_settings` (`watcher.offsets`) a restart přežijí; neznámý soubor začíná na konci.
+- **Pozice se musí načíst před `observer.start()`.** Sken běžel ve vlákně s `sleep(2)`, ale observer už mezitím doručoval události — a první událost u souboru, který ještě nebyl v `_file_positions`, ho přečetla od nuly. Seed je nově synchronní, před startem observeru.
+- **`hash()` v klíčích issues.** `hash()` je pro `str` randomizovaný per proces (PYTHONHASHSEED), takže po každém restartu vznikl z téhož řádku nový klíč: v UI přibyl duplikát a původní issue už nešlo spárovat ani zavřít. Nahrazeno `api.stable_key_hash()` (SHA-1, 12 znaků).
+- **Potvrzení a odložení rušila první další detekce.** `ON CONFLICT` nastavoval `snoozed_until=NULL` a `status='active'`, takže u detektoru běžícího každou minutu snooze nepřežil ani jeden cyklus a `acknowledged` ztrácelo delší TTL. Ack i snooze nyní re-detekci přežijí, `occurrence_count` se dál zvyšuje.
+- **`_is_false_positive()` četlo jinou DB než zbytek Sentinelu.** Používalo konstantu `DB_FILE` místo `_db_file()`, čímž míjelo override cesty. Přitom `_db_file()` sám bral v potaz jen override na fasádě `sentinel.state` — patch na `state_base.DB_FILE` tiše nedělal nic, protože fasáda si hodnotu kopíruje při importu. Resolver nově respektuje obojí.
+- **Snapshot log se stejnou velikostí se vůbec nezpracoval.** `if current_size == last_pos: return` platilo i pro logy, které sběrač pokaždé přepíše celé (`: > file` + append). Když měl nový obsah stejnou délku jako minulý — u teploty `11.7C` → `11.8C` naprosto běžné — velikost sedla na uloženou pozici a **`process()` se nezavolal vůbec**, takže resolve větev detektoru neměla kdy proběhnout. Issue pak zmizelo až náhodou, když se změnil počet číslic. Nově `config.SNAPSHOT_LOGS` (fnmatch patterny): takový soubor se čte celý a dispatchuje i při nezměněné velikosti. Ve verzi 2026.05 tohle obcházel ruční zásah přímo na stroji (`_snapshot_files` zadrátované v kódu), který se do gitu nikdy nedostal.
+- **`missing_count` se nikdy neukládal do sloupce.** `save_problem()` ho vkládal jen jako konstantu `0` a v `ON CONFLICT` vůbec — detektory, které si jím počítají „kolikrát po sobě chybí", se trefovaly jen do `details` JSON a fungovaly výhradně proto, že `details` stínilo sloupce. Oprava autoritativních sloupců (výše) by je tím utloukla: počítadlo by zůstalo na nule a issue by se nevyřešilo **nikdy**. Nově se `missing_count` persistuje, a když ho payload neuvede, zůstane stávající hodnota — jinak by běžné hlášení vynulovalo počítadlo, které vede `reconcile_agent_issues()`.
+
+### Detektory
+
+- **`detector_universal_security`** — stabilní klíče místo `hash()`.
+- Opravy detektorů (`detector_sv3` reconciliation nad snapshotem) jsou v repu `sentinel-plugins-work`, který byl při té příležitosti synchronizován z ostrého provozu — všech 9 sledovaných souborů se lišilo a 5 dalších v repu vůbec nebylo.
+
+### Testy
+
+- `tests/test_issue_lifecycle_stale.py` (44 testů) — zotavení od detektoru včetně payloadu bez `last_line`, autoritativnost sloupců, stale sweep proti podvrženému `last_seen` (i času v budoucnu), přežití ack/snooze při re-detekci, stabilita klíčů, persistence `missing_count` včetně smyčky „přečti–zvyš–ulož–přečti", a offsety watcheru: nepřehrání historie, rotace, poškozený záznam, seed před startem. Reprodukce SV3: dva přepisy snapshotu o stejné délce musí dát dva dispatche, u běžného logu naopak jeden.
+
 ## [2026.08.002] - 2026-08-07
 
 **Souhrn:** Hot-reload knowledge base nikdy nefungoval — watcher sledoval jiný adresář, než ve kterém KB leží. Přestavba KB si nově vyžádá re-index sama, watcher opraven jako záchranná síť. 1069 testů OK (bylo 1050).
