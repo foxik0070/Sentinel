@@ -1,5 +1,31 @@
 # Historie změn
 
+## [2026.08.002] - 2026-08-07
+
+**Souhrn:** Hot-reload knowledge base nikdy nefungoval — watcher sledoval jiný adresář, než ve kterém KB leží. Přestavba KB si nově vyžádá re-index sama, watcher opraven jako záchranná síť. 1069 testů OK (bylo 1050).
+
+### Opravy
+
+- **Re-index KB se nikdy nespustil — watcher sledoval jiný adresář.** `observer.schedule(cfg_handler, dirname(CONFIG_PATH))` hlídá `/etc/sentinel`, jenže KB leží v `/opt/Sentinel/knowledge_base.txt`. Větev pro KB v `ConfigHandler` byla od začátku mrtvý kód: po přestavbě KB zůstala Chroma se starým obsahem až do restartu služby, bez jakéhokoli hlášení. Přibyl samostatný `observer.schedule` pro adresář KB.
+- **`ConfigHandler` reagoval jen na `on_modified`.** Atomický zápis (`os.replace`) generuje `IN_MOVED_TO`, ne `IN_MODIFY` — událost tedy nikdo neobsloužil. Netýkalo se to jen KB: `config.yaml` přes `sed -i`, ansible `template` nebo vim s `backupcopy=no` se zapisuje taky přes rename, takže i hot-reload konfigurace tiše míjel. Doplněno `on_moved` (bere `dest_path`) a `on_created`.
+- **`POST /api/kb/reindex` nedělal vůbec nic a hlásil úspěch.** Endpoint spouštěl `build_kb.py` bez `--auto`; bez TTY skript spadl do interaktivního menu a na `EOFError` skončil s rc=0, aniž by cokoli sestavil.
+- **Sdílený debounce umlčoval reindex.** Jeden časovač pro konfiguraci i KB znamenal, že uložení `config.yaml` spolklo KB událost přicházející do 10 s. Nově debounce per cíl; okno zároveň srazí bouři `created`+`moved`+`modified` z jednoho atomického zápisu na jeden reindex.
+
+### Re-index bez restartu (`build_kb.py`)
+
+- `request_reindex()` — po zápisu KB se POSTne na `/api/rag/reindex` běžícího Sentinelu (klíč z `/var/lib/sentinel/client_api_key`, port z `web.port`). Jen stdlib `urllib`, žádná nová závislost.
+- **Nečeká se na událost ze souborového systému.** Ta cesta selže vždy, když se KB staví jinde, kopíruje přes mount nebo zapisuje atomicky — a selže tiše. Vyžádání re-indexu je deterministické a je vidět v logu.
+- Selhání není fatální: chybějící klíč, neběžící Sentinel i HTTP 403 skončí varováním a návratovým kódem 0. KB je na disku a naindexuje se při startu.
+
+### Rozhodování
+
+- Ve `ConfigHandler` rozhoduje **celá cesta**, ne jen jméno souboru. Sledují se dva adresáře a ve vývojovém stromu vedle KB leží vlastní `config.yaml`, který by jinak spouštěl reload ostré konfigurace. Ze stejného důvodu se KB porovnává na přesnou cestu — mezisoubor `knowledge_base.txt.tmp` reindex nespustí.
+
+### Testy
+
+- `tests/test_kb_hotreload.py` — `os.replace`/zápis/vytvoření KB spustí reindex, `.tmp` ne, cizí `config.yaml` nereloaduje, debounce je per cíl i protibouřkový. Součástí je end-to-end test s reálným inotify observerem.
+- `tests/test_build_kb_reindex.py` — cílové URL, metoda a hlavička `X-API-Key`, fallback portu, a že chybějící klíč ani spadlý server build neshodí.
+
 ## [2026.08.001] - 2026-08-03
 
 **Souhrn:** Tři opravy chyb odhalené ostrým provozem (jedna z nich dva dny blokovala veškeré SSH), tři dávky AI funkcí a dokumentace přípravy monitorovaného stroje. 1050 testů OK (bylo 938). Z roadmapy `todo-ai.md` hotovo 80 ze 100.

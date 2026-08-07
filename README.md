@@ -2,10 +2,10 @@
 
 ![Sentinel Commander](sentinel_master.png)
 
-![Version](https://img.shields.io/badge/version-v2026.08.001-blue)
+![Version](https://img.shields.io/badge/version-v2026.08.002-blue)
 ![License: MIT](https://img.shields.io/badge/License-MIT-cyan.svg)
 ![Python](https://img.shields.io/badge/python-3.13%2B-blue)
-![Tests](https://img.shields.io/badge/tests-1050%20passing-green)
+![Tests](https://img.shields.io/badge/tests-1069%20passing-green)
 
 **Hybrid AI Log Monitor & Analyzer for Linux Infrastructure**
 

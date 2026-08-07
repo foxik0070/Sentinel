@@ -85,19 +85,43 @@ def _reinit_ldap():
 class ConfigHandler(FileSystemEventHandler):
     def __init__(self):
         super().__init__()
-        self.last_reload_time = 0
-        self.debounce_interval = 10.0 
+        # debounce per cíl — uložení configu nesmí umlčet reindex KB
+        self.last_reload_time = {}
+        self.debounce_interval = 10.0
 
     def on_modified(self, event):
-        fname = os.path.basename(event.src_path)
-        kb_filename = os.path.basename(config.KB_FILE_PATH)
+        if not event.is_directory:
+            self._handle(event.src_path)
 
-        now = time.time()
-        if now - self.last_reload_time < self.debounce_interval:
+    def on_created(self, event):
+        if not event.is_directory:
+            self._handle(event.src_path)
+
+    def on_moved(self, event):
+        """Atomicky zapsany soubor (os.replace) generuje IN_MOVED_TO, ne IN_MODIFY."""
+        if not event.is_directory:
+            self._handle(getattr(event, 'dest_path', '') or event.src_path)
+
+    def _handle(self, path):
+        fname = os.path.basename(path)
+        apath = os.path.abspath(path)
+        # Sledujeme dva adresare (config + KB), proto rozhoduje cela cesta —
+        # jinak by config.yaml ve vyvojovem stromu vedle KB spustil reload.
+        cfg_dir = os.path.dirname(os.path.abspath(str(config.CONFIG_PATH or "")))
+        kb_path = os.path.abspath(str(config.KB_FILE_PATH)) if config.KB_FILE_PATH else ""
+
+        is_config = (fname in ["config.yaml", "settings.yaml"]
+                     and os.path.dirname(apath) == cfg_dir)
+        is_kb = bool(kb_path) and apath == kb_path
+        if not (is_config or is_kb):
             return
 
-        if fname in ["config.yaml", "settings.yaml"]:
-            self.last_reload_time = now
+        now = time.time()
+        if now - self.last_reload_time.get(fname, 0) < self.debounce_interval:
+            return
+
+        if is_config:
+            self.last_reload_time[fname] = now
             utils.log_message(f"CONFIG CHANGE DETECTED: {fname}")
             # Počkat 1s aby se dokončil zápis souboru před čtením
             # (inotify IN_MODIFY firuje při prvním zapsaném bajtu, ne po close)
@@ -118,8 +142,8 @@ class ConfigHandler(FileSystemEventHandler):
             except Exception as e:
                 utils.log_message(f"[!] Config Reload Failed: {e}")
 
-        elif fname == kb_filename:
-            self.last_reload_time = now
+        elif is_kb:
+            self.last_reload_time[fname] = now
             utils.log_message(f"KB CHANGE DETECTED: {fname}")
             
             def run_reindex():
