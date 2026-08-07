@@ -9,6 +9,7 @@ import os
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
@@ -139,6 +140,29 @@ class TestConfigLoad(unittest.TestCase):
             config.load_config()  # must not raise
         finally:
             config.CONFIG_PATH = orig
+
+    def test_every_read_key_is_in_known_keys(self):
+        """Klíč, který loader čte, musí být i ve whitelistu _KNOWN_KEYS.
+
+        Jinak `load_config()` hodnotu přeskočí a jen zaloguje "Neznámý klíč" —
+        volba se tváří jako podporovaná, ale nic nedělá. Přesně tak se stalo,
+        že `snapshot_logs` v ostrém provozu tiše nefungoval.
+        """
+        import re
+        src = Path(config.__file__).read_text()
+        read_keys = set(re.findall(r'data\.get\(\s*["\']([a-z0-9_]+)["\']', src))
+        self.assertTrue(read_keys, "sanity: regex musí najít aspoň nějaké klíče")
+        missing = sorted(read_keys - config._KNOWN_KEYS)
+        self.assertEqual(missing, [],
+                         f"loader čte klíče, které nejsou v _KNOWN_KEYS: {missing}")
+
+    def test_snapshot_logs_loaded(self):
+        self._write_and_load({"snapshot_logs": ["sv3.log", "racks.log"]})
+        self.assertEqual(config.SNAPSHOT_LOGS, ["sv3.log", "racks.log"])
+
+    def test_snapshot_logs_defaults_empty(self):
+        self._write_and_load({"instance_name": "TEST"})
+        self.assertEqual(config.SNAPSHOT_LOGS, [])
 
 
 if __name__ == "__main__":

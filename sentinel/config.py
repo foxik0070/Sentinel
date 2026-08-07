@@ -831,7 +831,10 @@ _KNOWN_KEYS = {
     'issue_history_retention_days', 'display_tz', 'heartbeat_urls', 'gitea',
     'windows_ingest_key', 'dns_checks', 'lifecycle', 'ai_digest_hour',
     'rag_learn_resolved', 'ai_timeout_seconds', 'slo_targets',
-    'process_rotated_logs', 'snmp_poll', 'problem_retention_days',
+    'process_rotated_logs', 'snmp_poll', 'problem_retention_days', 'snapshot_logs',
+    # Loader je cetl, ale ve whitelistu nebyly — nastaveni v config.yaml se tise
+    # zahodilo s hlaskou "Neznamy klic". Hlida test_every_read_key_is_in_known_keys.
+    'auto_severity_enabled', 'auto_duplicate_enabled', 'fim', 'trusted_proxies',
 }
 
 VALIDATION_WARNINGS: list = []   # populated by _validate_config(), readable via API
