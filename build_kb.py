@@ -22,6 +22,8 @@ import os
 import re
 import sys
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 # ─── OPTIONAL DEPENDENCIES ────────────────────────────────────────────────────
@@ -62,6 +64,8 @@ DEFAULT_SOURCES = [
 DEFAULT_OUTPUT  = str(SCRIPT_DIR / "knowledge_base.txt")
 
 SENTINEL_CONFIG = "/etc/sentinel/config.yaml"
+CLIENT_KEY_PATH = "/var/lib/sentinel/client_api_key"
+DEFAULT_WEB_PORT = 5050
 
 SUPPORTED = {
     ".md", ".txt", ".rst",
@@ -475,9 +479,55 @@ def build_knowledge_base(source_dirs, output_file, include_meta=True,
             f.write(f"CONTENT:\n{content}\n\n")
 
     print(f"  Written       : {out}  ({out.stat().st_size:,} bytes)")
-    print(f"{'═'*60}")
-    print(f"\n  RAG will auto-index on next Sentinel startup (mtime changed).")
-    print(f"  To force re-index now: sudo systemctl restart sentinel\n")
+    print(f"{'═'*60}\n")
+    request_reindex()
+
+
+# ─── REINDEX TRIGGER ──────────────────────────────────────────────────────────
+
+def _sentinel_web_port():
+    """web.port z config.yaml, jinak výchozí 5050."""
+    if _yaml is None:
+        return DEFAULT_WEB_PORT
+    try:
+        data = _yaml.safe_load(Path(SENTINEL_CONFIG).read_text(encoding="utf-8")) or {}
+        return int((data.get("web") or {}).get("port", DEFAULT_WEB_PORT))
+    except Exception:
+        return DEFAULT_WEB_PORT
+
+
+def request_reindex():
+    """
+    Vyžádá si re-index RAG přímo na běžícím Sentinelu (POST /api/rag/reindex).
+
+    Nespoléhá na filesystem watcher — ten sleduje adresář KB, ale atomický
+    zápis i mount/kopie ho můžou minout, a při buildu na jiném stroji neexistuje
+    vůbec. Chyba tady není fatální: KB je na disku a naindexuje se při startu.
+    """
+    try:
+        key = Path(CLIENT_KEY_PATH).read_text(encoding="utf-8").strip()
+    except Exception as e:
+        print(f"  {_yellow('!')} Reindex nevyžádán — {CLIENT_KEY_PATH}: {e}")
+        print(f"  {_dim('KB se naindexuje při příštím startu Sentinelu.')}")
+        return False
+
+    url = f"http://127.0.0.1:{_sentinel_web_port()}/api/rag/reindex"
+    req = urllib.request.Request(
+        url, data=b"", method="POST",
+        headers={"X-API-Key": key, "Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            if resp.status == 200:
+                print(f"  {_green('✓')} Re-indexace vyžádána — běží v pozadí, bez restartu.")
+                return True
+            print(f"  {_yellow('!')} Reindex: HTTP {resp.status}")
+    except urllib.error.HTTPError as e:
+        print(f"  {_yellow('!')} Reindex odmítnut: HTTP {e.code} {e.reason}")
+    except Exception as e:
+        print(f"  {_yellow('!')} Sentinel neodpověděl na {url}: {e}")
+    print(f"  {_dim('KB se naindexuje při příštím startu Sentinelu.')}")
+    return False
 
 
 # ─── CLI ──────────────────────────────────────────────────────────────────────
@@ -634,9 +684,8 @@ def _kb_stats(output_file):
     print(f"    Soubor:  {output_file}")
     print(f"    Velikost: {size_kb} KB")
     print(f"    Chunků:  {entries}")
-    print(f"\n  {_dim('Sentinel automaticky reindexuje KB při příštím startu.')}")
-    print(f"  {_dim('Pro okamžitý reindex: sudo systemctl restart sentinel')}")
-    print(f"  {_dim('nebo v UI: Tools → KB → Reindex')}")
+    print(f"\n  {_dim('Re-index si build_kb vyžádal sám (POST /api/rag/reindex).')}")
+    print(f"  {_dim('Pokud Sentinel neběžel, naindexuje se KB při příštím startu.')}")
 
 
 def _show_kb_info(output_file):

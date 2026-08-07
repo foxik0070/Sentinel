@@ -2,6 +2,16 @@
 
 Tento dokument zaznamenává breaking changes a nové endpointy mezi verzemi.
 
+## v2026.08.002 (2026-08-07)
+
+**Bez breaking changes.** Žádný endpoint nezměnil tvar odpovědi ani nepřibyl.
+
+> **Oprava chování, ne rozhraní:** `POST /api/kb/reindex` spouštěl `build_kb.py`
+> bez `--auto`. Bez TTY skript spadl do interaktivního menu a na `EOFError`
+> skončil s rc=0 — endpoint tedy vracel `{"status": "ok"}`, ale KB nepřestavěl.
+> Nově se KB skutečně sestaví a `build_kb.py` si sám vyžádá `POST /api/rag/reindex`,
+> takže se nová KB projeví bez restartu služby.
+
 ## v2026.08.001 (2026-08-03)
 
 **Bez breaking changes.** Žádný stávající endpoint nezměnil tvar odpovědi.
