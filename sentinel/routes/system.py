@@ -1532,8 +1532,10 @@ def create_blueprint(service):
         build_script = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'build_kb.py')
         def _run():
             try:
+                # --auto: bez TTY by build_kb.py spadl do interaktivniho menu
+                # a na EOFError skoncil s rc=0, aniz by cokoli sestavil
                 r = subprocess.run(
-                    ['python3', build_script],
+                    ['python3', build_script, '--auto'],
                     capture_output=True, text=True, timeout=120
                 )
                 logger.info(f"KB reindex: rc={r.returncode} {r.stdout[-200:] if r.stdout else ''}")

@@ -240,11 +240,19 @@ def main():
     threading.Thread(target=_initial_scan, daemon=True, name="InitialScan").start()
     
     # 2. Config Watcher (Hot-Reload)
+    cfg_handler = watcher.ConfigHandler()
+    cfg_dir = None
     if config.CONFIG_PATH and os.path.exists(config.CONFIG_PATH):
-        cfg_dir = os.path.dirname(config.CONFIG_PATH) or "."
-        cfg_handler = watcher.ConfigHandler()
+        cfg_dir = os.path.abspath(os.path.dirname(config.CONFIG_PATH) or ".")
         observer.schedule(cfg_handler, cfg_dir, recursive=False)
         utils.log_message(f"Starting Hot-Reload: {cfg_dir}")
+
+    # 2b. KB Watcher — KB lezi typicky mimo adresar configu (/opt/Sentinel vs
+    #     /etc/sentinel), bez samostatneho schedule by KB vetev nikdy nevystrelila.
+    kb_dir = os.path.abspath(os.path.dirname(config.KB_FILE_PATH)) if config.KB_FILE_PATH else ""
+    if kb_dir and kb_dir != cfg_dir and os.path.isdir(kb_dir):
+        observer.schedule(cfg_handler, kb_dir, recursive=False)
+        utils.log_message(f"Starting KB Hot-Reload: {kb_dir}")
 
     observer.start()
 
