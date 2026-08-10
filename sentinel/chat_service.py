@@ -2451,14 +2451,14 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
             b64_payload = base64.b64encode(raw_payload.encode()).decode()
             fix_btn = f"<i class='fa-solid fa-wand-magic-sparkles' title='Autofix' style='cursor:pointer; color:#a855f7; font-size:1.15em; margin-right:12px; transition:opacity 0.2s;' onmouseover=\"this.style.opacity='0.7'\" onmouseout=\"this.style.opacity='1'\" onclick=\"openAutofixModal('{b64_payload}')\"></i>"
         if role in ['admin', 'superadmin']:
-            reanalyze_btn = f"<i class='fa-solid fa-rotate-right' title='Re-analyze AI' style='cursor:pointer; color:var(--text-muted); font-size:1.1em; margin-right:12px; transition:color 0.2s;' onmouseover=\"this.style.color='var(--accent)'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"_reanalyzeIssue('{kb64}')\"></i>"
+            reanalyze_btn = f"<i class='fa-solid fa-rotate-right issue-action-secondary' title='Re-analyze AI' style='cursor:pointer; color:var(--text-muted); font-size:1.1em; margin-right:12px; transition:color 0.2s;' onmouseover=\"this.style.color='var(--accent)'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"_reanalyzeIssue('{kb64}')\"></i>"
             _host = html.escape(i.get('host', ''))
             if _host:
-                ssh_btn = f"<i class='fa-solid fa-terminal' title='SSH na {_host}' style='cursor:pointer; color:var(--text-muted); font-size:1.1em; margin-right:12px; transition:color 0.2s;' onmouseover=\"this.style.color='var(--accent)'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"openSshModal('{_host}')\"></i>"
+                ssh_btn = f"<i class='fa-solid fa-terminal issue-action-secondary' title='SSH na {_host}' style='cursor:pointer; color:var(--text-muted); font-size:1.1em; margin-right:12px; transition:color 0.2s;' onmouseover=\"this.style.color='var(--accent)'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"openSshModal('{_host}')\"></i>"
             _plugin = html.escape(i.get('plugin_name', ''))
             _channel = html.escape(i.get('channel_type', ''))
             _ll_b64 = base64.b64encode((i.get('last_line', '') or '').encode()).decode()
-            runbook_btn = f"<i class='fa-solid fa-book-open' title='Runbook' style='cursor:pointer; color:var(--text-muted); font-size:1.05em; margin-right:12px; transition:color 0.2s;' onmouseover=\"this.style.color='#fd7e14'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"openRunbookModal('{_plugin}','{_channel}','{_ll_b64}')\"></i>"
+            runbook_btn = f"<i class='fa-solid fa-book-open issue-action-secondary' title='Runbook' style='cursor:pointer; color:var(--text-muted); font-size:1.05em; margin-right:12px; transition:color 0.2s;' onmouseover=\"this.style.color='#fd7e14'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"openRunbookModal('{_plugin}','{_channel}','{_ll_b64}')\"></i>"
 
         # JS argument v HTML atributu: json.dumps udělá platný JS literál,
         # html.escape ho bezpečně vloží do atributu (parser entity dekóduje zpět).
@@ -2474,19 +2474,19 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
             f"onmouseover=\"this.style.color='var(--text-main)'\" onmouseout=\"this.style.color='var(--text-muted)'\">"
             f"<i class='fa-regular fa-comment-dots'></i></span>"
         )
-        share_btn = f"<i class='fa-solid fa-share-nodes' title='Sdílet' style='cursor:pointer; color:var(--text-muted); font-size:1.15em; margin-right:12px; transition:color 0.2s;' onmouseover=\"this.style.color='var(--text-main)'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"shareIssue({share_arg}, this)\"></i>"
+        share_btn = f"<i class='fa-solid fa-share-nodes issue-action-secondary' title='Sdílet' style='cursor:pointer; color:var(--text-muted); font-size:1.15em; margin-right:12px; transition:color 0.2s;' onmouseover=\"this.style.color='var(--text-main)'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"shareIssue({share_arg}, this)\"></i>"
         ignore_html = f"<i class='fa-solid fa-eye-slash' title='Ignorovat' style='cursor:pointer; color:var(--text-muted); font-size:1.15em; margin-right:12px; transition:color 0.2s;' onmouseover=\"this.style.color='var(--text-main)'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"triggerAction('ignore_key {kb64}')\"></i>" if role in ['admin', 'superadmin'] else ""
         delete_html = f"<i class='fa-solid fa-trash' title='Smazat' style='cursor:pointer; color:#c50f1f; font-size:1.15em; transition:opacity 0.2s;' onmouseover=\"this.style.opacity='0.7'\" onmouseout=\"this.style.opacity='1'\" onclick=\"triggerAction('delete_key {kb64}')\"></i>" if role in ['admin', 'superadmin'] else ""
 
         if role in ['admin', 'superadmin']:
             if is_snoozed:
                 snooze_btn = (
-                    f"<i class='fa-solid fa-bell' title='Zrušit odložení' style='cursor:pointer; color:#ffc107; "
+                    f"<i class='fa-solid fa-bell issue-action-secondary' title='Zrušit odložení' style='cursor:pointer; color:#ffc107; "
                     f"font-size:1.15em; margin-right:12px;' onclick=\"unsnoozeIssue('{kb64}')\"></i>"
                 )
             else:
                 snooze_btn = (
-                    f"<i class='fa-solid fa-clock' title='Odložit' style='cursor:pointer; color:var(--text-muted); "
+                    f"<i class='fa-solid fa-clock issue-action-secondary' title='Odložit' style='cursor:pointer; color:var(--text-muted); "
                     f"font-size:1.15em; margin-right:12px; transition:color 0.2s;' "
                     f"onmouseover=\"this.style.color='var(--text-main)'\" onmouseout=\"this.style.color='var(--text-muted)'\" "
                     f"onclick=\"snoozeIssue('{kb64}', this)\"></i>"
@@ -2546,7 +2546,7 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
         recheck_btn = ""
         if role in ['admin', 'superadmin']:
             recheck_btn = (
-                f"<i class='fa-solid fa-stethoscope' title='Ověřit platnost (recheck)' "
+                f"<i class='fa-solid fa-stethoscope issue-action-secondary' title='Ověřit platnost (recheck)' "
                 f"style='cursor:pointer; color:var(--text-muted); font-size:1.1em; margin-right:12px; transition:color 0.2s;' "
                 f"onmouseover=\"this.style.color='#20c997'\" onmouseout=\"this.style.color='var(--text-muted)'\" "
                 f"onclick=\"_recheckIssue('{kb64}')\"></i>"
@@ -2583,18 +2583,24 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
             except Exception:
                 pass
 
+        # Layout přes sdílené třídy (.issue-row-inner / .issue-content-area /
+        # .issue-actions) — stejné jako v routes/issues.py. Dřív to byly inline
+        # flex styly, na které nesedla žádná media query, takže se karta na
+        # mobilu roztáhla přes viewport a .status-wrapper ji uřízl.
         return (f"<div class='{card_class}' data-issue-card='1' data-issue-key='{kb64}' "
                 f"style='background:var(--card-bg); border-left:4px solid {border}; padding:8px 12px; margin-bottom:6px; "
-                f"display:flex; justify-content:space-between; align-items:center; color:var(--text-main); "
+                f"color:var(--text-main); "
                 f"border-right:1px solid var(--card-border); border-top:1px solid var(--card-border); border-bottom:1px solid var(--card-border); {card_opacity}'>"
-                f"<div style='flex-grow:1; min-width:0;'>"
-                f"<div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;'>"
+                f"<div class='issue-row-inner'>"
+                f"<div class='issue-content-area'>"
+                f"<div class='issue-meta-row'>"
                 f"<small style='color:var(--text-muted); font-size:0.8em;'>🕒 {ts} | <b style='color:{det_color};'>[{plugin_origin}]</b>{occ_badge}{first_seen_str}{extra_badge}{snooze_badge}{severity_badge}{_sla_badge}{_stale_badge}{_assignee_badge}</small>"
-                f"<small style='background:rgba(255,255,255,0.05); padding:1px 5px; border-radius:3px; font-size:0.75em; color:var(--text-muted);'>{channel}</small>"
+                f"<small class='issue-channel-badge' style='background:rgba(255,255,255,0.05); padding:1px 5px; border-radius:3px; font-size:0.75em; color:var(--text-muted);'>{channel}</small>"
                 f"</div>"
                 f"<span style='font-size:0.95em; word-break:break-word;'><b>{safe_host}</b>: {safe_msg}</span>"
                 f"</div>"
-                f"<div style='display:flex; align-items:center; flex-shrink:0; padding-left:15px;'>{fix_btn}{reanalyze_btn}{recheck_btn}{runbook_btn}{ssh_btn}{ack_btn}{snooze_btn}{comment_btn}{share_btn}{ignore_html}{delete_html}</div>"
+                f"<div class='issue-actions'>{fix_btn}{reanalyze_btn}{recheck_btn}{runbook_btn}{ssh_btn}{ack_btn}{snooze_btn}{comment_btn}{share_btn}{ignore_html}{delete_html}</div>"
+                f"</div>"
                 f"</div>")
 
     _GROUP_COLLAPSE_AT = 3

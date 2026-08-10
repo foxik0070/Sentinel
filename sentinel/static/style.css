@@ -410,6 +410,17 @@ details.ok-metrics[open] > summary::after { content: '▲'; }
     word-break: break-word;
     overflow: hidden;
 }
+/* Řádek s metadaty (čas, plugin, badge) + kanál vpravo */
+.issue-meta-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    margin-bottom: 4px;
+}
+.issue-meta-row > small:first-child { min-width: 0; }
+.issue-channel-badge { flex-shrink: 0; }
 .issue-actions {
     display: flex;
     align-items: center;
@@ -535,9 +546,16 @@ details.ok-metrics[open] > summary::after { content: '▲'; }
         gap: 2px;
         flex-shrink: 0;
     }
+    /* Metadata na mobilu zalomit místo přetečení */
+    .issue-meta-row { flex-wrap: wrap; row-gap: 2px; }
+    /* Inline margin-right:12px u ikon je na mobilu příliš — stáhnout */
+    .issue-actions > i, .issue-actions > span { margin-right: 6px !important; }
+    .issue-actions > :last-child { margin-right: 0 !important; }
+
     /* Na úzkých mobilech schovat méně důležité akce */
     @media (max-width: 480px) {
         .issue-actions .issue-action-secondary { display: none !important; }
+        .issue-actions > i, .issue-actions > span { margin-right: 4px !important; font-size: 1em !important; }
     }
 
     /* Hlavicka - zalomeni do dvou radku a optimalizace mista */
