@@ -784,8 +784,20 @@ details.ok-metrics[open] > summary::after { content: '▲'; }
     #dedicated-issues-modal .modal-header { flex-wrap: wrap; }
     /* Issues toolbar — wrap tlačítka */
     #dedicated-issues-modal > div > div[style*="padding:8px"] { max-height: 80px; overflow-y: auto; }
-    /* Zkrátit text v kartách issue na mobilu */
-    [data-issue-card] span[title] { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; }
+    /* Zkrátit *badge* v kartách issue na mobilu. .issue-msg musí zůstat venku —
+       hlavní text zprávy nese title= (tooltip "kliknutím rozbalit detail"), takže
+       ho tenhle selektor dřív nacpal na jeden 200px řádek s výpustkou a z issue
+       byla vidět jen první tři slova. */
+    [data-issue-card] span[title]:not(.issue-msg) { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; }
+}
+
+/* Hlavní text issue — vždy zalomit přes celou šířku, nikdy neořezávat */
+.issue-msg {
+    display: block;
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    max-width: none;
 }
 
 /* --- PC: modal-body maximální výška dle viewport (#5) --- */
