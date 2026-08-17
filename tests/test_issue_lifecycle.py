@@ -216,5 +216,31 @@ class TestSysErrMatching(unittest.TestCase):
         self.assertFalse(self._matches("keepalived: VRRP failover completed to BACKUP"))
 
 
+class TestDigestDateSeed(_DBCase):
+    """Restart nesmí poslat denní AI digest podruhé."""
+
+    def _seed(self):
+        from sentinel.chat_service import _last_digest_date
+        return _last_digest_date()
+
+    def test_none_when_never_ran(self):
+        self.assertIsNone(self._seed())
+
+    def test_reads_stored_date(self):
+        import json as _json
+        state.set_setting('ai_daily_digest',
+                          _json.dumps({"date": "2026-08-17 07:00", "text": "x"}))
+        self.assertEqual(self._seed().isoformat(), '2026-08-17')
+
+    def test_survives_garbage(self):
+        state.set_setting('ai_daily_digest', 'tohle není JSON')
+        self.assertIsNone(self._seed())
+
+    def test_survives_missing_date_key(self):
+        import json as _json
+        state.set_setting('ai_daily_digest', _json.dumps({"text": "bez data"}))
+        self.assertIsNone(self._seed())
+
+
 if __name__ == '__main__':
     unittest.main()
