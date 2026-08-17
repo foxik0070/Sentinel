@@ -227,6 +227,21 @@ def requires_auth(f):
 
 IGNORED_FILE = os.path.join(config.LOG_DIR, "ignored_issues.json")
 
+def _last_digest_date():
+    """Datum posledního AI denního digestu z kv_settings, nebo None.
+
+    Údržbová smyčka si drží "poslal jsem už dnes?" v lokální proměnné, která se
+    restartem ztratí. Bez tohohle načtení by restart v digest hodině poslal
+    přehled znovu. Digest si datum ukládá sám ve tvaru 'YYYY-MM-DD HH:MM'.
+    """
+    try:
+        raw = json.loads(state.get_setting('ai_daily_digest') or '{}').get('date', '')
+        return datetime.strptime(raw[:10], '%Y-%m-%d').date() if raw else None
+    except Exception as e:
+        logger.debug(f"_last_digest_date: {e}")
+        return None
+
+
 # Session cache for sentinel-hw device proxying (avoids login on every request)
 _hw_sessions: dict = {}
 _hw_sessions_lock = threading.Lock()
@@ -1315,6 +1330,7 @@ class ChatService(threading.Thread):
         last_report_date = None
         last_snooze_check = 0
         last_hourly_hour = None
+        last_digest_date = _last_digest_date()
         while True:
             try:
                 now = datetime.now()
@@ -1351,6 +1367,16 @@ class ChatService(threading.Thread):
                 if now.hour == _report_hour and now.minute == 0 and last_report_date != now.date():
                     last_report_date = now.date()
                     threading.Thread(target=self._send_daily_report, daemon=True, name="DailyReport").start()
+                # AI denní digest (431). Config slibuje "-1 = vypnuto" a defaultně
+                # stojí na 7:00, jenže naplánovaný byl jen ve scheduler.py, takže
+                # se nikdy neodeslal. Bez minute==0: smyčka spí 30 s a při zátěži
+                # by se ta jediná minuta dala minout a digest by ten den vypadl.
+                _dig_hour = int(getattr(config, 'AI_DIGEST_HOUR', 7))
+                if (_dig_hour >= 0 and now.hour == _dig_hour
+                        and last_digest_date != now.date()):
+                    last_digest_date = now.date()
+                    threading.Thread(target=self._generate_ai_daily_digest,
+                                     daemon=True, name="AIDailyDigest").start()
                 # Apply snooze maintenance windows every 60 seconds
                 cur_ts = time.time()
                 if cur_ts - last_snooze_check >= 60:
@@ -1394,6 +1420,14 @@ class ChatService(threading.Thread):
                             self.user_sessions.pop(sid, None)
                     except Exception as e:
                         logger.warning(f"session_gc: {e}")
+                    # Hodinové úlohy — obojí bylo naplánované jen ve scheduler.py,
+                    # takže se nikdy nespustilo. Ve vlákně, ať pomalý DNS resolver
+                    # nebo AI nezdrží údržbovou smyčku.
+                    threading.Thread(target=self._generate_hourly_joke,
+                                     daemon=True, name="HourlyJoke").start()
+                    # Sama si sáhne pro config.DNS_CHECKS a bez nich hned skončí.
+                    threading.Thread(target=self._check_dns_records,
+                                     daemon=True, name="DNSCheck").start()
                 # Weekly digest
                 _wr_day = int(getattr(config, 'WEEKLY_REPORT_DAY', 0))
                 _wr_hour = int(getattr(config, 'WEEKLY_REPORT_HOUR', 8))
