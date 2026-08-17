@@ -342,6 +342,14 @@ def main():
                         utils.log_message(f"Stale cleanup: resolved {n} inactive problems (per-severity TTL)")
                 except Exception as _e:
                     utils.log_message(f"[!] Stale cleanup failed: {_e}")
+                # Event-typy (SYS_ERR/OOM/PANIC) mají pořád čerstvý last_seen, takže
+                # je stale cleanup výše nikdy nechytí — jedou na strop podle first_seen.
+                try:
+                    n = state.resolve_aged_event_issues()
+                    if n:
+                        utils.log_message(f"Event cleanup: archived {n} event issues over max age")
+                except Exception as _e:
+                    utils.log_message(f"[!] Event cleanup failed: {_e}")
 
             # 486: dozrálé pokusy o opravu — zabralo to, nebo se problém vrátil?
             if fix_verify_counter >= FIX_VERIFY_INTERVAL:

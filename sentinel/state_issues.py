@@ -503,6 +503,133 @@ def resolve_stale_problems(ttl_hours: int = 0) -> int:
             return 0
 
 
+def reconcile_detector_issues(prefixes, reported_keys, host: str | None = None,
+                              threshold: int | None = None) -> list:
+    """Rekonciliace pro interní detektory — obdoba reconcile_agent_issues.
+
+    Určeno VÝHRADNĚ pro detektory, které v jednom běhu vidí celý aktuální stav
+    (ha_detector dostane kompletní seznam entit, capacity_detector plný sweep
+    na server). Pro log-událostní detektory je nepoužitelná: tam "klíč nebyl
+    hlášen" znamená jen "nepřišel nový řádek", ne "problém pominul", a
+    rekonciliace by zavírala živé issues.
+
+    Klíč, který v `reported_keys` chybí, dostane missing_count+1; při dosažení
+    AUTO_RESOLVE_MISSING_COUNT se archivuje (resolve_reason='detector_state_ok').
+    Threshold tlumí ojedinělé neúplné dávky (rotace logu v půlce sweepu).
+
+    Vrací seznam uzavřených klíčů.
+    """
+    if isinstance(prefixes, str):
+        prefixes = [prefixes]
+    prefixes = [str(p).strip() for p in (prefixes or []) if str(p).strip()]
+    if not prefixes:
+        return []
+    reported = set(reported_keys or ())
+    limit = int(threshold if threshold is not None
+                else getattr(config, 'AUTO_RESOLVE_MISSING_COUNT', 3))
+    resolved = []
+    try:
+        with db_lock:
+            conn = _get_conn()
+            try:
+                clauses, params = [], []
+                for p in prefixes:
+                    clauses.append("key LIKE ?")
+                    params.append(f"{p}|%")
+                sql = ("SELECT key, missing_count FROM problems "
+                       f"WHERE status = 'active' AND ({' OR '.join(clauses)})")
+                if host:
+                    sql += " AND host = ?"
+                    params.append(host)
+                rows = conn.execute(sql, params).fetchall()
+                for row_key, m_count in rows:
+                    if row_key in reported:
+                        if (m_count or 0) > 0:
+                            conn.execute("UPDATE problems SET missing_count=0 WHERE key=?", (row_key,))
+                        continue
+                    new_count = (m_count or 0) + 1
+                    if new_count >= limit:
+                        _archive_problem(conn, row_key, reason='detector_state_ok')
+                        conn.execute(
+                            "UPDATE actions SET status='resolved_auto' WHERE problem_key=? AND status='pending'",
+                            (row_key,)
+                        )
+                        conn.execute("DELETE FROM problems WHERE key=?", (row_key,))
+                        resolved.append(row_key)
+                        logger.info(f"Auto-resolved (detector state, missing {new_count}x): {row_key}")
+                    else:
+                        conn.execute("UPDATE problems SET missing_count=? WHERE key=?",
+                                     (new_count, row_key))
+                conn.commit()
+            finally:
+                conn.close()
+    except Exception as e:
+        logger.error(f"reconcile_detector_issues error: {e}")
+    return resolved
+
+
+def resolve_aged_event_issues(max_age_hours: int | None = None,
+                              prefixes: list | None = None) -> int:
+    """Archivuje event-typy issues, které přerostly strop stáří (dle first_seen).
+
+    Event-typ (SYS_ERR, OOM_KILL, KERNEL_PANIC) je agregát log událostí za dvojici
+    typ+host — jeden řádek, který si drží původní first_seen a jehož last_seen
+    osvěžuje každá další událost na tom hostu. resolve_stale_problems() na něj
+    proto nikdy nesáhne a issue se tváří jako měsíce otevřený incident, i když
+    původní příčina dávno pominula.
+
+    Řeší se to stropem podle first_seen: po překročení se issue archivuje
+    (resolve_reason='event_max_age'). Pokud anomálie pokračují, detektor při
+    dalším běhu založí čerstvý issue se správným first_seen.
+
+    Vrací počet archivovaných.
+    """
+    # None = vzít z configu; explicitní 0 znamená "vypnuto" a nesmí spadnout na default
+    max_age = int(max_age_hours if max_age_hours is not None
+                  else getattr(config, 'EVENT_ISSUE_MAX_AGE_HOURS', 48))
+    if max_age <= 0:
+        return 0
+    pfx = prefixes if prefixes is not None else getattr(config, 'EVENT_ISSUE_PREFIXES', [])
+    pfx = [str(p).strip().upper() for p in (pfx or []) if str(p).strip()]
+    if not pfx:
+        return 0
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age)
+    total = 0
+    with db_lock:
+        try:
+            conn = _get_conn()
+            rows = conn.execute(
+                "SELECT key, first_seen FROM problems WHERE status IN ('active', 'validating')"
+            ).fetchall()
+            for key, first_seen in rows:
+                if not any(key.startswith(p + '|') for p in pfx):
+                    continue
+                try:
+                    fs = datetime.fromisoformat(first_seen)
+                    if fs.tzinfo is None:
+                        fs = fs.replace(tzinfo=timezone.utc)
+                except (TypeError, ValueError):
+                    continue
+                if fs >= cutoff:
+                    continue
+                _archive_problem(conn, key, reason='event_max_age')
+                conn.execute(
+                    "UPDATE actions SET status='resolved_auto' WHERE problem_key=? AND status='pending'",
+                    (key,)
+                )
+                conn.execute("DELETE FROM problems WHERE key=?", (key,))
+                total += 1
+            conn.commit()
+            conn.close()
+            if total:
+                logger.info(f"resolve_aged_event_issues: archived {total} event issues older than {max_age}h")
+            return total
+        except Exception as e:
+            logger.error(f"resolve_aged_event_issues failed: {e}")
+            return 0
+
+
 def resolve_stale_problems_by_pattern(key_prefix: str, ttl_hours: int = 0) -> int:
     """Resolve active problems matching key prefix. ttl_hours=0 means all matching."""
     with db_lock:
