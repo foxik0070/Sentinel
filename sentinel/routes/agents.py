@@ -11,7 +11,7 @@ from .. import state, config, utils, actions
 
 logger = logging.getLogger("sentinel.chat")
 
-_GEO_CACHE: dict = {}  # ip → {lat, lon, country, city, ts}; prořezává scheduler
+_GEO_CACHE: dict = {}  # ip → {lat, lon, country, city, ts}; hodinově prořezává daily_cleanup_loop
 
 # 240: Validace hostname — povoleny jen bezpečné znaky
 _HOSTNAME_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$')
