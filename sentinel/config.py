@@ -5,7 +5,7 @@ import secrets
 from pathlib import Path
 
 # --- Technical Config ---
-VERSION = "2026.08.002"
+VERSION = "2026.08.003"
 
 def get_git_commit():
     try:
