@@ -708,10 +708,6 @@ details.ok-metrics[open] > summary::after { content: '▲'; }
     /* Tools modal tabs — smaller text */
     .tools-tab { padding: 6px 10px; font-size: 0.76em; }
 
-    /* Issues table — klíčové sloupce, zbytek schovat */
-    .issue-table th:nth-child(n+5),
-    .issue-table td:nth-child(n+5) { display: none; }
-
     /* Log viewer — file list jako sliding overlay na mobilech */
     .log-list {
         position: absolute; top: 0; left: 0; right: 0; bottom: 0;

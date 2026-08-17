@@ -1314,6 +1314,7 @@ class ChatService(threading.Thread):
         last_cleanup_date = None
         last_report_date = None
         last_snooze_check = 0
+        last_hourly_hour = None
         while True:
             try:
                 now = datetime.now()
@@ -1324,6 +1325,7 @@ class ChatService(threading.Thread):
                     state.prune_sentinel_errors(days=7)
                     state.prune_health_snapshots(days=30)
                     state.prune_stale_sessions(hours=24)
+                    state.prune_revoked_sessions(days=30)
                     # 545: audit AI rozhodnutí — držet dohledatelnost, ale ne navždy
                     state.prune_ai_audit(days=getattr(config, 'AI_AUDIT_RETENTION_DAYS', 90))
                     # 366: Prune issue_history (retain 90 days)
@@ -1372,6 +1374,26 @@ class ChatService(threading.Thread):
                     # 407: Heartbeat URL monitoring
                     self._check_heartbeat_urls()
                     last_snooze_check = cur_ts
+                # Hodinová hygiena paměti. Obě čistky dosud existovaly jen
+                # v scheduler.py, který se nikdy nespouštěl, takže _GEO_CACHE
+                # i user_sessions rostly bez omezení po celou dobu běhu.
+                if now.hour != last_hourly_hour:
+                    last_hourly_hour = now.hour
+                    now_t = time.time()
+                    try:
+                        from .routes.agents import _GEO_CACHE
+                        for ip in [k for k, v in _GEO_CACHE.items()
+                                   if now_t - v.get('ts', 0) > 3600]:
+                            _GEO_CACHE.pop(ip, None)
+                    except Exception as e:
+                        logger.warning(f"geo_cache_prune: {e}")
+                    try:
+                        _sess_ttl = 3600 * 24
+                        for sid in [k for k, v in self.user_sessions.items()
+                                    if now_t - v.get('last_seen', 0) > _sess_ttl]:
+                            self.user_sessions.pop(sid, None)
+                    except Exception as e:
+                        logger.warning(f"session_gc: {e}")
                 # Weekly digest
                 _wr_day = int(getattr(config, 'WEEKLY_REPORT_DAY', 0))
                 _wr_hour = int(getattr(config, 'WEEKLY_REPORT_HOUR', 8))

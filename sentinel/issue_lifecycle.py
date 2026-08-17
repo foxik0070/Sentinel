@@ -3,7 +3,7 @@
 Logika sem byla vytažena z routes/issues.py, kde žila uvnitř view funkce a šla
 tedy spustit jen ručním kliknutím na stetoskop v UI. Kvůli tomu se issues, které
 zdroj přestal hlásit, uzavíraly jen když si toho někdo všiml. Teď na stejná
-pravidla sahá i periodický auto-recheck v scheduleru.
+pravidla sahá i periodický auto-recheck v údržbové smyčce.
 
 Pravidla jsou deterministická (žádná AI): rozhodují podle toho, jak dlouho zdroj
 mlčí a jestli je zdroj vůbec schopen se ozvat.
@@ -36,7 +36,7 @@ def evaluate(prob: dict, key: str = '') -> tuple[str, str, float]:
     """Posoudí, jestli issue ještě platí.
 
     Vrací (verdict, detail, age_min). Verdict je STILL_ACTIVE / RESOLVED /
-    UNCERTAIN — volající rozhodne, co s tím (UI nabídne force, scheduler
+    UNCERTAIN — volající rozhodne, co s tím (UI nabídne force, údržbová smyčka
     UNCERTAIN nechá být).
     """
     key = key or prob.get('key') or ''
