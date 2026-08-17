@@ -1,5 +1,30 @@
+import re
 from datetime import datetime, timezone
-from sentinel import api
+from sentinel import api, config
+
+_RX_CACHE: dict = {}
+
+
+def _compiled(cfg_name: str, default: list):
+    """Zkompilované regexy z configu, s cache podle aktuálního obsahu.
+
+    Config se dá přenačíst za běhu, takže cache klíčujeme hodnotou, ne jen jménem.
+    """
+    patterns = getattr(config, cfg_name, None) or default
+    ck = (cfg_name, tuple(patterns))
+    hit = _RX_CACHE.get(ck)
+    if hit is None:
+        compiled = []
+        for p in patterns:
+            try:
+                compiled.append(re.compile(p, re.IGNORECASE))
+            except re.error:
+                api.log(f"system_detector: neplatný regex v {cfg_name}, přeskočen: {p!r}")
+        _RX_CACHE.clear()
+        _RX_CACHE[ck] = compiled
+        hit = compiled
+    return hit
+
 
 class Detector(api.BaseDetector):
     def __init__(self, name, config_params=None):
@@ -32,8 +57,12 @@ class Detector(api.BaseDetector):
 
             line_lower = line.lower()
 
-            # 1. Whitelist
-            if "nas326" in line_lower or "kauditd_printk_skb" in line_lower:
+            # 1. Whitelist + známý benigní šum (SSH skenery, pam/systemd hlášky
+            #    z kontejnerů, boot-time timeouty). Bez tohohle filtru z nich byla
+            #    většina všech SYS_ERR a skutečné poruchy se v nich ztrácely.
+            if "nas326" in line_lower:
+                continue
+            if any(rx.search(line) for rx in _compiled('SYS_ERR_IGNORE_PATTERNS', [])):
                 continue
 
             # Rozrazeni typu problemu
@@ -49,7 +78,7 @@ class Detector(api.BaseDetector):
                 issue_type = "KERNEL_PANIC"
                 severity_prefix = "CRITICAL: Kernel event:"
                 channel = "root"
-            elif any(err in line_lower for err in ["crit", "alert", "emerg", "error", "fail", "timeout", "denied", "not permitted"]):
+            elif any(rx.search(line) for rx in _compiled('SYS_ERR_KEYWORDS', [])):
                 issue_type = "SYS_ERR"
                 severity_prefix = "System anomaly detected:"
                 channel = "infra"

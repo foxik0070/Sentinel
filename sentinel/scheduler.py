@@ -119,6 +119,15 @@ class Scheduler:
         # DB_RETENTION_DAYS (default 2 dny), takže historie vyřešených issues
         # mizela skoro okamžitě a zvýšení retence telemetrie ji nechtěně měnilo
         state.auto_resolve_old_problems(days=getattr(config, 'PROBLEM_RETENTION_DAYS', 30))
+        # Dlouho otevřené issues, jejichž zdroj mlčí — stejná pravidla jako ruční
+        # recheck v UI, jen se na ně už nemusí klikat.
+        try:
+            from . import issue_lifecycle
+            closed = issue_lifecycle.auto_recheck_pass()
+            for _key, _detail in closed:
+                self._service.log_event("issue_recheck", f"Auto-recheck resolved: {_key} — {_detail}")
+        except Exception as e:
+            logger.warning(f"auto_recheck_pass: {e}")
         self._service._run_escalation_rules()
         self._service._save_health_snapshot()
         self._service._run_self_monitor_webhook()
