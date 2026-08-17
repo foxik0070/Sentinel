@@ -1353,7 +1353,19 @@ class ChatService(threading.Thread):
                 cur_ts = time.time()
                 if cur_ts - last_snooze_check >= 60:
                     state.apply_snooze_rules()
-                    state.auto_resolve_old_problems(days=getattr(config, 'DB_RETENTION_DAYS', 30))
+                    # Retence PROBLÉMŮ, ne telemetrie. Dřív se sem předávalo
+                    # DB_RETENTION_DAYS (=2 dny, retence raw telemetrie), takže
+                    # měnit retenci telemetrie nechtěně měnilo i retenci issues.
+                    # Oprava byla dosud jen ve scheduler.py, který nikdo neimportuje.
+                    state.auto_resolve_old_problems(days=getattr(config, 'PROBLEM_RETENTION_DAYS', 30))
+                    # Dlouho otevřené issues, jejichž zdroj mlčí — stejná pravidla
+                    # jako ruční recheck v UI, jen se na ně nemusí klikat.
+                    try:
+                        from . import issue_lifecycle as _ilc
+                        for _key, _detail in _ilc.auto_recheck_pass():
+                            self.log_event("issue_recheck", f"Auto-recheck resolved: {_key} — {_detail}")
+                    except Exception as _e:
+                        self.log_event("issue_recheck_error", str(_e), level=logging.ERROR)
                     self._run_escalation_rules()
                     self._save_health_snapshot()
                     self._run_self_monitor_webhook()
