@@ -1,5 +1,60 @@
 # Historie změn
 
+## [2026.08.003] - 2026-08-17
+
+**Souhrn:** Podpora reasoning modelů v chatu, dvě opravy responzivity na mobilu, čtyři mechanismy pro zavírání issues, které už neplatí (aktivních 47 → 21), a smazání mrtvého modulu, který tiše spolkl dvě opravy. 1087 testů OK (bylo 1069).
+
+### Reasoning modely v chatu
+Detekce v1 rozhraní nově reaguje i na nastavený API klíč, ne jen na `/v1/` v URL. Průběžné uvažování modelu (`reasoning_content`) se streamuje s příznakem `reasoning` a vykresluje se do odděleného ztlumeného bloku nad odpovědí; spinner zůstává viditelný po celou dobu uvažování.
+
+### Opravy — issues na mobilu nebyly čitelné
+
+- **Karty na hlavním panelu skládaly layout inline styly.** `_render_issue_card` v `chat_service.py` psala flex přímo do `style=`, takže na ni nesedla žádná media query. Blok akcí měl `flex-shrink:0` bez zalomení a až jedenáct ikon po ~30 px roztáhlo kartu přes viewport; `.status-wrapper` má `overflow:hidden`, takže se přetečení uřízlo. Karta teď používá stejné třídy jako modal (`.issue-row-inner`, `.issue-content-area`, `.issue-actions`) a méně důležité akce se pod 480 px skrývají.
+- **Text issue v modalu byl oříznutý na 200 px.** Pravidlo `[data-issue-card] span[title]` mělo pod 480 px zkracovat *badge*, jenže hlavní text zprávy nese `title=` (tooltip „kliknutím rozbalit detail"), takže ho selektor trefil taky — `white-space:nowrap` plus `max-width:200px` z celé issue udělalo jeden useknutý řádek. Z textu byla vidět asi tři slova.
+
+> **První diagnóza byla nekompletní a oprava nezabrala.** Teprve měření headless Chromem to našlo: `CLIPPED span scrollW=940 clientW=200` — text chtěl 940 px, dostal 200. Chromium klampuje okno na minimum 500 px, takže se stránka měřila ve 390px iframu, kde se media queries vyhodnocují proti jeho viewportu. Po opravě `doc.scrollWidth=390`, nic oříznutého. **Kdyby se měřilo hned, ušetřilo by to jedno kolo.**
+
+### Issues, které už neplatí, se konečně zavřou samy
+
+Výchozí stav: 47 aktivních issues, **všechny s čerstvým `last_seen`**, takže na ně `resolve_stale_problems()` z principu nesáhla. 42 z nich pocházelo z interních detektorů, které — na rozdíl od agentních přes `reconcile_agent_issues()` — neměly žádnou rekonciliaci.
+
+- **Strop stáří pro event-typy** (`resolve_aged_event_issues`). `SYS_ERR|host` je agregát za dvojici typ+host: jeden řádek, který si drží původní `first_seen` a jehož `last_seen` osvěžuje každá další událost na tom hostu. TTL podle `last_seen` na něj nedosáhne nikdy. Po `EVENT_ISSUE_MAX_AGE_HOURS` (48) se archivuje; pokud anomálie pokračují, vznikne čerstvý issue se správným `first_seen`.
+- **Zúžené matchování v `system_detector`.** Substring match nad `["crit","error","fail","timeout",…]` bral i „failover" a hlavně veškerý běžný šum — skenery na SSH (`kex_exchange_identification`), `pam_systemd` z kontejnerů, boot-time `networkd-wait-online`. Nově regexy s hranicemi slov plus ignore-list, obojí konfigurovatelné. Na 14 reálných řádcích z produkce: **nové pravidlo 14/14 podle očekávání, staré 5/14.**
+- **Rekonciliace pro interní detektory** (`reconcile_detector_issues`, opt-in přes `api.reconcile_issues`). Napojená jen na detektory, které v jednom běhu vidí celý stav — `ha_detector` (kompletní seznam entit) a `capacity_detector` (plný sweep na server).
+- **Periodický auto-recheck.** Recheck pravidla žila uvnitř view funkce v `routes/issues.py`, takže šla spustit jen kliknutím na stetoskop. Vytažena do `issue_lifecycle.py` a spouštěná i z údržbové smyčky.
+
+> **Rekonciliace záměrně NENÍ plošná.** U log-událostního detektoru znamená „klíč nebyl hlášen" jen „nepřišel nový řádek", ne „problém pominul" — plošné nasazení by zavíralo živé issues.
+
+> **Auto-recheck usuzuje z ticha:** „zdroj se neozval 45+ min → problém pominul". Rozbitý collector proto vypadá jako vyřešený problém. Není to nové pravidlo, jen dosud běželo pouze ručně.
+
+Výsledek za první hodiny provozu: aktivních **47 → 21**, uzavřeno `recheck_auto` 18, `event_max_age` 3, `detector_state_ok` 1, plus 4 ručně archivované vyřazené stroje. Mezi uzavřenými `REBOOT_REQ|proxmox01` a `proxmox02` z 26. 7. — `audit_detector` je umí zavřít, ale jen když dorazí řádek `REBOOT: NOT REQUIRED`; ten nikdy nepřišel, tak visely 22 dní.
+
+> **Korekce průběžného odhadu:** v půlce analýzy padlo, že „27 SYS_ERR hnije od 68 dní". To bylo špatně — stáří nejstaršího issue se zaměnilo za celou skupinu. Starší než 48 h byly tři. Strukturní díra ale reálná byla: `SYS_ERR|proxmox02` visel 68 dní s `occurrence_count` 512.
+
+### Mrtvý kód: `scheduler.py`
+
+Modul nikdo neimportoval. Nebyl to ale nezapojený refaktor — odkazoval na **tři symboly, které vůbec neexistují** (`_save_sentinel_self_metrics`, `_run_sentinel_health_checks`, `watcher.fim_check`), takže by po zapojení padal každou minutu na `AttributeError`.
+
+> **Hlavně to byla past.** Uvízla v něm oprava retence (`auto_resolve_old_problems` dostávala v živé smyčce `DB_RETENTION_DAYS` = 2 dny místo `PROBLEM_RETENTION_DAYS` = 30) *a* první napojení auto-rechecku — obojí bez jakéhokoli příznaku, že se to nikdy nespustí. Že auto-recheck neběží, se poznalo až podle produkčních dat: `HA_ALERT` mlčící 9,4 h zůstal otevřený, ačkoli `evaluate()` na něm vracela `resolved`.
+
+Před smazáním přeneseno do skutečně běžící smyčky to, co fungovalo a nikde jinde nebylo: hodinové prořezání `_GEO_CACHE` a GC in-memory `user_sessions` (obojí **reálné memory leaky** — jediná místa v kódu, kde se ty struktury čistily) a `prune_revoked_sessions(30)` v noční údržbě.
+
+### Tři úlohy, které byly naplánované jen tam
+Existovaly a šly spustit ručně, ale plán měly výhradně v mrtvém scheduleru:
+- **Hodinový vtip** — `infra_jokes` mělo 8 záznamů, všech 8 `source='manual'` (dvojklik na logo). Přímý důkaz, že úloha nikdy neproběhla.
+- **Kontrola DNS** — `DNS_CHECKS` má nakonfigurované 2 domény a **neexistoval pro ně žádný baseline**. První běh ho založil.
+- **Denní AI digest** — `AI_DIGEST_HOUR` stojí na 7:00 a config slibuje „-1 = vypnuto", takže to vypadalo jako zapnutá funkce, která se nikdy neodeslala. Nově se datum posledního běhu načítá z `kv_settings`, aby restart v digest hodině neposlal přehled podruhé. Podmínka `minute == 0` vypuštěna — smyčka spí 30 s a při zátěži se dala ta jediná minuta minout.
+
+### Nálezy z ostrého provozu
+- **4 stroje vyřazené v červnu** (`rpizero2`, `jellyfin-zatisi`, `navidrome-zatisi`, `server-zatisi`) 65–69 dní neodpovídaly na ICMP a alert jen šuměl. Archivovány a doplněny do seznamu „normálně vypnuto", který je nově přepsatelný přes `lifecycle.default_down_servers`.
+- **Většina `SYS_ERR` byl známý benigní šum**, ve kterém se ztrácely skutečné poruchy (`unciv@server.service: Failed`, `corosync-qdevice: Connect timeout` 49×).
+- **Lokální a vzdálená historie neměly společného předka** (merge-base prázdný, 93 vs 94 commitů se stejnými zprávami). Obsahově byl lokální strom podmnožinou vzdáleného, takže se historie srovnala resetem; původní stav zůstal ve větvi `backup/main-pre-addbf44`.
+- **Aplikace si minifikuje statiku sama při startu** přes `rjsmin`/`rcssmin` (`__main__.py`), takže `make build` s terserem není pro nasazení potřeba a případný terser build se přepíše.
+- Smazáno mrtvé CSS `.issue-table` — tu třídu nic negeneruje.
+
+### Poznámka k testům
+Nová sada `tests/test_issue_lifecycle.py` (21 testů) zapojená do `run_tests.sh`. **Při psaní odhalila chybu v čerstvě napsaném kódu:** `max_age_hours=0` mělo znamenat „vypnuto", ale `0 or default` spadlo zpátky na 48. Stejná past byla i v `auto_recheck_pass`.
+
 ## [2026.08.002] - 2026-08-07
 
 **Souhrn:** Hot-reload knowledge base nikdy nefungoval — watcher sledoval jiný adresář, než ve kterém KB leží. Přestavba KB si nově vyžádá re-index sama, watcher opraven jako záchranná síť. 1069 testů OK (bylo 1050).
