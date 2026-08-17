@@ -33,7 +33,11 @@ class Detector(api.BaseDetector):
 
         telemetry_data = {}
         infra_label = api.get_infrastructure_label(file_path)
-        
+        # Entity přijdou kompletní, takže po průchodu víme přesně, co ještě platí —
+        # co v setu nezůstane, se dá bezpečně uzavřít (dobitá baterie, klesla
+        # teplota, doinstalovaná aktualizace). Dřív takové issue viselo do TTL.
+        reported_keys = set()
+
         for entity in entities:
             entity_id = entity.get("entity_id", "").lower()
             state_val = str(entity.get("state")).lower()
@@ -55,6 +59,7 @@ class Detector(api.BaseDetector):
             # ---------------------------------------------------------
             if entity_id.startswith("update.") and state_val == "on":
                 key = f"HA_UPDATE|{entity_id}"
+                reported_keys.add(key)
                 api.report_problem(key, {
                     "status": "active",
                     "last_line": f"Dostupna aktualizace: {friendly_name}",
@@ -69,6 +74,7 @@ class Detector(api.BaseDetector):
                     
             elif "backup" in entity_id and state_val == "failed":
                 key = f"HA_BACKUP_FAIL|{entity_id}"
+                reported_keys.add(key)
                 api.report_problem(key, {
                     "status": "active",
                     "last_line": f"Selhani zalohovani HA: {friendly_name}",
@@ -119,6 +125,7 @@ class Detector(api.BaseDetector):
 
                 if is_problem:
                     key = f"HA_ALERT|{entity_id}"
+                    reported_keys.add(key)
                     api.report_problem(key, {
                         "status": "active",
                         "last_line": msg,
@@ -133,6 +140,10 @@ class Detector(api.BaseDetector):
                         
             except ValueError:
                 continue 
+
+        # Kompletní stav → co se nenahlásilo, pominulo.
+        api.reconcile_issues(["HA_ALERT", "HA_UPDATE", "HA_BACKUP_FAIL"],
+                             reported_keys, host="HomeAssistant")
 
         if telemetry_data:
             api.save_telemetry_snapshot("HomeAssistant", telemetry_data)

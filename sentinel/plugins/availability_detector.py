@@ -1,12 +1,23 @@
 from datetime import datetime, timezone
-from sentinel import api
+from sentinel import api, config
 
-# Seznam serveru, u kterych je normalni stav "vypnuto"
+# Seznam serveru, u kterych je normalni stav "vypnuto".
+# Prepsatelny pres config.yaml (lifecycle.default_down_servers) — bez toho by se
+# vyrazeny stroj musel dopisovat do kodu a do te doby by donekonecna alertoval.
 DEFAULT_DOWN_SERVERS = {
     "ai", "analyzer", "F2-210", "NAS325", "NAS326",
     "proxmox03", "proxmox04", "proxmox05", "QNAP_TS_410",
-    "rpi_wifi", "rpizero"
+    "rpi_wifi", "rpizero",
+    # Vyrazene 2026-06 — pres dva mesice neodpovidaji na ICMP a alert jen sumel.
+    "rpizero2", "jellyfin-zatisi", "navidrome-zatisi", "server-zatisi",
 }
+
+
+def _down_servers() -> set:
+    extra = getattr(config, 'DEFAULT_DOWN_SERVERS', None)
+    if extra:
+        return DEFAULT_DOWN_SERVERS | {str(s).strip() for s in extra if str(s).strip()}
+    return DEFAULT_DOWN_SERVERS
 
 class Detector(api.BaseDetector):
     def __init__(self, name, config_params=None):
@@ -36,7 +47,7 @@ class Detector(api.BaseDetector):
                 continue
 
             # --- OBRACENA LOGIKA PRO DEFAULT-OFFLINE SERVERY ---
-            if active_server in DEFAULT_DOWN_SERVERS:
+            if active_server in _down_servers():
                 key = f"UNEXPECTED_UP|{active_server}"
                 
                 if "STATUS: UP" in line:

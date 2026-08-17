@@ -8,7 +8,8 @@ import sqlite3
 from datetime import datetime, timezone, timedelta
 from flask import Blueprint, request, jsonify, g, Response
 from ..auth import requires_auth, int_param
-from .. import state, config, utils, analytics, actions, diagnostics, fix_verify, remediation
+from .. import (state, config, utils, analytics, actions, diagnostics, fix_verify,
+                remediation, issue_lifecycle)
 
 logger = logging.getLogger("sentinel.chat")
 
@@ -914,39 +915,9 @@ def create_blueprint(service):
         if isinstance(det, str):
             try: det = json.loads(det)
             except Exception: det = {}
-        try:
-            seen = datetime.fromisoformat(prob.get('last_seen'))
-            if seen.tzinfo is None:
-                seen = seen.replace(tzinfo=timezone.utc)
-            age_min = (datetime.now(timezone.utc) - seen).total_seconds() / 60.0
-        except (TypeError, ValueError):
-            age_min = 0.0
 
-        _fresh = int(getattr(config, 'RECHECK_FRESH_MIN', 10))
-        _agent_silence = int(getattr(config, 'RECHECK_AGENT_SILENCE_MIN', 15))
-        _source_silence = int(getattr(config, 'RECHECK_SOURCE_SILENCE_MIN', 45))
-        verdict, detail = 'uncertain', ''
-        if age_min < _fresh:
-            verdict = 'still_active'
-            detail = f"Issue byl znovu detekován před {int(age_min)} min — stále platí."
-        elif key.startswith('AGENT|'):
-            hostname = key.split('|')[1] if '|' in key else ''
-            agent = next((a for a in state.get_all_agents() if a.get('hostname') == hostname), None)
-            if agent and agent.get('status') == 'ONLINE' and age_min > _agent_silence:
-                verdict = 'resolved'
-                detail = (f"Agent {hostname} je online a issue nehlásil {int(age_min)} min "
-                          f"— problém pominul.")
-            elif agent and agent.get('status') != 'ONLINE':
-                detail = f"Agent {hostname} je offline — nelze ověřit, ponecháno aktivní."
-            else:
-                detail = "Issue je čerstvý nebo agent neznámý — ponecháno aktivní."
-        elif age_min > _source_silence:
-            # Interní detektory (telemetrie, HA, heartbeat, watcher) běží v řádu minut
-            verdict = 'resolved'
-            detail = f"Zdroj issue nere-detekoval {int(age_min)} min — problém pominul."
-        else:
-            detail = (f"Poslední detekce před {int(age_min)} min — příliš čerstvé "
-                      f"na automatické vyřešení.")
+        # Pravidla žijí v issue_lifecycle, aby na ně sahal i periodický auto-recheck.
+        verdict, detail, age_min = issue_lifecycle.evaluate(prob, key)
 
         if verdict == 'uncertain' and body.get('force'):
             verdict = 'resolved'
