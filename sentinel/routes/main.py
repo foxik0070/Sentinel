@@ -31,6 +31,7 @@ def create_blueprint(service, socketio):
             username=g.username,
             client_ip=get_real_ip(),
             default_creds_warning=getattr(service, '_default_creds_warning', False),
+            documentation_url=config.DOCUMENTATION_URL,
         )
 
     @bp.route('/login', methods=['GET', 'POST'])

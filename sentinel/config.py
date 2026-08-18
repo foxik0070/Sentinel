@@ -65,6 +65,7 @@ OLLAMA_LOG_FILE = "/var/log/sentinel/sentinel-ollama.log"
 PLUGIN_DIR = "/opt/Sentinel/sentinel/plugins" 
 
 INSTANCE_NAME = "Unknown"
+DOCUMENTATION_URL = ""
 TEAMS_ENABLED = False
 HA_ENABLED = False
 HA_URL = ""
@@ -533,7 +534,9 @@ def load_config():
 
     # Teams, Home Assistant, Other
     INSTANCE_NAME = data.get("instance_name", INSTANCE_NAME)
-    
+    global DOCUMENTATION_URL
+    DOCUMENTATION_URL = data.get("documentation_url", DOCUMENTATION_URL)
+
     teams_conf = data.get("teams_channels", {})
     TEAMS_ENABLED = teams_conf.get("enabled", False)
     TEAMS_CHANNELS = teams_conf
@@ -895,6 +898,7 @@ _KNOWN_KEYS = {
     # Loader je cetl, ale ve whitelistu nebyly — nastaveni v config.yaml se tise
     # zahodilo s hlaskou "Neznamy klic". Hlida test_every_read_key_is_in_known_keys.
     'auto_severity_enabled', 'auto_duplicate_enabled', 'fim', 'trusted_proxies',
+    'documentation_url',
 }
 
 VALIDATION_WARNINGS: list = []   # populated by _validate_config(), readable via API
