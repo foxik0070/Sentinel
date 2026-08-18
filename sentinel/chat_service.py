@@ -227,6 +227,21 @@ def requires_auth(f):
 
 IGNORED_FILE = os.path.join(config.LOG_DIR, "ignored_issues.json")
 
+def _last_digest_date():
+    """Datum posledního AI denního digestu z kv_settings, nebo None.
+
+    Údržbová smyčka si drží "poslal jsem už dnes?" v lokální proměnné, která se
+    restartem ztratí. Bez tohohle načtení by restart v digest hodině poslal
+    přehled znovu. Digest si datum ukládá sám ve tvaru 'YYYY-MM-DD HH:MM'.
+    """
+    try:
+        raw = json.loads(state.get_setting('ai_daily_digest') or '{}').get('date', '')
+        return datetime.strptime(raw[:10], '%Y-%m-%d').date() if raw else None
+    except Exception as e:
+        logger.debug(f"_last_digest_date: {e}")
+        return None
+
+
 # Session cache for sentinel-hw device proxying (avoids login on every request)
 _hw_sessions: dict = {}
 _hw_sessions_lock = threading.Lock()
@@ -1314,6 +1329,8 @@ class ChatService(threading.Thread):
         last_cleanup_date = None
         last_report_date = None
         last_snooze_check = 0
+        last_hourly_hour = None
+        last_digest_date = _last_digest_date()
         while True:
             try:
                 now = datetime.now()
@@ -1324,6 +1341,7 @@ class ChatService(threading.Thread):
                     state.prune_sentinel_errors(days=7)
                     state.prune_health_snapshots(days=30)
                     state.prune_stale_sessions(hours=24)
+                    state.prune_revoked_sessions(days=30)
                     # 545: audit AI rozhodnutí — držet dohledatelnost, ale ne navždy
                     state.prune_ai_audit(days=getattr(config, 'AI_AUDIT_RETENTION_DAYS', 90))
                     # 366: Prune issue_history (retain 90 days)
@@ -1349,17 +1367,67 @@ class ChatService(threading.Thread):
                 if now.hour == _report_hour and now.minute == 0 and last_report_date != now.date():
                     last_report_date = now.date()
                     threading.Thread(target=self._send_daily_report, daemon=True, name="DailyReport").start()
+                # AI denní digest (431). Config slibuje "-1 = vypnuto" a defaultně
+                # stojí na 7:00, jenže naplánovaný byl jen ve scheduler.py, takže
+                # se nikdy neodeslal. Bez minute==0: smyčka spí 30 s a při zátěži
+                # by se ta jediná minuta dala minout a digest by ten den vypadl.
+                _dig_hour = int(getattr(config, 'AI_DIGEST_HOUR', 7))
+                if (_dig_hour >= 0 and now.hour == _dig_hour
+                        and last_digest_date != now.date()):
+                    last_digest_date = now.date()
+                    threading.Thread(target=self._generate_ai_daily_digest,
+                                     daemon=True, name="AIDailyDigest").start()
                 # Apply snooze maintenance windows every 60 seconds
                 cur_ts = time.time()
                 if cur_ts - last_snooze_check >= 60:
                     state.apply_snooze_rules()
-                    state.auto_resolve_old_problems(days=getattr(config, 'DB_RETENTION_DAYS', 30))
+                    # Retence PROBLÉMŮ, ne telemetrie. Dřív se sem předávalo
+                    # DB_RETENTION_DAYS (=2 dny, retence raw telemetrie), takže
+                    # měnit retenci telemetrie nechtěně měnilo i retenci issues.
+                    # Oprava byla dosud jen ve scheduler.py, který nikdo neimportuje.
+                    state.auto_resolve_old_problems(days=getattr(config, 'PROBLEM_RETENTION_DAYS', 30))
+                    # Dlouho otevřené issues, jejichž zdroj mlčí — stejná pravidla
+                    # jako ruční recheck v UI, jen se na ně nemusí klikat.
+                    try:
+                        from . import issue_lifecycle as _ilc
+                        for _key, _detail in _ilc.auto_recheck_pass():
+                            self.log_event("issue_recheck", f"Auto-recheck resolved: {_key} — {_detail}")
+                    except Exception as _e:
+                        self.log_event("issue_recheck_error", str(_e), level=logging.ERROR)
                     self._run_escalation_rules()
                     self._save_health_snapshot()
                     self._run_self_monitor_webhook()
                     # 407: Heartbeat URL monitoring
                     self._check_heartbeat_urls()
                     last_snooze_check = cur_ts
+                # Hodinová hygiena paměti. Obě čistky dosud existovaly jen
+                # v scheduler.py, který se nikdy nespouštěl, takže _GEO_CACHE
+                # i user_sessions rostly bez omezení po celou dobu běhu.
+                if now.hour != last_hourly_hour:
+                    last_hourly_hour = now.hour
+                    now_t = time.time()
+                    try:
+                        from .routes.agents import _GEO_CACHE
+                        for ip in [k for k, v in _GEO_CACHE.items()
+                                   if now_t - v.get('ts', 0) > 3600]:
+                            _GEO_CACHE.pop(ip, None)
+                    except Exception as e:
+                        logger.warning(f"geo_cache_prune: {e}")
+                    try:
+                        _sess_ttl = 3600 * 24
+                        for sid in [k for k, v in self.user_sessions.items()
+                                    if now_t - v.get('last_seen', 0) > _sess_ttl]:
+                            self.user_sessions.pop(sid, None)
+                    except Exception as e:
+                        logger.warning(f"session_gc: {e}")
+                    # Hodinové úlohy — obojí bylo naplánované jen ve scheduler.py,
+                    # takže se nikdy nespustilo. Ve vlákně, ať pomalý DNS resolver
+                    # nebo AI nezdrží údržbovou smyčku.
+                    threading.Thread(target=self._generate_hourly_joke,
+                                     daemon=True, name="HourlyJoke").start()
+                    # Sama si sáhne pro config.DNS_CHECKS a bez nich hned skončí.
+                    threading.Thread(target=self._check_dns_records,
+                                     daemon=True, name="DNSCheck").start()
                 # Weekly digest
                 _wr_day = int(getattr(config, 'WEEKLY_REPORT_DAY', 0))
                 _wr_hour = int(getattr(config, 'WEEKLY_REPORT_HOUR', 8))
@@ -2451,14 +2519,14 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
             b64_payload = base64.b64encode(raw_payload.encode()).decode()
             fix_btn = f"<i class='fa-solid fa-wand-magic-sparkles' title='Autofix' style='cursor:pointer; color:#a855f7; font-size:1.15em; margin-right:12px; transition:opacity 0.2s;' onmouseover=\"this.style.opacity='0.7'\" onmouseout=\"this.style.opacity='1'\" onclick=\"openAutofixModal('{b64_payload}')\"></i>"
         if role in ['admin', 'superadmin']:
-            reanalyze_btn = f"<i class='fa-solid fa-rotate-right' title='Re-analyze AI' style='cursor:pointer; color:var(--text-muted); font-size:1.1em; margin-right:12px; transition:color 0.2s;' onmouseover=\"this.style.color='var(--accent)'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"_reanalyzeIssue('{kb64}')\"></i>"
+            reanalyze_btn = f"<i class='fa-solid fa-rotate-right issue-action-secondary' title='Re-analyze AI' style='cursor:pointer; color:var(--text-muted); font-size:1.1em; margin-right:12px; transition:color 0.2s;' onmouseover=\"this.style.color='var(--accent)'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"_reanalyzeIssue('{kb64}')\"></i>"
             _host = html.escape(i.get('host', ''))
             if _host:
-                ssh_btn = f"<i class='fa-solid fa-terminal' title='SSH na {_host}' style='cursor:pointer; color:var(--text-muted); font-size:1.1em; margin-right:12px; transition:color 0.2s;' onmouseover=\"this.style.color='var(--accent)'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"openSshModal('{_host}')\"></i>"
+                ssh_btn = f"<i class='fa-solid fa-terminal issue-action-secondary' title='SSH na {_host}' style='cursor:pointer; color:var(--text-muted); font-size:1.1em; margin-right:12px; transition:color 0.2s;' onmouseover=\"this.style.color='var(--accent)'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"openSshModal('{_host}')\"></i>"
             _plugin = html.escape(i.get('plugin_name', ''))
             _channel = html.escape(i.get('channel_type', ''))
             _ll_b64 = base64.b64encode((i.get('last_line', '') or '').encode()).decode()
-            runbook_btn = f"<i class='fa-solid fa-book-open' title='Runbook' style='cursor:pointer; color:var(--text-muted); font-size:1.05em; margin-right:12px; transition:color 0.2s;' onmouseover=\"this.style.color='#fd7e14'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"openRunbookModal('{_plugin}','{_channel}','{_ll_b64}')\"></i>"
+            runbook_btn = f"<i class='fa-solid fa-book-open issue-action-secondary' title='Runbook' style='cursor:pointer; color:var(--text-muted); font-size:1.05em; margin-right:12px; transition:color 0.2s;' onmouseover=\"this.style.color='#fd7e14'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"openRunbookModal('{_plugin}','{_channel}','{_ll_b64}')\"></i>"
 
         # JS argument v HTML atributu: json.dumps udělá platný JS literál,
         # html.escape ho bezpečně vloží do atributu (parser entity dekóduje zpět).
@@ -2474,19 +2542,19 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
             f"onmouseover=\"this.style.color='var(--text-main)'\" onmouseout=\"this.style.color='var(--text-muted)'\">"
             f"<i class='fa-regular fa-comment-dots'></i></span>"
         )
-        share_btn = f"<i class='fa-solid fa-share-nodes' title='Sdílet' style='cursor:pointer; color:var(--text-muted); font-size:1.15em; margin-right:12px; transition:color 0.2s;' onmouseover=\"this.style.color='var(--text-main)'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"shareIssue({share_arg}, this)\"></i>"
+        share_btn = f"<i class='fa-solid fa-share-nodes issue-action-secondary' title='Sdílet' style='cursor:pointer; color:var(--text-muted); font-size:1.15em; margin-right:12px; transition:color 0.2s;' onmouseover=\"this.style.color='var(--text-main)'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"shareIssue({share_arg}, this)\"></i>"
         ignore_html = f"<i class='fa-solid fa-eye-slash' title='Ignorovat' style='cursor:pointer; color:var(--text-muted); font-size:1.15em; margin-right:12px; transition:color 0.2s;' onmouseover=\"this.style.color='var(--text-main)'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"triggerAction('ignore_key {kb64}')\"></i>" if role in ['admin', 'superadmin'] else ""
         delete_html = f"<i class='fa-solid fa-trash' title='Smazat' style='cursor:pointer; color:#c50f1f; font-size:1.15em; transition:opacity 0.2s;' onmouseover=\"this.style.opacity='0.7'\" onmouseout=\"this.style.opacity='1'\" onclick=\"triggerAction('delete_key {kb64}')\"></i>" if role in ['admin', 'superadmin'] else ""
 
         if role in ['admin', 'superadmin']:
             if is_snoozed:
                 snooze_btn = (
-                    f"<i class='fa-solid fa-bell' title='Zrušit odložení' style='cursor:pointer; color:#ffc107; "
+                    f"<i class='fa-solid fa-bell issue-action-secondary' title='Zrušit odložení' style='cursor:pointer; color:#ffc107; "
                     f"font-size:1.15em; margin-right:12px;' onclick=\"unsnoozeIssue('{kb64}')\"></i>"
                 )
             else:
                 snooze_btn = (
-                    f"<i class='fa-solid fa-clock' title='Odložit' style='cursor:pointer; color:var(--text-muted); "
+                    f"<i class='fa-solid fa-clock issue-action-secondary' title='Odložit' style='cursor:pointer; color:var(--text-muted); "
                     f"font-size:1.15em; margin-right:12px; transition:color 0.2s;' "
                     f"onmouseover=\"this.style.color='var(--text-main)'\" onmouseout=\"this.style.color='var(--text-muted)'\" "
                     f"onclick=\"snoozeIssue('{kb64}', this)\"></i>"
@@ -2546,7 +2614,7 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
         recheck_btn = ""
         if role in ['admin', 'superadmin']:
             recheck_btn = (
-                f"<i class='fa-solid fa-stethoscope' title='Ověřit platnost (recheck)' "
+                f"<i class='fa-solid fa-stethoscope issue-action-secondary' title='Ověřit platnost (recheck)' "
                 f"style='cursor:pointer; color:var(--text-muted); font-size:1.1em; margin-right:12px; transition:color 0.2s;' "
                 f"onmouseover=\"this.style.color='#20c997'\" onmouseout=\"this.style.color='var(--text-muted)'\" "
                 f"onclick=\"_recheckIssue('{kb64}')\"></i>"
@@ -2583,18 +2651,24 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
             except Exception:
                 pass
 
+        # Layout přes sdílené třídy (.issue-row-inner / .issue-content-area /
+        # .issue-actions) — stejné jako v routes/issues.py. Dřív to byly inline
+        # flex styly, na které nesedla žádná media query, takže se karta na
+        # mobilu roztáhla přes viewport a .status-wrapper ji uřízl.
         return (f"<div class='{card_class}' data-issue-card='1' data-issue-key='{kb64}' "
                 f"style='background:var(--card-bg); border-left:4px solid {border}; padding:8px 12px; margin-bottom:6px; "
-                f"display:flex; justify-content:space-between; align-items:center; color:var(--text-main); "
+                f"color:var(--text-main); "
                 f"border-right:1px solid var(--card-border); border-top:1px solid var(--card-border); border-bottom:1px solid var(--card-border); {card_opacity}'>"
-                f"<div style='flex-grow:1; min-width:0;'>"
-                f"<div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;'>"
+                f"<div class='issue-row-inner'>"
+                f"<div class='issue-content-area'>"
+                f"<div class='issue-meta-row'>"
                 f"<small style='color:var(--text-muted); font-size:0.8em;'>🕒 {ts} | <b style='color:{det_color};'>[{plugin_origin}]</b>{occ_badge}{first_seen_str}{extra_badge}{snooze_badge}{severity_badge}{_sla_badge}{_stale_badge}{_assignee_badge}</small>"
-                f"<small style='background:rgba(255,255,255,0.05); padding:1px 5px; border-radius:3px; font-size:0.75em; color:var(--text-muted);'>{channel}</small>"
+                f"<small class='issue-channel-badge' style='background:rgba(255,255,255,0.05); padding:1px 5px; border-radius:3px; font-size:0.75em; color:var(--text-muted);'>{channel}</small>"
                 f"</div>"
                 f"<span style='font-size:0.95em; word-break:break-word;'><b>{safe_host}</b>: {safe_msg}</span>"
                 f"</div>"
-                f"<div style='display:flex; align-items:center; flex-shrink:0; padding-left:15px;'>{fix_btn}{reanalyze_btn}{recheck_btn}{runbook_btn}{ssh_btn}{ack_btn}{snooze_btn}{comment_btn}{share_btn}{ignore_html}{delete_html}</div>"
+                f"<div class='issue-actions'>{fix_btn}{reanalyze_btn}{recheck_btn}{runbook_btn}{ssh_btn}{ack_btn}{snooze_btn}{comment_btn}{share_btn}{ignore_html}{delete_html}</div>"
+                f"</div>"
                 f"</div>")
 
     _GROUP_COLLAPSE_AT = 3

@@ -359,6 +359,41 @@ STALE_ACK_MULTIPLIER: float = 2.0
 RECHECK_FRESH_MIN: int = 10
 RECHECK_AGENT_SILENCE_MIN: int = 15
 RECHECK_SOURCE_SILENCE_MIN: int = 45
+# Lifecycle: event-typy issues (agregát log událostí, ne stav) mají strop stáří.
+# STALE_TTL_BY_SEVERITY na ně nezabere — jejich last_seen osvěžuje každá nová
+# událost na daném hostu, takže by zůstaly otevřené donekonečna a first_seen by
+# ukazoval měsíce starý incident. Po překročení stropu se archivují; když
+# anomálie pokračují, detektor založí čerstvý issue se správným first_seen.
+EVENT_ISSUE_MAX_AGE_HOURS: int = 48
+EVENT_ISSUE_PREFIXES: list = ["SYS_ERR", "OOM_KILL", "KERNEL_PANIC"]
+# Stroje, u kterých je normální stav "vypnuto" — availability_detector u nich
+# obrátí logiku (hlásí až neočekávaný náběh). Doplňuje zadrátovaný seznam
+# v pluginu; sem patří vyřazené stroje, aby donekonečna nealertovaly.
+DEFAULT_DOWN_SERVERS: list = []
+# system_detector: co považovat za anomálii. Regexy, case-insensitive.
+# Dřív to byl substring match nad ["crit","error","fail","timeout",...], takže
+# "crit" chytlo i nesouvisející slova a "fail" i "failover". Hranice slov to drží.
+SYS_ERR_KEYWORDS: list = [
+    r"\bcrit(ical)?\b", r"\balert\b", r"\bemerg(ency)?\b",
+    r"\berrors?\b", r"\bfail(ed|ure|s)?\b",
+    r"\btime(d)?\s?out\b", r"\bdenied\b", r"\bnot permitted\b",
+]
+# Známý benigní šum — vyhodit dřív, než se z něj stane issue. Bez tohohle
+# tvoří 80 % SYS_ERR skenery na SSH a hlášky systemd/pam z kontejnerů.
+SYS_ERR_IGNORE_PATTERNS: list = [
+    r"kex_exchange_identification",
+    r"pam_systemd\(.*session\): Failed to (create|release) session",
+    r"Assertion failed for apparmor\.service",
+    r"bgscan simple: Failed to enable signal strength monitoring",
+    r"systemd-networkd-wait-online.*Timeout occurred",
+    r"blkmapd.*failed: No such file or directory",
+    r"activation of module imklog failed",
+    r"kauditd_printk_skb",
+]
+# Periodický auto-recheck dlouho otevřených issues — stejná deterministická
+# pravidla jako ruční recheck v UI. Min age 0 = bez spodní hranice stáří.
+AUTO_RECHECK_ENABLED: bool = True
+AUTO_RECHECK_MIN_AGE_HOURS: int = 6
 # AI denní digest — hodina odeslání (viz _generate_ai_daily_digest); -1 = vypnuto
 AI_DIGEST_HOUR: int = 7
 # HTTP timeout pro AI volání (s) — na RPi5 CPU trvá dlouhý prompt i přes 90 s
@@ -761,6 +796,31 @@ def load_config():
         RECHECK_FRESH_MIN = int(lc.get("recheck_fresh_min", RECHECK_FRESH_MIN))
         RECHECK_AGENT_SILENCE_MIN = int(lc.get("recheck_agent_silence_min", RECHECK_AGENT_SILENCE_MIN))
         RECHECK_SOURCE_SILENCE_MIN = int(lc.get("recheck_source_silence_min", RECHECK_SOURCE_SILENCE_MIN))
+        global EVENT_ISSUE_MAX_AGE_HOURS, EVENT_ISSUE_PREFIXES
+        global AUTO_RECHECK_ENABLED, AUTO_RECHECK_MIN_AGE_HOURS
+        try:
+            EVENT_ISSUE_MAX_AGE_HOURS = int(lc.get("event_issue_max_age_hours", EVENT_ISSUE_MAX_AGE_HOURS))
+        except (TypeError, ValueError):
+            pass
+        _prefixes = lc.get("event_issue_prefixes")
+        if isinstance(_prefixes, list):
+            EVENT_ISSUE_PREFIXES = [str(p).strip().upper() for p in _prefixes if str(p).strip()]
+        global SYS_ERR_KEYWORDS, SYS_ERR_IGNORE_PATTERNS
+        _kw = lc.get("sys_err_keywords")
+        if isinstance(_kw, list) and _kw:
+            SYS_ERR_KEYWORDS = [str(p) for p in _kw if str(p).strip()]
+        _ign = lc.get("sys_err_ignore_patterns")
+        if isinstance(_ign, list):
+            SYS_ERR_IGNORE_PATTERNS = [str(p) for p in _ign if str(p).strip()]
+        global DEFAULT_DOWN_SERVERS
+        _dds = lc.get("default_down_servers")
+        if isinstance(_dds, list):
+            DEFAULT_DOWN_SERVERS = [str(s).strip() for s in _dds if str(s).strip()]
+        AUTO_RECHECK_ENABLED = bool(lc.get("auto_recheck_enabled", AUTO_RECHECK_ENABLED))
+        try:
+            AUTO_RECHECK_MIN_AGE_HOURS = int(lc.get("auto_recheck_min_age_hours", AUTO_RECHECK_MIN_AGE_HOURS))
+        except (TypeError, ValueError):
+            pass
     AI_DIGEST_HOUR = int(data.get("ai_digest_hour", AI_DIGEST_HOUR))
     RAG_LEARN_RESOLVED = bool(data.get("rag_learn_resolved", RAG_LEARN_RESOLVED))
     global AI_TIMEOUT_SECONDS

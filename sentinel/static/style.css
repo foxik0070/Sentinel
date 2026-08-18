@@ -410,6 +410,17 @@ details.ok-metrics[open] > summary::after { content: '▲'; }
     word-break: break-word;
     overflow: hidden;
 }
+/* Řádek s metadaty (čas, plugin, badge) + kanál vpravo */
+.issue-meta-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    margin-bottom: 4px;
+}
+.issue-meta-row > small:first-child { min-width: 0; }
+.issue-channel-badge { flex-shrink: 0; }
 .issue-actions {
     display: flex;
     align-items: center;
@@ -535,9 +546,16 @@ details.ok-metrics[open] > summary::after { content: '▲'; }
         gap: 2px;
         flex-shrink: 0;
     }
+    /* Metadata na mobilu zalomit místo přetečení */
+    .issue-meta-row { flex-wrap: wrap; row-gap: 2px; }
+    /* Inline margin-right:12px u ikon je na mobilu příliš — stáhnout */
+    .issue-actions > i, .issue-actions > span { margin-right: 6px !important; }
+    .issue-actions > :last-child { margin-right: 0 !important; }
+
     /* Na úzkých mobilech schovat méně důležité akce */
     @media (max-width: 480px) {
         .issue-actions .issue-action-secondary { display: none !important; }
+        .issue-actions > i, .issue-actions > span { margin-right: 4px !important; font-size: 1em !important; }
     }
 
     /* Hlavicka - zalomeni do dvou radku a optimalizace mista */
@@ -690,10 +708,6 @@ details.ok-metrics[open] > summary::after { content: '▲'; }
     /* Tools modal tabs — smaller text */
     .tools-tab { padding: 6px 10px; font-size: 0.76em; }
 
-    /* Issues table — klíčové sloupce, zbytek schovat */
-    .issue-table th:nth-child(n+5),
-    .issue-table td:nth-child(n+5) { display: none; }
-
     /* Log viewer — file list jako sliding overlay na mobilech */
     .log-list {
         position: absolute; top: 0; left: 0; right: 0; bottom: 0;
@@ -766,8 +780,20 @@ details.ok-metrics[open] > summary::after { content: '▲'; }
     #dedicated-issues-modal .modal-header { flex-wrap: wrap; }
     /* Issues toolbar — wrap tlačítka */
     #dedicated-issues-modal > div > div[style*="padding:8px"] { max-height: 80px; overflow-y: auto; }
-    /* Zkrátit text v kartách issue na mobilu */
-    [data-issue-card] span[title] { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; }
+    /* Zkrátit *badge* v kartách issue na mobilu. .issue-msg musí zůstat venku —
+       hlavní text zprávy nese title= (tooltip "kliknutím rozbalit detail"), takže
+       ho tenhle selektor dřív nacpal na jeden 200px řádek s výpustkou a z issue
+       byla vidět jen první tři slova. */
+    [data-issue-card] span[title]:not(.issue-msg) { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; }
+}
+
+/* Hlavní text issue — vždy zalomit přes celou šířku, nikdy neořezávat */
+.issue-msg {
+    display: block;
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    max-width: none;
 }
 
 /* --- PC: modal-body maximální výška dle viewport (#5) --- */
