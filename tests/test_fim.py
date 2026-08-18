@@ -19,9 +19,16 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from sentinel import state, config, watcher
+from sentinel import state, config
+
+try:
+    from sentinel import watcher
+    _HAS_WATCHER = True
+except ImportError:
+    _HAS_WATCHER = False
 
 
+@unittest.skipUnless(_HAS_WATCHER, "watcher requires chromadb")
 class TestFimCheck(unittest.TestCase):
 
     def setUp(self):
