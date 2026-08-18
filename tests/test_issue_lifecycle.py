@@ -216,11 +216,18 @@ class TestSysErrMatching(unittest.TestCase):
         self.assertFalse(self._matches("keepalived: VRRP failover completed to BACKUP"))
 
 
+try:
+    from sentinel.chat_service import _last_digest_date
+    _HAS_CHAT_SERVICE = True
+except ImportError:
+    _HAS_CHAT_SERVICE = False
+
+
+@unittest.skipUnless(_HAS_CHAT_SERVICE, "chat_service requires flask_socketio")
 class TestDigestDateSeed(_DBCase):
     """Restart nesmí poslat denní AI digest podruhé."""
 
     def _seed(self):
-        from sentinel.chat_service import _last_digest_date
         return _last_digest_date()
 
     def test_none_when_never_ran(self):
