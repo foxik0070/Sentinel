@@ -82,6 +82,11 @@ MQTT_TOPIC_PREFIX = "sentinel"
 
 WATCH_PATTERNS = ["*.log"]
 IGNORE_PATTERNS = ["*.swp", "*.swpx", "sms.txt", "hpc-values.log"]
+# Snapshot logy: sběrač je pokaždé přepíše celé (`: > file`), takže neplatí
+# "co přibylo, to je nové". Musí se číst celé a dispatchovat i když má soubor
+# stejnou velikost jako minule — jinak se detektoru nezavolá process() a jeho
+# resolve větev nemá kdy uklidit issue, které už ze snapshotu zmizelo.
+SNAPSHOT_LOGS: list = []
 WORKER_THREADS = 2
 
 # Web Defaults
@@ -735,6 +740,10 @@ def load_config():
     excluded_ips = data.get("excluded_client_ips")
     if isinstance(excluded_ips, list):
         EXCLUDED_CLIENT_IPS = excluded_ips
+    global SNAPSHOT_LOGS
+    _snap = data.get("snapshot_logs")
+    if isinstance(_snap, list):
+        SNAPSHOT_LOGS = [str(p) for p in _snap]
 
     # 366/407/415: New integration vars
     global ISSUE_HISTORY_RETENTION_DAYS, DISPLAY_TZ, HEARTBEAT_URLS
@@ -882,7 +891,10 @@ _KNOWN_KEYS = {
     'issue_history_retention_days', 'display_tz', 'heartbeat_urls', 'gitea',
     'windows_ingest_key', 'dns_checks', 'lifecycle', 'ai_digest_hour',
     'rag_learn_resolved', 'ai_timeout_seconds', 'slo_targets',
-    'process_rotated_logs', 'snmp_poll', 'problem_retention_days',
+    'process_rotated_logs', 'snmp_poll', 'problem_retention_days', 'snapshot_logs',
+    # Loader je cetl, ale ve whitelistu nebyly — nastaveni v config.yaml se tise
+    # zahodilo s hlaskou "Neznamy klic". Hlida test_every_read_key_is_in_known_keys.
+    'auto_severity_enabled', 'auto_duplicate_enabled', 'fim', 'trusted_proxies',
 }
 
 VALIDATION_WARNINGS: list = []   # populated by _validate_config(), readable via API
