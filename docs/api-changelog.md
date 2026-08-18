@@ -2,6 +2,30 @@
 
 Tento dokument zaznamenává breaking changes a nové endpointy mezi verzemi.
 
+## v2026.08.003 (2026-08-17)
+
+**Bez breaking changes.** Žádný endpoint nezměnil tvar odpovědi ani nepřibyl.
+
+> **Změna chování, ne rozhraní:** `POST /api/issues/<key_b64>/recheck` vrací
+> stejné verdikty (`still_active` / `resolved` / `uncertain`) podle stejných
+> prahů, jen jsou pravidla přesunutá do `sentinel/issue_lifecycle.py`, aby
+> na ně sahal i periodický auto-recheck. Endpoint sám se nemění.
+
+### Změny chování bez API dopadu
+- Issues se nově zavírají i bez zásahu člověka — periodickým rechecke, stropem
+  stáří u event-typů (`SYS_ERR`, `OOM_KILL`, `KERNEL_PANIC`) a rekonciliací
+  u `ha_detector` a `capacity_detector`. Odpovědi endpointů nad issues tak
+  vracejí méně aktivních záznamů; `GET /api/issues/history` je má s
+  `resolve_reason` `recheck_auto`, `event_max_age` nebo `detector_state_ok`.
+- `system_detector` hlásí výrazně méně `SYS_ERR` — matchování má hranice slov
+  a ignore-list na známý šum.
+
+### Nové volby v `config.yaml`, sekce `lifecycle`
+- `event_issue_max_age_hours` (48), `event_issue_prefixes`
+- `auto_recheck_enabled` (true), `auto_recheck_min_age_hours` (6)
+- `sys_err_keywords`, `sys_err_ignore_patterns`
+- `default_down_servers` — stroje, u kterých je normální stav „vypnuto"
+
 ## v2026.08.002 (2026-08-07)
 
 **Bez breaking changes.** Žádný endpoint nezměnil tvar odpovědi ani nepřibyl.

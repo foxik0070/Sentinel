@@ -8,7 +8,8 @@ import sqlite3
 from datetime import datetime, timezone, timedelta
 from flask import Blueprint, request, jsonify, g, Response
 from ..auth import requires_auth, int_param
-from .. import state, config, utils, analytics, actions, diagnostics, fix_verify, remediation
+from .. import (state, config, utils, analytics, actions, diagnostics, fix_verify,
+                remediation, issue_lifecycle)
 
 logger = logging.getLogger("sentinel.chat")
 
@@ -83,7 +84,7 @@ def create_blueprint(service):
             dep_badge = ""
             if deps:
                 dep_badge = f"<span title='Závisí na {len(deps)} issue(s)' style='background:rgba(253,126,20,.2);color:#fd7e14;border:1px solid rgba(253,126,20,.4);border-radius:10px;font-size:.7em;padding:1px 6px;margin-left:4px;cursor:pointer;' onclick=\"_openDependsModal('{kb64}')\"><i class='fa-solid fa-link'></i> {len(deps)}</span>"
-            dep_btn = f"<i class='fa-solid fa-link' title='Závislosti' style='cursor:pointer;color:var(--text-muted);font-size:1.05em;margin-right:12px;transition:color .2s;' onmouseover=\"this.style.color='#fd7e14'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"_openDependsModal('{kb64}')\"></i>" if g.user_role in ['admin','superadmin'] else ""
+            dep_btn = f"<i class='fa-solid fa-link issue-action-secondary' title='Závislosti' style='cursor:pointer;color:var(--text-muted);font-size:1.05em;margin-right:12px;transition:color .2s;' onmouseover=\"this.style.color='#fd7e14'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"_openDependsModal('{kb64}')\"></i>" if g.user_role in ['admin','superadmin'] else ""
             # Tags
             tags_html = ""
             issue_tags = _tag_map.get(kb64, [])
@@ -100,16 +101,16 @@ def create_blueprint(service):
             if g.user_role in ['admin', 'superadmin']:
                 _host = html.escape(i.get('host', ''))
                 if _host:
-                    ssh_btn_modal = f"<i class='fa-solid fa-terminal' title='SSH na {_host}' style='cursor:pointer; color:var(--text-muted); font-size:1.05em; margin-right:12px; transition:color 0.2s;' onmouseover=\"this.style.color='var(--accent)'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"_navPushIssues(); closeIssuesModal(); openSshModal('{_host}')\"></i>"
+                    ssh_btn_modal = f"<i class='fa-solid fa-terminal issue-action-secondary' title='SSH na {_host}' style='cursor:pointer; color:var(--text-muted); font-size:1.05em; margin-right:12px; transition:color 0.2s;' onmouseover=\"this.style.color='var(--accent)'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"_navPushIssues(); closeIssuesModal(); openSshModal('{_host}')\"></i>"
             tag_btn = (
-                f"<i class='fa-solid fa-tag' title='Přidat tag' style='cursor:pointer; color:var(--text-muted); font-size:1.05em; margin-right:12px; transition:color 0.2s;' "
+                f"<i class='fa-solid fa-tag issue-action-secondary' title='Přidat tag' style='cursor:pointer; color:var(--text-muted); font-size:1.05em; margin-right:12px; transition:color 0.2s;' "
                 f"onmouseover=\"this.style.color='var(--accent)'\" onmouseout=\"this.style.color='var(--text-muted)'\" "
                 f"onclick=\"_openTagModal('{kb64}')\"></i>"
             ) if g.user_role in ['admin', 'superadmin'] else ""
             ignore_btn = f"<i class='fa-solid fa-eye-slash' title='Ignorovat' style='cursor:pointer; color:var(--text-muted); font-size:1.1em; margin-right:12px;' onclick=\"triggerAction('ignore_key {kb64}');setTimeout(()=>refreshModalIssuesContent(false),300);\"></i>" if g.user_role in ['admin','superadmin'] else ""
             delete_btn = f"<i class='fa-solid fa-trash' title='Smazat' style='cursor:pointer; color:var(--error); font-size:1.1em;' onclick=\"triggerAction('delete_key {kb64}');setTimeout(()=>refreshModalIssuesContent(false),300);\"></i>" if g.user_role in ['admin','superadmin'] else ""
-            fp_btn = f"<i class='fa-solid fa-ban' title='Označit jako false positive (potlačit podobné)' style='cursor:pointer; color:var(--text-muted); font-size:1.05em; margin-right:12px; transition:color .2s;' onmouseover=\"this.style.color='#fd7e14'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"_markFalsePositive('{kb64}')\"></i>" if g.user_role in ['admin','superadmin'] else ""
-            recheck_btn = f"<i class='fa-solid fa-stethoscope' title='Ověřit platnost (recheck)' style='cursor:pointer; color:var(--text-muted); font-size:1.05em; margin-right:12px; transition:color .2s;' onmouseover=\"this.style.color='#20c997'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"_recheckIssue('{kb64}');setTimeout(()=>refreshModalIssuesContent(false),1200);\"></i>" if g.user_role in ['admin','superadmin'] else ""
+            fp_btn = f"<i class='fa-solid fa-ban issue-action-secondary' title='Označit jako false positive (potlačit podobné)' style='cursor:pointer; color:var(--text-muted); font-size:1.05em; margin-right:12px; transition:color .2s;' onmouseover=\"this.style.color='#fd7e14'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"_markFalsePositive('{kb64}')\"></i>" if g.user_role in ['admin','superadmin'] else ""
+            recheck_btn = f"<i class='fa-solid fa-stethoscope issue-action-secondary' title='Ověřit platnost (recheck)' style='cursor:pointer; color:var(--text-muted); font-size:1.05em; margin-right:12px; transition:color .2s;' onmouseover=\"this.style.color='#20c997'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"_recheckIssue('{kb64}');setTimeout(()=>refreshModalIssuesContent(false),1200);\"></i>" if g.user_role in ['admin','superadmin'] else ""
             # Stale badge — issue dlouho nere-detekován (>50 % svého TTL)
             stale_badge = ""
             _age_lbl = utils.stale_age_label(i)
@@ -120,7 +121,7 @@ def create_blueprint(service):
                     f"style='background:rgba(108,117,125,.2);color:#adb5bd;border:1px solid rgba(108,117,125,.4);"
                     f"border-radius:4px;font-size:.72em;padding:1px 6px;margin-left:5px;cursor:pointer;'>🕓 {_age_lbl}</span>"
                 )
-            similar_btn = f"<i class='fa-solid fa-magnifying-glass' title='Podobné incidenty' style='cursor:pointer; color:var(--text-muted); font-size:1.05em; margin-right:12px; transition:color .2s;' onmouseover=\"this.style.color='var(--accent)'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"_openSimilarModal('{kb64}')\"></i>"
+            similar_btn = f"<i class='fa-solid fa-magnifying-glass issue-action-secondary' title='Podobné incidenty' style='cursor:pointer; color:var(--text-muted); font-size:1.05em; margin-right:12px; transition:color .2s;' onmouseover=\"this.style.color='var(--accent)'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"_openSimilarModal('{kb64}')\"></i>"
             # Rozbalovací seznam všech záznamů per technologie (f2b/security a podobné)
             records_html = ""
             _recs = i.get('records') or []
@@ -184,7 +185,7 @@ def create_blueprint(service):
                         {label_dot}
                         <div class='issue-content-area'>
                             <small style='color:var(--text-muted); display:block; margin-bottom:3px;'>🕒 {ts} | <b>{plugin_origin}</b>{occ_badge}{stale_badge} <i class='fa-solid fa-bell' title='Nastavení notifikací' style='cursor:pointer;font-size:.8em;opacity:.5;margin-left:3px;' onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=.5" onclick="openNotifySettingsModal()"></i></small>
-                            <span style='color:var(--text-main); font-size:0.93em; cursor:pointer;' title='395: Kliknutím rozbalit detail' onclick="_toggleInlineDetail('{kb64}')"><b>{safe_host}</b>: {safe_msg_short}</span>
+                            <span class='issue-msg' style='color:var(--text-main); font-size:0.93em; cursor:pointer;' title='395: Kliknutím rozbalit detail' onclick="_toggleInlineDetail('{kb64}')"><b>{safe_host}</b>: {safe_msg_short}</span>
                             {tags_html}{dep_badge}{records_html}
                             <div id='inline-detail-{kb64}' data-full-msg='{safe_msg_title}' data-first-seen='{html.escape(i.get('first_seen') or '')}' data-occ='{occ}' style='display:none; margin-top:8px; padding:10px; background:rgba(0,0,0,.15); border:1px solid var(--border); border-radius:5px; font-size:.85em;'></div>
                         </div>
@@ -914,39 +915,9 @@ def create_blueprint(service):
         if isinstance(det, str):
             try: det = json.loads(det)
             except Exception: det = {}
-        try:
-            seen = datetime.fromisoformat(prob.get('last_seen'))
-            if seen.tzinfo is None:
-                seen = seen.replace(tzinfo=timezone.utc)
-            age_min = (datetime.now(timezone.utc) - seen).total_seconds() / 60.0
-        except (TypeError, ValueError):
-            age_min = 0.0
 
-        _fresh = int(getattr(config, 'RECHECK_FRESH_MIN', 10))
-        _agent_silence = int(getattr(config, 'RECHECK_AGENT_SILENCE_MIN', 15))
-        _source_silence = int(getattr(config, 'RECHECK_SOURCE_SILENCE_MIN', 45))
-        verdict, detail = 'uncertain', ''
-        if age_min < _fresh:
-            verdict = 'still_active'
-            detail = f"Issue byl znovu detekován před {int(age_min)} min — stále platí."
-        elif key.startswith('AGENT|'):
-            hostname = key.split('|')[1] if '|' in key else ''
-            agent = next((a for a in state.get_all_agents() if a.get('hostname') == hostname), None)
-            if agent and agent.get('status') == 'ONLINE' and age_min > _agent_silence:
-                verdict = 'resolved'
-                detail = (f"Agent {hostname} je online a issue nehlásil {int(age_min)} min "
-                          f"— problém pominul.")
-            elif agent and agent.get('status') != 'ONLINE':
-                detail = f"Agent {hostname} je offline — nelze ověřit, ponecháno aktivní."
-            else:
-                detail = "Issue je čerstvý nebo agent neznámý — ponecháno aktivní."
-        elif age_min > _source_silence:
-            # Interní detektory (telemetrie, HA, heartbeat, watcher) běží v řádu minut
-            verdict = 'resolved'
-            detail = f"Zdroj issue nere-detekoval {int(age_min)} min — problém pominul."
-        else:
-            detail = (f"Poslední detekce před {int(age_min)} min — příliš čerstvé "
-                      f"na automatické vyřešení.")
+        # Pravidla žijí v issue_lifecycle, aby na ně sahal i periodický auto-recheck.
+        verdict, detail, age_min = issue_lifecycle.evaluate(prob, key)
 
         if verdict == 'uncertain' and body.get('force'):
             verdict = 'resolved'
