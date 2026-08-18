@@ -254,9 +254,9 @@ async function openAgentDetailModal(hostname) {
         const sev = iss.severity || '';
         const sc = sevColors[sev] || 'var(--accent)';
         const occ = iss.occurrence_count > 1 ? ` <span style="background:#555;color:#fff;border-radius:10px;font-size:.7em;padding:1px 5px;">×${iss.occurrence_count}</span>` : '';
-        return `<div style="padding:7px 10px;margin-bottom:4px;background:var(--bg);border:1px solid var(--border);border-left:3px solid ${sc};border-radius:4px;font-size:.83em;">
+        return `<div style="padding:7px 10px;margin-bottom:4px;background:var(--bg);border:1px solid var(--border);border-left:3px solid ${sc};border-radius:4px;font-size:.83em;overflow-wrap:anywhere;word-break:break-word;">
             <div style="color:var(--text-muted);font-size:.8em;">${_escape(iss.plugin_name?.toUpperCase()||'?')} · ${_escape(iss.last_seen?.slice(0,16)||'')} ${occ}</div>
-            <div>${_escape(iss.last_line||'')}</div>
+            <div style="white-space:pre-wrap;">${_escape(iss.last_line||'')}</div>
         </div>`;
     }).join('') : `<div style="color:var(--success);text-align:center;padding:12px;"><i class="fa-solid fa-check-circle"></i> Žádné aktivní issues</div>`;
 
@@ -334,7 +334,7 @@ async function openAgentDetailModal(hostname) {
         </div>` : ''}
         <div style="background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:14px;">
             <div style="font-size:.78em;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);margin-bottom:10px;">Aktivní issues (${issues.length})</div>
-            <div style="max-height:200px;overflow-y:auto;">${issuesHtml}</div>
+            <div style="max-height:400px;overflow-y:auto;">${issuesHtml}</div>
         </div>`;
     // Execute chart scripts
     body.querySelectorAll('script').forEach(s => { try { eval(s.textContent); } catch {} });
@@ -1097,10 +1097,10 @@ async function _fetchAgentDetail(hostname) {
         const _cat2 = {info:'infra', clusters:'infra', infra:'infra', security:'security', root:'root', agent:'agent'}[_rawCat2] || 'infra';
         const _catLabel2 = {infra:'Infra', security:'Security', root:'Root', agent:'Agent'}[_cat2] || _cat2.toUpperCase();
         const col = {security:'#f87171',root:'#fb923c',agent:'#fbbf24',infra:'#facc15'}[_cat2] || '#facc15';
-        return `<div style="border-left:3px solid ${col};padding:5px 10px;margin-bottom:5px;background:rgba(255,255,255,.02);border-radius:0 4px 4px 0;">
+        return `<div style="border-left:3px solid ${col};padding:5px 10px;margin-bottom:5px;background:rgba(255,255,255,.02);border-radius:0 4px 4px 0;overflow-wrap:anywhere;word-break:break-word;">
             <span style="color:${col};font-weight:700;font-size:.78rem;">${_catLabel2}</span>
             <span style="color:#aaa;font-size:.78rem;margin-left:8px;">${(i.last_seen||'').slice(0,16)}</span>
-            <div style="color:#ccc;font-size:.82rem;margin-top:2px;">${_escape((i.last_line||'').slice(0,90))}</div>
+            <div style="color:#ccc;font-size:.82rem;margin-top:2px;white-space:pre-wrap;">${_escape(i.last_line||'')}</div>
         </div>`;
     }).join('') : `<p style="color:#666;font-size:.9rem;">${t('no_active_incidents')}</p>`;
 
