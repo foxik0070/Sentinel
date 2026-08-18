@@ -206,6 +206,19 @@ def log(msg: str):
     """Writes a message to the internal Sentinel log."""
     utils.log_message(msg)
 
+def reconcile_issues(prefixes, reported_keys, host: str = None) -> list:
+    """Uzavře issues daných prefixů, které detektor v tomhle běhu nenahlásil.
+
+    Volat POUZE z detektoru, který v jednom běhu vidí celý aktuální stav
+    (kompletní seznam entit, plný sweep na server). U detektoru, který jen
+    zpracovává přírůstek logu, by to zavíralo živé problémy — tam nechat být
+    a spolehnout se na TTL.
+    """
+    closed = state.reconcile_detector_issues(prefixes, reported_keys, host=host)
+    for key in closed:
+        log(f"Detector state reconcile: uzavřen {key}")
+    return closed
+
 def _reverse_dns(ip: str, timeout: float = 2.0) -> str:
     """Best-effort reverse DNS, bounded so a slow resolver can't block the caller beyond `timeout`."""
     import socket

@@ -1,29 +1,59 @@
 # Historie změn
 
-## [2026.08.003] - 2026-08-07
+## [2026.08.003] - 2026-08-17
 
-**Souhrn:** Issues visely v UI, i když už dávno neplatily — šest nezávislých příčin, každá stačila sama. Testovací zpráva z `testpc` z 3. 7. i vyřešená teplota SV3 byly projevy téhož. Ověřeno proti ostrému provozu: `issue_history` ukazovala u SV3 resolve se zpožděním 11–15 h a u `ROOT_LOGIN` **135× `stale_auto` a ani jednou `detector_ok`** — resolve větev toho detektoru nikdy nesepnula. 1113 testů OK (bylo 1069).
+**Souhrn:** Podpora reasoning modelů v chatu, dvě opravy responzivity na mobilu, čtyři mechanismy pro zavírání issues, které už neplatí (aktivních 47 → 21), a smazání mrtvého modulu, který tiše spolkl dvě opravy. 1087 testů OK (bylo 1069).
 
-### Opravy
+### Reasoning modely v chatu
+Detekce v1 rozhraní nově reaguje i na nastavený API klíč, ne jen na `/v1/` v URL. Průběžné uvažování modelu (`reasoning_content`) se streamuje s příznakem `reasoning` a vykresluje se do odděleného ztlumeného bloku nad odpovědí; spinner zůstává viditelný po celou dobu uvažování.
 
-- **Zotavení hlášené detektorem se ukládalo jako aktivní problém.** `detector_windows` hlásí návrat pod práh přes `report_problem(key, {'status': 'resolved'})`, jenže `report_problem()` status nikdy nečetl a `save_problem()` řádek bezpodmínečně zapsal jako `status='active'`. Payload zotavení navíc nemá `last_line`, takže ho `save_problem()` zahodil ještě dřív (`return False`) — CPU/RAM/disk issue tedy nešlo zavřít vůbec ničím kromě ruky. Nově `report_problem()` na `resolved`/`ok`/`cleared`/`recovered` issue archivuje a smaže.
-- **`details` JSON přebíjel sloupce tabulky.** `get_problem()` dělal `d.update(json.loads(details))`, takže `last_seen` z payloadu detektoru přepsalo skutečný čas uložení. Karta v UI proto ukazovala `2026-07-03 09:00:01Z`, zatímco sloupec byl čerstvý — a `resolve_stale_problems()` počítající stáří ze sloupce neměl co uklidit. Stejnou cestou šlo přepsat i `status`. Sloupce jsou nově autoritativní (`_merge_problem_row()`), z `details` se doplňují jen pole, pro která sloupec není (`cluster`, `log_file`). `get_active_issues()` mělo částečnou obranu pro čtyři pole — sjednoceno.
-- **Restart přehrál posledních 200 řádků každého logu.** Startovní sken dispatchoval tail bez ohledu na to, co se už zpracovalo, takže dávno neplatné issue vstalo z mrtvých s čerstvým `last_seen` — a tím se samo chránilo před stale TTL. Do té doby se to schovávalo za předchozí bod: v UI svítil starý čas z `details`, takže nikoho nenapadlo, že se záznam právě obnovil. Pozice v logách se nově ukládají do `kv_settings` (`watcher.offsets`) a restart přežijí; neznámý soubor začíná na konci.
-- **Pozice se musí načíst před `observer.start()`.** Sken běžel ve vlákně s `sleep(2)`, ale observer už mezitím doručoval události — a první událost u souboru, který ještě nebyl v `_file_positions`, ho přečetla od nuly. Seed je nově synchronní, před startem observeru.
-- **`hash()` v klíčích issues.** `hash()` je pro `str` randomizovaný per proces (PYTHONHASHSEED), takže po každém restartu vznikl z téhož řádku nový klíč: v UI přibyl duplikát a původní issue už nešlo spárovat ani zavřít. Nahrazeno `api.stable_key_hash()` (SHA-1, 12 znaků).
-- **Potvrzení a odložení rušila první další detekce.** `ON CONFLICT` nastavoval `snoozed_until=NULL` a `status='active'`, takže u detektoru běžícího každou minutu snooze nepřežil ani jeden cyklus a `acknowledged` ztrácelo delší TTL. Ack i snooze nyní re-detekci přežijí, `occurrence_count` se dál zvyšuje.
-- **`_is_false_positive()` četlo jinou DB než zbytek Sentinelu.** Používalo konstantu `DB_FILE` místo `_db_file()`, čímž míjelo override cesty. Přitom `_db_file()` sám bral v potaz jen override na fasádě `sentinel.state` — patch na `state_base.DB_FILE` tiše nedělal nic, protože fasáda si hodnotu kopíruje při importu. Resolver nově respektuje obojí.
-- **Snapshot log se stejnou velikostí se vůbec nezpracoval.** `if current_size == last_pos: return` platilo i pro logy, které sběrač pokaždé přepíše celé (`: > file` + append). Když měl nový obsah stejnou délku jako minulý — u teploty `11.7C` → `11.8C` naprosto běžné — velikost sedla na uloženou pozici a **`process()` se nezavolal vůbec**, takže resolve větev detektoru neměla kdy proběhnout. Issue pak zmizelo až náhodou, když se změnil počet číslic. Nově `config.SNAPSHOT_LOGS` (fnmatch patterny): takový soubor se čte celý a dispatchuje i při nezměněné velikosti. Ve verzi 2026.05 tohle obcházel ruční zásah přímo na stroji (`_snapshot_files` zadrátované v kódu), který se do gitu nikdy nedostal.
-- **`missing_count` se nikdy neukládal do sloupce.** `save_problem()` ho vkládal jen jako konstantu `0` a v `ON CONFLICT` vůbec — detektory, které si jím počítají „kolikrát po sobě chybí", se trefovaly jen do `details` JSON a fungovaly výhradně proto, že `details` stínilo sloupce. Oprava autoritativních sloupců (výše) by je tím utloukla: počítadlo by zůstalo na nule a issue by se nevyřešilo **nikdy**. Nově se `missing_count` persistuje, a když ho payload neuvede, zůstane stávající hodnota — jinak by běžné hlášení vynulovalo počítadlo, které vede `reconcile_agent_issues()`.
+### Opravy — issues na mobilu nebyly čitelné
 
-### Detektory
+- **Karty na hlavním panelu skládaly layout inline styly.** `_render_issue_card` v `chat_service.py` psala flex přímo do `style=`, takže na ni nesedla žádná media query. Blok akcí měl `flex-shrink:0` bez zalomení a až jedenáct ikon po ~30 px roztáhlo kartu přes viewport; `.status-wrapper` má `overflow:hidden`, takže se přetečení uřízlo. Karta teď používá stejné třídy jako modal (`.issue-row-inner`, `.issue-content-area`, `.issue-actions`) a méně důležité akce se pod 480 px skrývají.
+- **Text issue v modalu byl oříznutý na 200 px.** Pravidlo `[data-issue-card] span[title]` mělo pod 480 px zkracovat *badge*, jenže hlavní text zprávy nese `title=` (tooltip „kliknutím rozbalit detail"), takže ho selektor trefil taky — `white-space:nowrap` plus `max-width:200px` z celé issue udělalo jeden useknutý řádek. Z textu byla vidět asi tři slova.
 
-- **`detector_universal_security`** — stabilní klíče místo `hash()`.
-- Opravy detektorů (`detector_sv3` reconciliation nad snapshotem) jsou v repu `sentinel-plugins-work`, který byl při té příležitosti synchronizován z ostrého provozu — všech 9 sledovaných souborů se lišilo a 5 dalších v repu vůbec nebylo.
+> **První diagnóza byla nekompletní a oprava nezabrala.** Teprve měření headless Chromem to našlo: `CLIPPED span scrollW=940 clientW=200` — text chtěl 940 px, dostal 200. Chromium klampuje okno na minimum 500 px, takže se stránka měřila ve 390px iframu, kde se media queries vyhodnocují proti jeho viewportu. Po opravě `doc.scrollWidth=390`, nic oříznutého. **Kdyby se měřilo hned, ušetřilo by to jedno kolo.**
 
-### Testy
+### Issues, které už neplatí, se konečně zavřou samy
 
-- `tests/test_issue_lifecycle_stale.py` (44 testů) — zotavení od detektoru včetně payloadu bez `last_line`, autoritativnost sloupců, stale sweep proti podvrženému `last_seen` (i času v budoucnu), přežití ack/snooze při re-detekci, stabilita klíčů, persistence `missing_count` včetně smyčky „přečti–zvyš–ulož–přečti", a offsety watcheru: nepřehrání historie, rotace, poškozený záznam, seed před startem. Reprodukce SV3: dva přepisy snapshotu o stejné délce musí dát dva dispatche, u běžného logu naopak jeden.
+Výchozí stav: 47 aktivních issues, **všechny s čerstvým `last_seen`**, takže na ně `resolve_stale_problems()` z principu nesáhla. 42 z nich pocházelo z interních detektorů, které — na rozdíl od agentních přes `reconcile_agent_issues()` — neměly žádnou rekonciliaci.
+
+- **Strop stáří pro event-typy** (`resolve_aged_event_issues`). `SYS_ERR|host` je agregát za dvojici typ+host: jeden řádek, který si drží původní `first_seen` a jehož `last_seen` osvěžuje každá další událost na tom hostu. TTL podle `last_seen` na něj nedosáhne nikdy. Po `EVENT_ISSUE_MAX_AGE_HOURS` (48) se archivuje; pokud anomálie pokračují, vznikne čerstvý issue se správným `first_seen`.
+- **Zúžené matchování v `system_detector`.** Substring match nad `["crit","error","fail","timeout",…]` bral i „failover" a hlavně veškerý běžný šum — skenery na SSH (`kex_exchange_identification`), `pam_systemd` z kontejnerů, boot-time `networkd-wait-online`. Nově regexy s hranicemi slov plus ignore-list, obojí konfigurovatelné. Na 14 reálných řádcích z produkce: **nové pravidlo 14/14 podle očekávání, staré 5/14.**
+- **Rekonciliace pro interní detektory** (`reconcile_detector_issues`, opt-in přes `api.reconcile_issues`). Napojená jen na detektory, které v jednom běhu vidí celý stav — `ha_detector` (kompletní seznam entit) a `capacity_detector` (plný sweep na server).
+- **Periodický auto-recheck.** Recheck pravidla žila uvnitř view funkce v `routes/issues.py`, takže šla spustit jen kliknutím na stetoskop. Vytažena do `issue_lifecycle.py` a spouštěná i z údržbové smyčky.
+
+> **Rekonciliace záměrně NENÍ plošná.** U log-událostního detektoru znamená „klíč nebyl hlášen" jen „nepřišel nový řádek", ne „problém pominul" — plošné nasazení by zavíralo živé issues.
+
+> **Auto-recheck usuzuje z ticha:** „zdroj se neozval 45+ min → problém pominul". Rozbitý collector proto vypadá jako vyřešený problém. Není to nové pravidlo, jen dosud běželo pouze ručně.
+
+Výsledek za první hodiny provozu: aktivních **47 → 21**, uzavřeno `recheck_auto` 18, `event_max_age` 3, `detector_state_ok` 1, plus 4 ručně archivované vyřazené stroje. Mezi uzavřenými `REBOOT_REQ|proxmox01` a `proxmox02` z 26. 7. — `audit_detector` je umí zavřít, ale jen když dorazí řádek `REBOOT: NOT REQUIRED`; ten nikdy nepřišel, tak visely 22 dní.
+
+> **Korekce průběžného odhadu:** v půlce analýzy padlo, že „27 SYS_ERR hnije od 68 dní". To bylo špatně — stáří nejstaršího issue se zaměnilo za celou skupinu. Starší než 48 h byly tři. Strukturní díra ale reálná byla: `SYS_ERR|proxmox02` visel 68 dní s `occurrence_count` 512.
+
+### Mrtvý kód: `scheduler.py`
+
+Modul nikdo neimportoval. Nebyl to ale nezapojený refaktor — odkazoval na **tři symboly, které vůbec neexistují** (`_save_sentinel_self_metrics`, `_run_sentinel_health_checks`, `watcher.fim_check`), takže by po zapojení padal každou minutu na `AttributeError`.
+
+> **Hlavně to byla past.** Uvízla v něm oprava retence (`auto_resolve_old_problems` dostávala v živé smyčce `DB_RETENTION_DAYS` = 2 dny místo `PROBLEM_RETENTION_DAYS` = 30) *a* první napojení auto-rechecku — obojí bez jakéhokoli příznaku, že se to nikdy nespustí. Že auto-recheck neběží, se poznalo až podle produkčních dat: `HA_ALERT` mlčící 9,4 h zůstal otevřený, ačkoli `evaluate()` na něm vracela `resolved`.
+
+Před smazáním přeneseno do skutečně běžící smyčky to, co fungovalo a nikde jinde nebylo: hodinové prořezání `_GEO_CACHE` a GC in-memory `user_sessions` (obojí **reálné memory leaky** — jediná místa v kódu, kde se ty struktury čistily) a `prune_revoked_sessions(30)` v noční údržbě.
+
+### Tři úlohy, které byly naplánované jen tam
+Existovaly a šly spustit ručně, ale plán měly výhradně v mrtvém scheduleru:
+- **Hodinový vtip** — `infra_jokes` mělo 8 záznamů, všech 8 `source='manual'` (dvojklik na logo). Přímý důkaz, že úloha nikdy neproběhla.
+- **Kontrola DNS** — `DNS_CHECKS` má nakonfigurované 2 domény a **neexistoval pro ně žádný baseline**. První běh ho založil.
+- **Denní AI digest** — `AI_DIGEST_HOUR` stojí na 7:00 a config slibuje „-1 = vypnuto", takže to vypadalo jako zapnutá funkce, která se nikdy neodeslala. Nově se datum posledního běhu načítá z `kv_settings`, aby restart v digest hodině neposlal přehled podruhé. Podmínka `minute == 0` vypuštěna — smyčka spí 30 s a při zátěži se dala ta jediná minuta minout.
+
+### Nálezy z ostrého provozu
+- **4 stroje vyřazené v červnu** (`rpizero2`, `jellyfin-zatisi`, `navidrome-zatisi`, `server-zatisi`) 65–69 dní neodpovídaly na ICMP a alert jen šuměl. Archivovány a doplněny do seznamu „normálně vypnuto", který je nově přepsatelný přes `lifecycle.default_down_servers`.
+- **Většina `SYS_ERR` byl známý benigní šum**, ve kterém se ztrácely skutečné poruchy (`unciv@server.service: Failed`, `corosync-qdevice: Connect timeout` 49×).
+- **Lokální a vzdálená historie neměly společného předka** (merge-base prázdný, 93 vs 94 commitů se stejnými zprávami). Obsahově byl lokální strom podmnožinou vzdáleného, takže se historie srovnala resetem; původní stav zůstal ve větvi `backup/main-pre-addbf44`.
+- **Aplikace si minifikuje statiku sama při startu** přes `rjsmin`/`rcssmin` (`__main__.py`), takže `make build` s terserem není pro nasazení potřeba a případný terser build se přepíše.
+- Smazáno mrtvé CSS `.issue-table` — tu třídu nic negeneruje.
+
+### Poznámka k testům
+Nová sada `tests/test_issue_lifecycle.py` (21 testů) zapojená do `run_tests.sh`. **Při psaní odhalila chybu v čerstvě napsaném kódu:** `max_age_hours=0` mělo znamenat „vypnuto", ale `0 or default` spadlo zpátky na 48. Stejná past byla i v `auto_recheck_pass`.
 
 ## [2026.08.002] - 2026-08-07
 
