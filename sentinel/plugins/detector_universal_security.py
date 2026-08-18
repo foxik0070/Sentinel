@@ -39,7 +39,7 @@ class Detector(api.BaseDetector):
                 event_type = "Network Break-in Attempt"
                 
             if problem_found:
-                key = f"SEC|{infra_label}|{hash(l)}"
+                key = f"SEC|{infra_label}|{api.stable_key_hash(l)}"
                 
                 api.report_problem(key, {
                     "status": "active",

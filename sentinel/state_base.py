@@ -21,16 +21,24 @@ try:
 except Exception:
     _DB_DIR = config.LOG_DIR  # fallback (zpětná kompatibilita)
 DB_FILE = os.path.join(_DB_DIR, "sentinel_state.db")
+_DEFAULT_DB_FILE = DB_FILE  # výchozí hodnota; slouží k rozpoznání test override
 db_lock = threading.RLock()  # RLock: zabrání deadlocku při re-entrantním volání ze stejného vlákna
 
 def _db_file():
-    """Returns current DB_FILE, respecting overrides set on sentinel.state (used by tests)."""
+    """Returns current DB_FILE, respecting overrides set by tests.
+
+    Přepsat cestu jde na obou modulech — `sentinel.state` (fasáda) i zde.
+    Fasáda si hodnotu kopíruje při importu, takže dokud ji nikdo nepřepsal,
+    stíní pozdější změnu `state_base.DB_FILE`; proto ji bereme jen když se
+    od výchozí liší. Jinak by patch na state_base tiše nic nedělal.
+    """
     import sys
     m = sys.modules.get('sentinel.state')
-    if m is None:
-        return DB_FILE
-    v = m.__dict__.get('DB_FILE')
-    return v if v else DB_FILE
+    if m is not None:
+        v = m.__dict__.get('DB_FILE')
+        if v and v != _DEFAULT_DB_FILE:
+            return v
+    return DB_FILE
 
 class _DBErrorHandler(logging.Handler):
     """Zapisuje ERROR+ záznamy z libovolného sentinel loggeru do tabulky sentinel_errors."""

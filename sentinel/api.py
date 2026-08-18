@@ -21,11 +21,24 @@ def get_infrastructure_label(path: str) -> str:
             return mapping.get("name", "OTHER")
     return "OTHER"
 
+def stable_key_hash(text: str, length: int = 12) -> str:
+    """Stabilní část issue klíče z textu.
+
+    Vestavěný hash() je pro str randomizovaný per proces (PYTHONHASHSEED),
+    takže po restartu vznikl ze stejného řádku nový klíč: v UI se objevil
+    duplikát a původní issue už nešlo spárovat, ani vyřešit.
+    """
+    import hashlib
+    return hashlib.sha1(str(text).encode('utf-8', 'replace')).hexdigest()[:length]
+
 def _is_false_positive(data: dict) -> bool:
     """Returns True if the problem matches a stored false-positive pattern."""
     import fnmatch
     import sqlite3
-    from .state_base import DB_FILE as DB_PATH
+    # _db_file(), ne DB_FILE — konstanta míjí override cesty k DB, takže
+    # suppress pravidla se četla z jiné databáze než zbytek Sentinelu.
+    from .state_base import _db_file
+    DB_PATH = _db_file()
     try:
         conn = sqlite3.connect(DB_PATH, timeout=5)
         rows = conn.execute(
@@ -49,8 +62,22 @@ def _is_false_positive(data: dict) -> bool:
         pass
     return False
 
+# Stavy, kterými detektor hlásí "už to neplatí". save_problem() je umí jen
+# uložit jako aktivní problém (a payload bez last_line navíc zahodí), takže
+# zotavení se dřív ztratilo a issue viselo, dokud ho někdo neuklidil ručně.
+_RESOLVED_STATES = {'resolved', 'ok', 'cleared', 'recovered'}
+
+
 def report_problem(key: str, data: dict):
-    """Saves or updates a problem record in the SQLite database."""
+    """Saves or updates a problem record in the SQLite database.
+
+    `data['status']` z _RESOLVED_STATES issue vyřeší (ekvivalent resolve_problem).
+    """
+    if str(data.get('status', 'active')).lower() in _RESOLVED_STATES:
+        if state.get_problem(key):
+            state.mark_resolved(key, reason='detector_ok')
+            log(f"Plugin reported recovery: {key}")
+        return
     if _is_false_positive(data):
         log(f"Suppressed false positive: {key}")
         return
@@ -153,6 +180,15 @@ def resolve_problem(key: str):
 def get_problem(key: str) -> dict:
     """Retrieves an existing problem by its unique key."""
     return state.get_problem(key)
+
+def get_active_keys(prefix: str) -> list:
+    """Klíče aktivních issues začínající `prefix`.
+
+    Pro detektory nad snapshotem (who, racks, …): co ze zdroje zmizelo, už
+    neplatí — bez tohohle výčtu to detektor nemá jak zjistit a issue visí dál.
+    """
+    return [i['key'] for i in state.get_active_issues(include_snoozed=True)
+            if str(i.get('key', '')).startswith(prefix)]
 
 def enqueue_ai_task(text: str, channel: str = "default", msg_type: str = "problem", context: dict = None):
     """Sends log text to the AI queue for asynchronous analysis."""

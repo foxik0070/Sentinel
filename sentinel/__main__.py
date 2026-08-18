@@ -199,6 +199,9 @@ def main():
 
     # 1. Log Watcher
     log_handler = watcher.LogHandler()
+    # Pozice z minulého běhu ještě před observer.start() — jinak první událost
+    # u dosud neznámého souboru přečte log od nuly a přehraje jeho historii.
+    log_handler._file_positions.update(watcher.seed_positions(config.LOG_DIR))
     observer.schedule(log_handler, config.LOG_DIR, recursive=True)
 
     # Initial scan — zpracuj poslední řádky existujících log souborů při startu
@@ -227,16 +230,19 @@ def main():
                         utils.log_message(f"[292] Zpracován rotovaný log {os.path.basename(rpath)} ({len(rlines)} řádků)")
                 except Exception as e:
                     utils.log_message(f"[!] Rotated log {rpath}: {e}")
+        # Jen to, co přiteklo od posledního běhu — pozice logů restart přežívají.
+        # Dřív se přehrálo posledních 200 řádků každého logu a dávno neplatné
+        # issue se po každém restartu vynořilo znovu s čerstvým last_seen.
         for fpath in glob.glob(os.path.join(config.LOG_DIR, "*.log")):
             try:
-                with open(fpath, "r", errors="replace") as f:
-                    lines = f.readlines()
+                pos = log_handler._file_positions.get(fpath)
+                lines, new_offset = watcher.read_new_lines(fpath, pos)
+                log_handler._file_positions[fpath] = new_offset
                 if lines:
-                    tail = lines[-200:]  # posledních 200 řádků
-                    log_handler._file_positions[fpath] = os.path.getsize(fpath)
-                    _pm.dispatch(fpath, tail)
+                    _pm.dispatch(fpath, lines)
             except Exception:
                 pass
+        watcher.save_offsets(dict(log_handler._file_positions))
     threading.Thread(target=_initial_scan, daemon=True, name="InitialScan").start()
     
     # 2. Config Watcher (Hot-Reload)
@@ -265,6 +271,9 @@ def main():
     # 486: ověřování oprav — často, protože pokusy dozrávají po ~15 min
     FIX_VERIFY_INTERVAL = 120
     fix_verify_counter = 0
+    # Pozice v logách: po SIGKILL se přehraje maximálně poslední minuta
+    OFFSET_SAVE_INTERVAL = 60
+    offset_counter = 0
     _scheme = "https" if getattr(config, 'HTTPS_ENABLED', False) else "http"
     WEB_URL = f"{_scheme}://127.0.0.1:{config.WEB_PORT}/api/status_check"
 
@@ -318,6 +327,11 @@ def main():
             loop_counter  += 1
             stale_counter += 1
             fix_verify_counter += 1
+            offset_counter += 1
+
+            if offset_counter >= OFFSET_SAVE_INTERVAL:
+                offset_counter = 0
+                watcher.save_offsets(dict(log_handler._file_positions))
 
             if not ollama_thread.is_alive():
                 utils.log_message("CRITICAL: Ollama worker died!")
@@ -430,6 +444,7 @@ def main():
 
     finally:
         utils.log_message("Stopping Sentinel services...")
+        watcher.save_offsets(dict(log_handler._file_positions))
         state.shutdown_event.set()
         
         if observer.is_alive():
