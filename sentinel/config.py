@@ -65,7 +65,7 @@ OLLAMA_LOG_FILE = "/var/log/sentinel/sentinel-ollama.log"
 PLUGIN_DIR = "/opt/Sentinel/sentinel/plugins" 
 
 INSTANCE_NAME = "Unknown"
-DOCUMENTATION_URL = ""
+DOCUMENTATION_URL = "https://sentinel-docs.foxik-iot.cz/"
 TEAMS_ENABLED = False
 HA_ENABLED = False
 HA_URL = ""
