@@ -40,7 +40,7 @@
                     </small>
                 </div>
 
-                <span class="instance-feature-badge" onclick="window.open('https://sentinel-docs.foxik-iot.cz/','_blank')" style="cursor:pointer;" title="Otevřít dokumentaci Sentinelu"><i class="fas fa-microchip"></i> {{ instance_name }}</span>
+                <span class="instance-feature-badge" {% if documentation_url %}onclick="window.open('{{ documentation_url }}','_blank')" style="cursor:pointer;" title="Otevřít dokumentaci Sentinelu"{% endif %}><i class="fas fa-microchip"></i> {{ instance_name }}</span>
             </div>
             <div class="badge badge-user {% if role == 'superadmin' %}superadmin{% endif %}" onclick="openRoleModal()" style="cursor:pointer;" title="Správa rolí" data-i18n-title="role_badge_title">
                 <i class="fa-solid fa-user-shield"></i> {{ role|upper }}
