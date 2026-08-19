@@ -375,3 +375,18 @@ prompts:
 # Retence vyřešených/ignorovaných problémů ve dnech (nezávislá na db_retention_days,
 # která řídí RAW telemetrii). Default 30.
 # problem_retention_days: 30
+
+# ── Seskupování issues dle clusteru ──────────────────────────────────────────
+# Pravidla pro odvozování názvu clusteru z hostname v modálech issues.
+# Testuje se pattern (substring) proti hostname (lowercase). První shoda vyhraje.
+# Pokud žádné pravidlo nesedí, použije se default_cluster (výchozí: INFRA).
+# Pole cluster v payloadu agenta/detektoru má vždy přednost.
+#
+# host_cluster_rules:
+#   - pattern: node1
+#     cluster: COMPUTE
+#   - pattern: storage
+#     cluster: STORAGE
+#   - pattern: .mgmt.
+#     cluster: MANAGEMENT
+# default_cluster: INFRA
