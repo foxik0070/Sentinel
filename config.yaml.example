@@ -378,15 +378,24 @@ prompts:
 
 # ── Seskupování issues dle clusteru ──────────────────────────────────────────
 # Pravidla pro odvozování názvu clusteru z hostname v modálech issues.
-# Testuje se pattern (substring) proti hostname (lowercase). První shoda vyhraje.
-# Pokud žádné pravidlo nesedí, použije se default_cluster (výchozí: INFRA).
-# Pole cluster v payloadu agenta/detektoru má vždy přednost.
+# Issues se v modálech seskupují do dvouúrovňového stromu CLUSTER → DETEKTOR.
+#
+# Priorita určení clusteru pro každé issue:
+#   1. Pole "cluster" v payloadu issue (posílané detektorem/agentem) — nejvyšší.
+#   2. [CLUSTERNAME] prefix na začátku last_line — regex ^\[([A-Z0-9_]+)\].
+#   3. Pravidla host_cluster_rules — substring match v hostname (lowercase).
+#   4. default_cluster — záchytná hodnota (výchozí: INFRA).
+#
+# host_cluster_rules: pattern je substring, první shoda vyhraje. Pořadí je klíčové!
+# Specifičtější patterny musí být výše než obecnější.
 #
 # host_cluster_rules:
-#   - pattern: node1
-#     cluster: COMPUTE
-#   - pattern: storage
+#   - pattern: login.cluster1    # přesný substring v hostname (case-insensitive)
+#     cluster: CLUSTER1
+#   - pattern: storage           # storage.mycluster.local → STORAGE
 #     cluster: STORAGE
-#   - pattern: .mgmt.
+#   - pattern: .compute.         # *.compute.domain → COMPUTE
+#     cluster: COMPUTE
+#   - pattern: mgmt              # mgmt1.infra.local → MANAGEMENT
 #     cluster: MANAGEMENT
-# default_cluster: INFRA
+# default_cluster: INFRA         # fallback, pokud žádné pravidlo nesedí

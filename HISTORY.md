@@ -1,5 +1,37 @@
 # Historie změn
 
+## [2026.08.005] - 2026-08-19
+
+**Souhrn:** Cluster detekce z konfigurace (host_cluster_rules), parsování `[CLUSTERNAME]` z last_line, oprava tlačítek v modal oknech issues (přímé REST API namísto chat příkazů).
+
+### Cluster detekce — konfigurovatelná pravidla (host_cluster_rules)
+
+Funkce `_issue_cluster()` v modal oknech nově řídí přiřazení issue do složky clusteru plně z konfigurace. Priorita:
+1. Explicitní pole `cluster` v payloadu issue (nejspolehlivější — posílají detektory).
+2. `[CLUSTERNAME]` prefix na začátku `last_line` — regex `^\[([A-Z0-9_]+)\]`.
+3. Konfigurační pravidla `host_cluster_rules` — seznam `{pattern, cluster}`, testuje substring v hostname.
+4. `default_cluster` (výchozí: `INFRA`).
+
+Kód je plně univerzální — žádné hardkódované názvy clusterů. Pravidla se definují v `config.yaml`:
+
+```yaml
+host_cluster_rules:
+  - pattern: node1
+    cluster: COMPUTE
+  - pattern: storage
+    cluster: STORAGE
+default_cluster: INFRA
+```
+
+### Oprava tlačítek delete/ignore v modal oknech issues
+
+Tlačítka koše (smazat issue) a oka (ignorovat) dříve volala `triggerAction()` — příkaz šel přes chat endpoint a závisel na dostupnosti chatu. Nově volají přímé REST endpointy:
+
+- `POST /api/issues/<key_b64>/delete` — smaže issue z DB.
+- `POST /api/issues/<key_b64>/ignore` — přidá do ignore listu + smaže z DB.
+
+Tlačítko „smazat vše" v obsahu infra modalu opraveno — volá `deleteAllInChannel()` přímo místo chat příkazu.
+
 ## [2026.08.004] - 2026-08-19
 
 **Souhrn:** Oprava zobrazení selhávajících systemd jednotek v agentu, 2-úrovňové seskupení issues v modálech (CLUSTER → DETEKTOR), oprava zachování stavu složek při auto-refresh, nasazení chybějících pluginů, odstranění nefunkčních Teams notifikací.
