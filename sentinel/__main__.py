@@ -66,7 +66,7 @@ def _make_watchdog_socket():
         addr = '\0' + addr[1:]
     try:
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
-        sock.setblocking(False)  # non-blocking: sendall nikdy nezablokuje hlavní vlákno
+        sock.settimeout(1.0)  # krátký timeout: send se nezablokuje ale ani nezahodí ping
         sock.connect(addr)
         return sock, addr
     except Exception as e:
@@ -305,7 +305,7 @@ def main():
                     utils.log_message(f"[WATCHDOG] ping obnoven po {fail_count} selháních")
                     fail_count = 0
             except BlockingIOError:
-                pass  # socket buffer plný — systemd dostane příští ping, nevyžaduje obnovu
+                pass  # nesmí nastat u settimeout(1.0) — ponecháno jako záchrana
             except Exception as e:
                 fail_count += 1
                 utils.log_message(f"[WATCHDOG] ping selhal ({fail_count}): {e} — obnova socketu")

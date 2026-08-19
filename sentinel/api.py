@@ -190,6 +190,16 @@ def get_active_keys(prefix: str) -> list:
     return [i['key'] for i in state.get_active_issues(include_snoozed=True)
             if str(i.get('key', '')).startswith(prefix)]
 
+def get_cluster_from_host(host: str, fallback: str = "INFRA") -> str:
+    """Odvodí název clusteru z hostname dle config host_cluster_rules.
+    Pořadí: host_cluster_rules (substring match) → default_cluster → fallback."""
+    from sentinel import config as _cfg
+    h = (host or '').lower()
+    for rule in (_cfg.HOST_CLUSTER_RULES or []):
+        if rule.get('pattern', '') in h:
+            return rule.get('cluster', _cfg.DEFAULT_CLUSTER).upper()
+    return (_cfg.DEFAULT_CLUSTER or fallback).upper()
+
 def enqueue_ai_task(text: str, channel: str = "default", msg_type: str = "problem", context: dict = None):
     """Sends log text to the AI queue for asynchronous analysis."""
     state.enqueue_message(text, channel, msg_type, context)
