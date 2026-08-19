@@ -3,7 +3,7 @@
 ## Sensitive values (passwords, tokens) must NOT be committed to git.
 
 instance_name: HOME          # Label shown in the UI header
-version: 2026.05.022
+version: 2026.08.006
 
 # ── Web UI ────────────────────────────────────────────────────────────────────
 web:
@@ -101,6 +101,26 @@ ai_hat:
 worker_threads: 2
 
 # ── Detectors ─────────────────────────────────────────────────────────────────
+# Každý detektor může mít volitelný blok params: s parametry specifickými pro plugin.
+#
+# Příklady it4i pluginů (detector_icinga, detector_cluster, detector_who):
+#
+# - plugin: detector_icinga
+#   match_pattern: icinga.log
+#   enabled: true
+#   params:
+#     resolve_threshold: 3       # počet chybějících skanů před resolve
+#     ignored_host_services:     # potlačit false positives (service_pattern@host_pattern)
+#       - slurmd.service@login   # slurmd nepodporuje login nody — nezhlásit jako issue
+#       - service.name@hostname  # obecný formát: case-insensitive substring match
+#
+# - plugin: detector_cluster
+#   match_pattern: cluster-*.log
+#   enabled: true
+#   params:
+#     resolve_threshold: 3
+#     slurmctld_threshold: 2     # počet po sobě jdoucích DOWN skanů → issue (anti-flap)
+#
 detectors:
 - plugin: port_detector
   match_pattern: ports.log
