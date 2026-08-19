@@ -107,8 +107,8 @@ def create_blueprint(service):
                 f"onmouseover=\"this.style.color='var(--accent)'\" onmouseout=\"this.style.color='var(--text-muted)'\" "
                 f"onclick=\"_openTagModal('{kb64}')\"></i>"
             ) if g.user_role in ['admin', 'superadmin'] else ""
-            ignore_btn = f"<i class='fa-solid fa-eye-slash' title='Ignorovat' style='cursor:pointer; color:var(--text-muted); font-size:1.1em; margin-right:12px;' onclick=\"triggerAction('ignore_key {kb64}');setTimeout(()=>refreshModalIssuesContent(false),300);\"></i>" if g.user_role in ['admin','superadmin'] else ""
-            delete_btn = f"<i class='fa-solid fa-trash' title='Smazat' style='cursor:pointer; color:var(--error); font-size:1.1em;' onclick=\"triggerAction('delete_key {kb64}');setTimeout(()=>refreshModalIssuesContent(false),300);\"></i>" if g.user_role in ['admin','superadmin'] else ""
+            ignore_btn = f"<i class='fa-solid fa-eye-slash' title='Ignorovat' style='cursor:pointer; color:var(--text-muted); font-size:1.1em; margin-right:12px;' onclick=\"fetch('/api/issues/{kb64}/ignore',{{method:'POST'}}).then(()=>refreshModalIssuesContent(false));\"></i>" if g.user_role in ['admin','superadmin'] else ""
+            delete_btn = f"<i class='fa-solid fa-trash' title='Smazat' style='cursor:pointer; color:var(--error); font-size:1.1em;' onclick=\"fetch('/api/issues/{kb64}/delete',{{method:'POST'}}).then(()=>setTimeout(()=>refreshModalIssuesContent(false),300));\"></i>" if g.user_role in ['admin','superadmin'] else ""
             fp_btn = f"<i class='fa-solid fa-ban issue-action-secondary' title='Označit jako false positive (potlačit podobné)' style='cursor:pointer; color:var(--text-muted); font-size:1.05em; margin-right:12px; transition:color .2s;' onmouseover=\"this.style.color='#fd7e14'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"_markFalsePositive('{kb64}')\"></i>" if g.user_role in ['admin','superadmin'] else ""
             recheck_btn = f"<i class='fa-solid fa-stethoscope issue-action-secondary' title='Ověřit platnost (recheck)' style='cursor:pointer; color:var(--text-muted); font-size:1.05em; margin-right:12px; transition:color .2s;' onmouseover=\"this.style.color='#20c997'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"_recheckIssue('{kb64}');setTimeout(()=>refreshModalIssuesContent(false),1200);\"></i>" if g.user_role in ['admin','superadmin'] else ""
             # Stale badge — issue dlouho nere-detekován (>50 % svého TTL)
@@ -268,7 +268,7 @@ def create_blueprint(service):
             )
 
         if target_channel == 'infra' and g.user_role in ['admin', 'superadmin']:
-            html_out += f"<div style='margin-top:10px; text-align:right;'><span style='color:var(--text-muted); font-size:0.8em; cursor:pointer; text-decoration:underline;' onclick=\"triggerAction('delete_all_issues'); closeIssuesModal();\">smazat vše</span></div>"
+            html_out += f"<div style='margin-top:10px; text-align:right;'><span style='color:var(--text-muted); font-size:0.8em; cursor:pointer; text-decoration:underline;' onclick=\"deleteAllInChannel();\">smazat vše</span></div>"
 
         return html_out
 
@@ -469,6 +469,28 @@ def create_blueprint(service):
         except Exception: return jsonify({"error": "bad key"}), 400
         ok = state.unacknowledge_issue(key)
         return jsonify({"status": "ok" if ok else "error"})
+
+    @bp.route('/api/issues/<key_b64>/delete', methods=['POST'])
+    @requires_auth
+    def api_delete_issue(key_b64):
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        try: key = base64.b64decode(key_b64).decode()
+        except Exception: return jsonify({"error": "bad key"}), 400
+        state.delete_problem(key)
+        return jsonify({"status": "ok"})
+
+    @bp.route('/api/issues/<key_b64>/ignore', methods=['POST'])
+    @requires_auth
+    def api_ignore_issue(key_b64):
+        if g.user_role not in ('admin', 'superadmin'):
+            return jsonify({"error": "Forbidden"}), 403
+        try: key = base64.b64decode(key_b64).decode()
+        except Exception: return jsonify({"error": "bad key"}), 400
+        service.ignored_issues.add(key)
+        service.save_ignored_issues()
+        state.delete_problem(key)
+        return jsonify({"status": "ok"})
 
     @bp.route('/api/issues/<key_b64>/label_color', methods=['POST'])
     @requires_auth
