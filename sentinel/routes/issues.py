@@ -198,12 +198,21 @@ def create_blueprint(service):
                 </div>"""
 
         # 2-úrovňové seskupení: CLUSTER → DETEKTOR pro všechny kanály.
-        # Cluster: z pole cluster, nebo odvozeno z hostname.
+        # Cluster: z pole cluster, [CLUSTERNAME] prefixu v last_line, nebo hostname pravidel.
+        import re as _re_cluster
         from collections import defaultdict as _dd
 
         def _issue_cluster(i):
+            # 1. explicitní pole cluster
             c = (i.get('cluster') or '').strip().upper()
-            if c: return c
+            if c:
+                return c
+            # 2. [CLUSTERNAME] prefix v last_line
+            ll = (i.get('last_line') or '').strip()
+            m = _re_cluster.match(r'^\[([A-Z0-9_]+)\]', ll)
+            if m:
+                return m.group(1)
+            # 3. konfigurační pravidla dle hostname
             h = (i.get('host') or '').lower()
             from sentinel import config as _cfg
             for rule in (_cfg.HOST_CLUSTER_RULES or []):
