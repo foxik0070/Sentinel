@@ -1,5 +1,48 @@
 # Historie změn
 
+## [2026.08.006] - 2026-08-19
+
+**Souhrn:** Oprava kritického watchdog pádu (ABRT), stale ROOT relací, false positives Slurmctld a slurmd na login nodech, univerzální cluster detekce v pluginech.
+
+### Oprava watchdog ABRT pádu (kritické)
+
+Sentinel padal s `Failed with result 'watchdog'` každých 5–38 minut. **Příčina:** socket pro systemd notify byl nastaven jako neblokující (`setblocking(False)`). Při přetížení (mnoho WebSocket vláken) kernel vracel `EAGAIN` → `BlockingIOError` byl tiše ignorován → všechny pings se ztratily → systemd po 120 s poslal SIGABRT.
+
+**Oprava:** `sock.settimeout(1.0)` — send čeká max 1 s, pak přehodí exception a obnoví socket. Pings se nikdy nezahodí.
+
+### api.get_cluster_from_host() — sdílená funkce pro pluginy
+
+Nová funkce v `sentinel/api.py` odvozuje cluster z hostname dle `host_cluster_rules` z `config.yaml`. Pluginy ji volají místo svých hardcoded `_cluster_from_host()` metod. Přechod provedli `detector_icinga` a `detector_who`.
+
+### _KNOWN_KEYS — oprava varování Neznámý klíč
+
+Klíče `host_cluster_rules` a `default_cluster` přidány do `_KNOWN_KEYS` → varování v logu eliminována.
+
+### detector_icinga — potlačení false positives (ignored_host_services)
+
+Nový parametr `ignored_host_services` v konfiguraci detektoru potlačuje specifické služby na specifických hostech. Formát: `service_pattern@host_pattern` (case-insensitive substring).
+
+```yaml
+- plugin: detector_icinga
+  params:
+    ignored_host_services:
+      - slurmd.service@login   # slurmd nepodporuje login nody
+```
+
+### detector_who — stale ROOT relace po restartu
+
+Po restartu Sentinelu byl `_scan_prev` prázdný → stale relace z DB se nikdy neuzavřely. Opraveno seedováním z `api.get_active_keys()` na začátku prvního scanu — relace zaniklé před restartem se automaticky uzavřou.
+
+### detector_cluster — debounce Slurmctld false positive
+
+`Slurmctld ping: DOWN` se reportuje jako issue až po `slurmctld_threshold` (výchozí 2) po sobě jdoucích DOWN skanech. Transientní výpadky pingu (sinfo odpovídá normálně) nevytvářejí zbytečné issues.
+
+```yaml
+- plugin: detector_cluster
+  params:
+    slurmctld_threshold: 2   # výchozí
+```
+
 ## [2026.08.005] - 2026-08-19
 
 **Souhrn:** Cluster detekce z konfigurace (host_cluster_rules), parsování `[CLUSTERNAME]` z last_line, oprava tlačítek v modal oknech issues (přímé REST API namísto chat příkazů).
