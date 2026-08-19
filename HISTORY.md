@@ -1,5 +1,29 @@
 # Historie změn
 
+## [2026.08.004] - 2026-08-19
+
+**Souhrn:** Oprava zobrazení selhávajících systemd jednotek v agentu, 2-úrovňové seskupení issues v modálech (CLUSTER → DETEKTOR), oprava zachování stavu složek při auto-refresh, nasazení chybějících pluginů, odstranění nefunkčních Teams notifikací.
+
+### agent_systemd_global_monitor — unit names místo ● symbolů
+
+`systemctl list-units --state=failed` předřazuje každý řádek symbolem `●` (U+25CF). Původní kód bral `line.split()[0]`, tedy vždy `●` místo jména jednotky — alert hlásil `●, ●, ●, ●, ●` bez jakékoli informace o tom, co selhalo. Přidán flag `--plain`, parsování přeskočí bullet a bere název z pozice `[1]`, validuje přítomností `.` (jde o unit jméno). Výsledek: `munge-barbora2.service, openibd.service, ...`.
+
+### 2-úrovňové seskupení issues v modálech (CLUSTER → DETEKTOR)
+
+Incident Matrix i ostatní modály (agent, security, root) nově seskupují issues do dvouúrovňového stromu. Úroveň 1: cluster (KAROLINA, BARBORA, BARBORA2, CS, LUMI, INFRA) — odvozen z pole `cluster`, nebo z hostname (login1.barbora2 → BARBORA2, support.hpc.local → INFRA). Úroveň 2: detektor (ECC, ICINGA, KERNEL_TAINT_MONITOR, ...) — prefix DETECTOR_/AGENT_ oříznut. Cluster složky jsou vždy otevřené, detektor složky se sbalí pokud mají ≥5 issues.
+
+### Zachování stavu složek při auto-refresh
+
+Modal se obnovuje každé 3 s. Původní kód si pamatoval pouze otevřené `<details>` elementy — po re-renderu dostávaly zavřené složky zpátky `open` atribut z backendu. Přidán tracking `closedGroups`: explicitně zavřená složka zůstane zavřená přes obnovení.
+
+### Nasazení chybějících pluginů
+
+Z 15 pluginů balíčku `sentinel-plugins-work` byly na serveru deploynuty jen 4 (`detector_cluster`, `detector_mar_pdb`, `detector_universal_security`, `detector_windows`). Zbývajících 11 pluginů (icinga, security, ecc, who, login_compute, barbora_cooling, karolina_cdu, slurm_reboot, sv3, siem, racks, mar) chybělo — proto bylo málo zachytů. Opraveno: `deploy-auto.sh` nyní synchronizuje všechny `detector_*.py` z `sentinel-plugins-work` a chrání je před smazáním při sync Sentinelu (`--filter="protect plugins/detector_*.py"`).
+
+### Odstraněny Teams notifikace pro kanál `tests`
+
+`__main__.py` posílal při startu, stopu, pádu threadu a kritické chybě Teams zprávy na kanál `tests`, který na produkčním serveru neexistuje (400 Bad Request). Všechna volání `send_to_teams(..., "tests")` odstraněna. Kanály icinga, ecc, infra nedotčeny.
+
 ## [2026.08.003] - 2026-08-17
 
 **Souhrn:** Podpora reasoning modelů v chatu, dvě opravy responzivity na mobilu, čtyři mechanismy pro zavírání issues, které už neplatí (aktivních 47 → 21), a smazání mrtvého modulu, který tiše spolkl dvě opravy. 1087 testů OK (bylo 1069).
