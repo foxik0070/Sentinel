@@ -134,7 +134,6 @@ def main():
     )
     
     utils.log_message(start_msg)
-    utils.send_to_teams(f" <b>SENTINEL STARTED</b><br><pre>{start_msg}</pre>", "tests")
 
     if getattr(config, 'HA_ENABLED', False):
         try:
@@ -282,7 +281,6 @@ def main():
     def signal_handler(signum, frame):
         nonlocal running
         utils.log_message(f"[!] Received signal {signum}. Shutting down...")
-        utils.send_to_teams(" <b>SENTINEL STOPPING...</b>", "tests")
         state.shutdown_event.set()
         running = False
 
@@ -335,17 +333,14 @@ def main():
 
             if not ollama_thread.is_alive():
                 utils.log_message("CRITICAL: Ollama worker died!")
-                utils.send_to_teams("⚠️ <b>CRITICAL:</b> Ollama worker thread died!", "tests")
                 running = False
-            
+
             if not chat_svc.is_alive():
                 utils.log_message("CRITICAL: Chat Service (Web GUI) thread died!")
-                utils.send_to_teams("⚠️ <b>CRITICAL:</b> Chat Service thread died!", "tests")
                 running = False
 
             if not observer.is_alive():
                 utils.log_message("CRITICAL: Watcher (Log Monitor) thread died!")
-                utils.send_to_teams("⚠️ <b>CRITICAL:</b> Watcher thread died!", "tests")
                 running = False
 
             if stale_counter >= STALE_CHECK_INTERVAL:
@@ -372,10 +367,7 @@ def main():
                     from . import fix_verify
 
                     def _notify_failed(attempt, detail):
-                        utils.send_to_teams(
-                            f"⚠️ <b>Oprava nezabrala</b><br>"
-                            f"{attempt.get('host', '?')} — <code>{attempt.get('command', '?')}</code><br>"
-                            f"{detail}", "tests")
+                        pass
 
                     res = fix_verify.run_due_verifications(state, notify=_notify_failed)
                     if any(res.values()):
@@ -438,7 +430,6 @@ def main():
 
     except Exception as e:
         utils.log_message(f"CRITICAL ERROR: {e}")
-        utils.send_to_teams(f" <b>CRITICAL ERROR:</b> {e}", "tests")
         try: dump_stack_traces()
         except: pass
 
