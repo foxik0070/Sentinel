@@ -906,6 +906,7 @@ _KNOWN_KEYS = {
     # zahodilo s hlaskou "Neznamy klic". Hlida test_every_read_key_is_in_known_keys.
     'auto_severity_enabled', 'auto_duplicate_enabled', 'fim', 'trusted_proxies',
     'documentation_url',
+    'host_cluster_rules', 'default_cluster',
 }
 
 VALIDATION_WARNINGS: list = []   # populated by _validate_config(), readable via API
