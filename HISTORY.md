@@ -10,7 +10,7 @@
 
 ### 2-úrovňové seskupení issues v modálech (CLUSTER → DETEKTOR)
 
-Incident Matrix i ostatní modály (agent, security, root) nově seskupují issues do dvouúrovňového stromu. Úroveň 1: cluster (KAROLINA, BARBORA, BARBORA2, CS, LUMI, INFRA) — odvozen z pole `cluster`, nebo z hostname (login1.barbora2 → BARBORA2, support.hpc.local → INFRA). Úroveň 2: detektor (ECC, ICINGA, KERNEL_TAINT_MONITOR, ...) — prefix DETECTOR_/AGENT_ oříznut. Cluster složky jsou vždy otevřené, detektor složky se sbalí pokud mají ≥5 issues.
+Incident Matrix i ostatní modály (agent, security, root) nově seskupují issues do dvouúrovňového stromu. Úroveň 1: cluster — odvozen z pole `cluster`, nebo z hostname pomocí konfigurovatelných pravidel. Úroveň 2: detektor (ECC, ICINGA, KERNEL_TAINT_MONITOR, ...) — prefix DETECTOR_/AGENT_ oříznut. Cluster složky jsou vždy otevřené, detektor složky se sbalí pokud mají ≥5 issues.
 
 ### Zachování stavu složek při auto-refresh
 
@@ -18,7 +18,7 @@ Modal se obnovuje každé 3 s. Původní kód si pamatoval pouze otevřené `<de
 
 ### Nasazení chybějících pluginů
 
-Z 15 pluginů balíčku `sentinel-plugins-work` byly na serveru deploynuty jen 4 (`detector_cluster`, `detector_mar_pdb`, `detector_universal_security`, `detector_windows`). Zbývajících 11 pluginů (icinga, security, ecc, who, login_compute, barbora_cooling, karolina_cdu, slurm_reboot, sv3, siem, racks, mar) chybělo — proto bylo málo zachytů. Opraveno: `deploy-auto.sh` nyní synchronizuje všechny `detector_*.py` z `sentinel-plugins-work` a chrání je před smazáním při sync Sentinelu (`--filter="protect plugins/detector_*.py"`).
+Na serveru bylo deploynutých jen 4 z 15 pluginů. Zbývajících 11 chybělo — proto bylo málo zachytů. Opraveno: `deploy-auto.sh` nyní synchronizuje všechny `detector_*.py` z repozitáře pluginů a chrání je před smazáním při sync Sentinelu (`--filter="protect plugins/detector_*.py"`).
 
 ### Odstraněny Teams notifikace pro kanál `tests`
 
