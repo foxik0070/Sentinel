@@ -197,38 +197,68 @@ def create_blueprint(service):
                     {inline_comment}
                 </div>"""
 
-        # Seskupení: kanál 'infra' (Incident Matrix) -> podle TECHNOLOGIE (cluster:
-        # Karolina/Barbora/CS/INFRA...), ostatní kanály -> podle pluginu.
-        # Skupiny s >= 3 položkami se sbalí do <details>.
-        _GROUP_AT = 3
+        # 2-úrovňové seskupení: CLUSTER → DETEKTOR pro všechny kanály.
+        # Cluster: z pole cluster, nebo odvozeno z hostname.
         from collections import defaultdict as _dd
-        _by_tech = (target_channel == 'infra')
-        groups = _dd(list)
+
+        def _issue_cluster(i):
+            c = (i.get('cluster') or '').strip().upper()
+            if c: return c
+            h = (i.get('host') or '').lower()
+            if 'barbora2' in h: return 'BARBORA2'
+            if 'barbora'  in h: return 'BARBORA'
+            if 'karolina' in h: return 'KAROLINA'
+            if '.cs.' in h: return 'CS'
+            if 'lumi'     in h: return 'LUMI'
+            return 'INFRA'
+
+        def _plugin_label(raw):
+            if not raw: return 'UNKNOWN'
+            s = raw.upper()
+            for pfx in ('DETECTOR_', 'AGENT_'):
+                if s.startswith(pfx): s = s[len(pfx):]
+            return s
+
+        tree = _dd(lambda: _dd(list))
         for i in filtered:
-            gkey = (i.get('cluster') or i.get('host') or 'OSTATNÍ') if _by_tech else i.get('plugin_name', 'unknown')
-            groups[gkey].append(i)
+            tree[_issue_cluster(i)][_plugin_label(i.get('plugin_name') or i.get('channel_type') or '')].append(i)
 
         html_out = ""
-        for gkey, items in sorted(groups.items(), key=lambda x: -len(x[1])):
-            cards_html = "".join(_render_issue_card(i) for i in items)
-            if len(items) >= _GROUP_AT:
-                _sub = sorted({(i.get('plugin_name', '?') if _by_tech else i.get('host', '?')) for i in items})[:6]
-                sub = ", ".join(_sub)
-                if len(items) > 6:
-                    sub += f" +{len(items)-6}"
-                _icon = "fa-server" if _by_tech else "fa-layer-group"
-                _unit = "záznamů" if _by_tech else "serverů"
-                html_out += f"""<details data-group-key="{html.escape((gkey or '?').upper())}" style='margin-bottom:10px;'>
-                        <summary style='cursor:pointer; padding:8px 12px; background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:4px; font-size:0.88em; color:var(--accent); font-weight:700; user-select:none; list-style:none; display:flex; justify-content:space-between; align-items:center;'>
-                            <span><i class='fa-solid {_icon}'></i> {html.escape((gkey or '?').upper())} <span style='color:var(--text-muted); font-weight:400;'>({len(items)} {_unit})</span></span>
-                            <span style='color:var(--text-muted); font-size:0.82em; font-weight:400;'>{html.escape(sub)}</span>
-                        </summary>
-                        <div style='padding:8px 0 0 8px;'>{cards_html}</div>
-                    </details>"""
-            else:
-                html_out += cards_html
+        for cluster, plugins in sorted(tree.items(), key=lambda x: -sum(len(v) for v in x[1].values())):
+            total = sum(len(v) for v in plugins.values())
 
-        # Přidání smazání všech záznamů
+            inner_html = ""
+            for plugin, items in sorted(plugins.items(), key=lambda x: -len(x[1])):
+                cards = "".join(_render_issue_card(i) for i in items)
+                hosts = sorted({(i.get('host') or '?') for i in items})
+                hp = ", ".join(hosts[:5]) + (f" +{len(hosts)-5}" if len(hosts) > 5 else "")
+                det_open = " open" if len(items) < 5 else ""
+                inner_html += (
+                    f"<details{det_open} data-group-key=\"{html.escape(cluster)}|{html.escape(plugin)}\" "
+                    f"style='margin-bottom:6px;'>"
+                    f"<summary style='cursor:pointer;padding:5px 10px;background:rgba(255,255,255,.02);"
+                    f"border:1px solid var(--border);border-radius:4px;font-size:.83em;"
+                    f"color:var(--text-muted);font-weight:600;list-style:none;display:flex;"
+                    f"justify-content:space-between;align-items:center;'>"
+                    f"<span><i class='fa-solid fa-layer-group' style='font-size:.85em;margin-right:5px;'></i>"
+                    f"{html.escape(plugin)} <span style='font-weight:400;'>({len(items)})</span></span>"
+                    f"<span style='font-size:.78em;opacity:.7;'>{html.escape(hp)}</span></summary>"
+                    f"<div style='padding:6px 0 0 10px;'>{cards}</div></details>"
+                )
+
+            det_names = ", ".join(sorted(plugins.keys())[:5])
+            html_out += (
+                f"<details open data-group-key=\"{html.escape(cluster)}\" style='margin-bottom:10px;'>"
+                f"<summary style='cursor:pointer;padding:8px 12px;background:rgba(255,255,255,.03);"
+                f"border:1px solid var(--border);border-radius:4px;font-size:.88em;color:var(--accent);"
+                f"font-weight:700;user-select:none;list-style:none;display:flex;"
+                f"justify-content:space-between;align-items:center;'>"
+                f"<span><i class='fa-solid fa-server'></i>&nbsp;{html.escape(cluster)} "
+                f"<span style='color:var(--text-muted);font-weight:400;'>({total})</span></span>"
+                f"<span style='color:var(--text-muted);font-size:.8em;font-weight:400;'>{html.escape(det_names)}</span>"
+                f"</summary><div style='padding:8px 0 0 8px;'>{inner_html}</div></details>"
+            )
+
         if target_channel == 'infra' and g.user_role in ['admin', 'superadmin']:
             html_out += f"<div style='margin-top:10px; text-align:right;'><span style='color:var(--text-muted); font-size:0.8em; cursor:pointer; text-decoration:underline;' onclick=\"triggerAction('delete_all_issues'); closeIssuesModal();\">smazat vše</span></div>"
 
