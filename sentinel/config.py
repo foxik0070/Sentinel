@@ -229,6 +229,10 @@ LOG_GROUPS = {}
 ARGS = {"EXTERNAL_OLLAMA": True, "DEBUG_MODE": False}
 CHROMADB_PATH = ""
 
+# Cluster detection — list of {"pattern": "...", "cluster": "NAME"}, matched against hostname
+HOST_CLUSTER_RULES: list = []
+DEFAULT_CLUSTER: str = "INFRA"
+
 # Webhook notifications (generic HTTP POST)
 WEBHOOK_ENABLED = False
 WEBHOOK_URL = ""
@@ -431,6 +435,7 @@ def load_config():
     global AUTO_REMEDIATION_ENABLED, AUTO_SEVERITY_ENABLED, AUTO_DUPLICATE_ENABLED
     global SSH_UPDATE_CHECK_ENABLED, SSH_UPDATE_CHECK_INTERVAL
     global IGNORED_FAILED_SERVICES, EXCLUDED_CLIENT_IPS, TRUSTED_PROXIES
+    global HOST_CLUSTER_RULES, DEFAULT_CLUSTER
 
     global CONFIG_PATH
     # Prefer writable override in DATA_DIR over read-only /etc path
@@ -526,6 +531,8 @@ def load_config():
     INFRASTRUCTURE_MAPPING = data.get("infrastructure_mapping", [])
     DETECTORS = data.get("detectors", [])
     TEAMS_CHANNELS = data.get("teams_channels", {})
+    HOST_CLUSTER_RULES = data.get("host_cluster_rules", [])
+    DEFAULT_CLUSTER = data.get("default_cluster", DEFAULT_CLUSTER)
     
     # Prompts loading (100% Agnostic)
     loaded_prompts = data.get("prompts", {})

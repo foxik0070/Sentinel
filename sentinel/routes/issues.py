@@ -205,12 +205,11 @@ def create_blueprint(service):
             c = (i.get('cluster') or '').strip().upper()
             if c: return c
             h = (i.get('host') or '').lower()
-            if 'cluster-b2' in h: return 'cluster-b2'
-            if 'cluster-b'  in h: return 'cluster-b'
-            if 'cluster-a' in h: return 'cluster-a'
-            if '.cs.' in h: return 'CS'
-            if 'cluster-d'     in h: return 'cluster-d'
-            return 'INFRA'
+            from sentinel import config as _cfg
+            for rule in (_cfg.HOST_CLUSTER_RULES or []):
+                if rule.get('pattern', '') in h:
+                    return rule.get('cluster', _cfg.DEFAULT_CLUSTER).upper()
+            return _cfg.DEFAULT_CLUSTER.upper()
 
         def _plugin_label(raw):
             if not raw: return 'UNKNOWN'
