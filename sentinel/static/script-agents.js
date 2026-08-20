@@ -237,6 +237,12 @@ async function openAgentDetailModal(hostname) {
     const agent = (healthR.agents||[]).find(a=>a.hostname===hostname) || {};
     const issues = issR.issues || [];
 
+    const allAgents = healthR.agents || [];
+    const onlineVersions = allAgents.filter(a => a.status === 'ONLINE' && a.agent_version).map(a => a.agent_version);
+    const versionCounts = {};
+    onlineVersions.forEach(v => { versionCounts[v] = (versionCounts[v] || 0) + 1; });
+    const latestVersion = Object.entries(versionCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+
     const statusColor = agent.status==='ONLINE' ? 'var(--success)' : 'var(--error)';
     const score = agent.health_score ?? '?';
     const scoreColor = score >= 80 ? 'var(--success)' : score >= 60 ? 'var(--warning)' : score >= 40 ? '#fd7e14' : 'var(--error)';
@@ -311,7 +317,7 @@ async function openAgentDetailModal(hostname) {
                     <tr><td style="color:var(--text-muted);padding:3px 0;">Stav</td><td style="font-weight:700;color:${statusColor};">${agent.status||'?'}</td></tr>
                     <tr><td style="color:var(--text-muted);padding:3px 0;">Health</td><td><span style="color:${scoreColor};font-weight:700;">${scoreGrade} (${score}/100)</span></td></tr>
                     <tr><td style="color:var(--text-muted);padding:3px 0;">Skupina</td><td>${_escape(agent.agent_group||'—')}</td></tr>
-                    <tr><td style="color:var(--text-muted);padding:3px 0;">Verze</td><td style="font-family:monospace;color:var(--accent);">${_escape(agent.agent_version||'—')}</td></tr>
+                    <tr><td style="color:var(--text-muted);padding:3px 0;">Verze</td><td style="font-family:monospace;color:var(--accent);">${_escape(agent.agent_version||'—')}${agent.agent_version && latestVersion ? (agent.agent_version === latestVersion ? ' <span style="color:var(--success);font-size:.75em;font-family:sans-serif;">✓ aktuální</span>' : ` <span style="color:var(--warning);font-size:.75em;font-family:sans-serif;">⬆ novější: ${_escape(latestVersion)}</span>`) : ''}</td></tr>
                     <tr><td style="color:var(--text-muted);padding:3px 0;">Data lag</td><td style="color:${lagColor};">${lagStr}</td></tr>
                     <tr><td style="color:var(--text-muted);padding:3px 0;">Registrován</td><td>${agent.registered_at?.slice(0,10)||'—'}</td></tr>
                     <tr><td style="color:var(--text-muted);padding:3px 0;">Poslední ping</td><td>${agent.last_seen?.slice(0,16).replace('T',' ')||'—'}</td></tr>
