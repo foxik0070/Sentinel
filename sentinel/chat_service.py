@@ -2416,6 +2416,18 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
         except Exception:
             pass
 
+        # Host OS summary so AI suggests distro-appropriate commands
+        os_summary = ""
+        try:
+            os_lines = []
+            for _ag in state.get_all_agents() or []:
+                if _ag.get('os_name') and _ag.get('status') == 'ONLINE':
+                    os_lines.append(f"{_ag['hostname']}: {_ag['os_name']}")
+            if os_lines:
+                os_summary = "Monitored hosts OS: " + "; ".join(os_lines[:10]) + ". Use appropriate package manager and paths for each distribution."
+        except Exception:
+            pass
+
         system_content = (
             "You are Sentinel, an AI assistant for Linux server and infrastructure administration. "
             f"{status_note}"
@@ -2427,6 +2439,8 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
         user_parts = []
         if history_str:
             user_parts.append(f"Conversation history:\n{history_str}")
+        if os_summary:
+            user_parts.append(os_summary)
         if alerts_note:
             user_parts.append(alerts_note)
         if has_context:
