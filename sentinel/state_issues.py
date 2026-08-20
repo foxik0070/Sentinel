@@ -1697,6 +1697,10 @@ def prune_stale_sessions(hours: int = 24):
             conn.close()
         except Exception: pass
 
+def prune_revoked_sessions(days: int = 30):
+    """No-op: revoked sessions are already deleted by revoke_session()."""
+    pass
+
 # ── Issue Assignee ─────────────────────────────────────────────────────────────
 
 def assign_issue(key: str, username: str) -> bool:
