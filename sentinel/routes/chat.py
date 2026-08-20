@@ -652,13 +652,24 @@ def create_blueprint(service):
                     '(100 = certain fix, 50 = plausible, below 40 = just a diagnostic step).\n'
                     'No markdown, no extra text — just the JSON object.'
                 )
+                # Detect host OS from agent data to give model distro-specific context
+                os_hint = ""
+                try:
+                    for _ag in state.get_all_agents() or []:
+                        _hn = (_ag.get('hostname') or '').lower()
+                        if _hn and _hn in clean_msg.lower() and _ag.get('os_name'):
+                            os_hint = f"\nTarget system OS: {_ag['os_name']}. Use package manager and paths appropriate for this distribution."
+                            break
+                except Exception:
+                    pass
+
                 cfg_autofix = config.PROMPTS.get("chat_autofix", "")
                 if cfg_autofix:
                     prompt = cfg_autofix.replace("{clean_msg}", clean_msg)
                     autofix_messages = None
                 else:
                     autofix_messages = [
-                        {"role": "system", "content": default_autofix_sys},
+                        {"role": "system", "content": default_autofix_sys + os_hint},
                         {"role": "user", "content": f"Issue: {clean_msg}"},
                     ]
                     prompt = None
@@ -933,16 +944,36 @@ def create_blueprint(service):
             duration = time.time() - start_ts
             service.log_event("file_chat", "Answered from file context", user=g.username, duration_ms=duration*1000)
             service.conv_append(g.username, f"Sentinel: {reply[:300]}")
+            _fb_b64 = base64.b64encode(reply[:500].encode()).decode()
             return jsonify({
-                "reply": f"<b>🤖 Sentinel ({duration:.2f}s) [File]:</b><br>{html.escape(reply).replace(chr(10), '<br>')}"
+                "reply": (
+                    f"<b>🤖 Sentinel ({duration:.2f}s) [File]:</b><br>{html.escape(reply).replace(chr(10), '<br>')}"
+                    f"<div style='margin-top:8px;display:flex;gap:5px;align-items:center;'>"
+                    f"<span style='font-size:0.75em;color:var(--text-muted);'>Pomohlo?</span>"
+                    f"<button onclick='aiFeedback(this,\"chat\",\"up\",\"{_fb_b64}\")' "
+                    f"style='background:transparent;border:1px solid var(--card-border);border-radius:4px;cursor:pointer;padding:3px 8px;font-size:0.85em;'>👍</button>"
+                    f"<button onclick='aiFeedback(this,\"chat\",\"down\",\"{_fb_b64}\")' "
+                    f"style='background:transparent;border:1px solid var(--card-border);border-radius:4px;cursor:pointer;padding:3px 8px;font-size:0.85em;'>👎</button>"
+                    f"</div>"
+                )
             })
 
         reply = service.call_ai_knowledge_base(msg, username=g.username)
         duration = time.time() - start_ts
         service.log_event("rag_chat", "Answered from RAG", user=g.username, duration_ms=duration*1000)
         service.conv_append(g.username, f"Sentinel: {reply[:300]}")
+        _fb_b64 = base64.b64encode(reply[:500].encode()).decode()
         return jsonify({
-            "reply": f"<b>🤖 Sentinel ({duration:.2f}s):</b><br>{html.escape(reply).replace(chr(10), '<br>')}"
+            "reply": (
+                f"<b>🤖 Sentinel ({duration:.2f}s):</b><br>{html.escape(reply).replace(chr(10), '<br>')}"
+                f"<div style='margin-top:8px;display:flex;gap:5px;align-items:center;'>"
+                f"<span style='font-size:0.75em;color:var(--text-muted);'>Pomohlo?</span>"
+                f"<button onclick='aiFeedback(this,\"chat\",\"up\",\"{_fb_b64}\")' "
+                f"style='background:transparent;border:1px solid var(--card-border);border-radius:4px;cursor:pointer;padding:3px 8px;font-size:0.85em;'>👍</button>"
+                f"<button onclick='aiFeedback(this,\"chat\",\"down\",\"{_fb_b64}\")' "
+                f"style='background:transparent;border:1px solid var(--card-border);border-radius:4px;cursor:pointer;padding:3px 8px;font-size:0.85em;'>👎</button>"
+                f"</div>"
+            )
         })
 
     return bp

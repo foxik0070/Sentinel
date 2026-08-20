@@ -998,6 +998,20 @@ def create_blueprint(service):
             except Exception:
                 pass
 
+            # OS info from agent payload (os_name = PRETTY_NAME, os_id = ID from /etc/os-release)
+            try:
+                _os_name = (data.get('os_name') or '').strip()[:100]
+                _os_id = (data.get('os_id') or '').strip()[:50]
+                if _os_name or _os_id:
+                    with state.db_lock:
+                        _oc = state._get_conn()
+                        _oc.execute("UPDATE agents SET os_name=?, os_id=? WHERE hostname=?",
+                                    (_os_name or None, _os_id or None, hostname))
+                        _oc.commit()
+                        _oc.close()
+            except Exception:
+                pass
+
             # Kontrola maintenance mode — pokud aktivní, přeskočit ukládání alertů
             _in_maintenance = False
             try:

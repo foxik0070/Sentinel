@@ -60,16 +60,34 @@ _TECH_WORDS = {
 }
 
 
+_KNOWN_COMMANDS = {
+    'apt-get', 'apt-cache', 'apt-key', 'dpkg-reconfigure', 'dpkg-deb',
+    'fail2ban-client', 'fail2ban-server', 'fail2ban-regex',
+    'systemd-analyze', 'systemd-resolve', 'systemd-run', 'systemd-tmpfiles',
+    'systemd-escape', 'systemd-cat', 'systemd-journal',
+    'ip-link', 'ip-addr', 'ip-route',
+    'ssh-keygen', 'ssh-copy-id', 'ssh-agent', 'ssh-add',
+    'update-alternatives', 'update-grub', 'update-rc.d',
+    'timedatectl', 'hostnamectl', 'localectl', 'loginctl', 'resolvectl',
+    'ansible-playbook', 'ansible-vault', 'ansible-galaxy',
+    'docker-compose', 'git-lfs', 'pip-compile',
+    'certbot', 'ufw',
+}
+
+
 def _looks_like_host(token: str) -> bool:
     """Odfiltruje to, co jen připomíná hostname."""
     t = token.lower().strip('.')
-    if t in _NOT_HOSTS or t in _TECH_WORDS:
+    if t in _NOT_HOSTS or t in _TECH_WORDS or t in _KNOWN_COMMANDS:
         return False
     if t.endswith(_COMMON_SUFFIX):
         return False
     if t.replace('.', '').replace('-', '').isdigit():   # verze, IP fragmenty
         return False
     if len(t) < 4 or len(t) > 63:
+        return False
+    # Hyphenated token without dots is much more likely a command than a hostname
+    if '.' not in t and '-' in t:
         return False
     return True
 

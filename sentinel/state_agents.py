@@ -17,7 +17,7 @@ def get_agent_issues(hostname: str) -> list:
         conn = _get_conn()
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
-            "SELECT key, status, channel_type, plugin_name, last_line, last_seen, occurrence_count "
+            "SELECT key, status, channel_type, plugin_name, last_line, last_seen, occurrence_count, severity "
             "FROM problems WHERE key LIKE ? AND status IN ('active','validating') ORDER BY last_seen DESC",
             (f'AGENT|{hostname}|%',)
         ).fetchall()
@@ -147,7 +147,7 @@ def get_agent_health() -> list:
         conn = _get_conn()
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
-        c.execute("SELECT hostname, status, last_seen, registered_at, ignore_offline, notes, category, agent_version, agent_group, maintenance_until, last_data_lag_ms FROM agents ORDER BY status ASC, hostname ASC")
+        c.execute("SELECT hostname, status, last_seen, registered_at, ignore_offline, notes, category, agent_version, agent_group, maintenance_until, last_data_lag_ms, os_name, os_id FROM agents ORDER BY status ASC, hostname ASC")
         agents = [dict(r) for r in c.fetchall()]
         for ag in agents:
             h = ag['hostname']

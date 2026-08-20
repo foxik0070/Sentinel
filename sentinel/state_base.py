@@ -214,6 +214,10 @@ def init_db():
                 c.execute("ALTER TABLE agents ADD COLUMN labels TEXT DEFAULT '{}'")  # 038
             if 'heartbeat_timeout' not in _agent_cols:
                 c.execute("ALTER TABLE agents ADD COLUMN heartbeat_timeout INTEGER DEFAULT NULL")  # 037
+            if 'os_name' not in _agent_cols:
+                c.execute("ALTER TABLE agents ADD COLUMN os_name TEXT DEFAULT NULL")
+            if 'os_id' not in _agent_cols:
+                c.execute("ALTER TABLE agents ADD COLUMN os_id TEXT DEFAULT NULL")
 
             c.execute('''CREATE TABLE IF NOT EXISTS issue_history
                          (id INTEGER PRIMARY KEY AUTOINCREMENT,
