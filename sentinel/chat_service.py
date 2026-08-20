@@ -2302,7 +2302,7 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
                     "stream": False,
                     "options": {"temperature": temperature, "num_ctx": num_ctx}
                 }
-                is_v1 = "/v1/" in config.OLLAMA_URL
+                is_v1 = "/v1/" in config.OLLAMA_URL or bool(config.OLLAMA_API_KEY)
                 primary_payload = payload_v1 if is_v1 else payload_legacy
                 secondary_payload = payload_legacy if is_v1 else payload_v1
 
