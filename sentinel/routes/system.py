@@ -295,6 +295,29 @@ def create_blueprint(service):
     def api_sys_info():
         return jsonify({"html": service.render_sys_monitor_html(g.user_role)})
 
+    @bp.route('/api/plugins/<plugin_name>/log', methods=['GET'])
+    @requires_auth
+    def api_plugin_log(plugin_name):
+        limit = min(int(request.args.get('limit', 100)), 500)
+        try:
+            conn = state._get_conn()
+            rows = conn.execute(
+                """SELECT key, status, host, last_line, last_seen, channel_type
+                   FROM problems
+                   WHERE plugin_name = ?
+                   ORDER BY last_seen DESC LIMIT ?""",
+                (plugin_name, limit)
+            ).fetchall()
+            conn.close()
+            entries = [
+                {"key": r[0], "status": r[1], "host": r[2] or "—",
+                 "last_line": r[3] or "", "last_seen": (r[4] or "")[:16], "channel": r[5] or ""}
+                for r in rows
+            ]
+            return jsonify({"status": "ok", "plugin": plugin_name, "entries": entries})
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)}), 500
+
     @bp.route('/api/predictions', methods=['GET'])
     @requires_auth
     def get_predictions():

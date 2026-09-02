@@ -5,13 +5,13 @@ Wants=network-online.target
 
 [Service]
 Type=notify
-User=foxik
-Group=foxik
+User=sentinel
+Group=sentinel
 WorkingDirectory=/opt/Sentinel
-ExecStart=/usr/bin/python3 -m sentinel
+ExecStart=/usr/bin/python3.13 -m sentinel -e
 Environment="PYTHONUNBUFFERED=1"
 Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-WatchdogSec=60
+WatchdogSec=300
 Restart=always
 RestartSec=10
 NoNewPrivileges=yes
