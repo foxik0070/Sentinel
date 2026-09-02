@@ -3092,6 +3092,37 @@ async function sysTogglePlugin(btnEl, plugin, currentEnabled) {
     }
 }
 
+// ─── Plugin Log Modal ─────────────────────────────────────────────────────────
+
+async function openPluginLog(pluginName) {
+    const modal = document.getElementById('plugin-log-modal');
+    const title = document.getElementById('plugin-log-title');
+    const body  = document.getElementById('plugin-log-body');
+    title.textContent = pluginName;
+    modal.style.display = 'flex';
+    body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);"><i class="fa-solid fa-spinner fa-spin"></i></div>';
+    try {
+        const r = await fetch(`/api/plugins/${encodeURIComponent(pluginName)}/log`);
+        const d = await r.json();
+        if (!d.entries || !d.entries.length) {
+            body.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:20px;">Žádné záznamy</div>';
+            return;
+        }
+        const statusColor = s => s === 'active' ? 'var(--error)' : s === 'resolved' ? 'var(--success)' : s === 'validating' ? 'var(--warning)' : 'var(--text-muted)';
+        body.innerHTML = d.entries.map(e => `
+            <div style="border-left:3px solid ${statusColor(e.status)};padding:5px 10px;margin-bottom:5px;background:rgba(255,255,255,.02);border-radius:0 4px 4px 0;">
+                <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                    <span style="color:${statusColor(e.status)};font-size:.78em;font-weight:700;text-transform:uppercase;">${_escape(e.status)}</span>
+                    <span style="color:var(--accent);font-size:.82em;font-family:monospace;">${_escape(e.host)}</span>
+                    <span style="color:var(--text-muted);font-size:.78em;margin-left:auto;">${_escape(e.last_seen)}</span>
+                </div>
+                <div style="color:#ccc;font-size:.82em;margin-top:3px;white-space:pre-wrap;word-break:break-word;">${_escape(e.last_line)}</div>
+            </div>`).join('');
+    } catch(e) {
+        body.innerHTML = `<div style="color:var(--error);">Chyba: ${e}</div>`;
+    }
+}
+
 // ─── System Info Modal ────────────────────────────────────────────────────────
 
 async function openSysInfoModal() {

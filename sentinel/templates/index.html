@@ -1723,6 +1723,22 @@
         </div>
     </div>
 
+    <!-- Plugin Log Modal -->
+    <div class="modal-overlay" role="dialog" aria-modal="true" id="plugin-log-modal" style="display:none;" onclick="if(event.target===this)document.getElementById('plugin-log-modal').style.display='none'">
+        <div class="modal" style="width:820px; max-width:97%; max-height:90vh; overflow-y:auto;">
+            <div class="modal-header">
+                <span><i class="fa-solid fa-list" style="color:var(--accent);"></i> Log detektoru: <code id="plugin-log-title"></code></span>
+                <i title="Zavřít" aria-label="Zavřít" class="fa-solid fa-times" style="cursor:pointer" onclick="document.getElementById('plugin-log-modal').style.display='none'"></i>
+            </div>
+            <div class="modal-body" style="background:var(--bg); padding:16px;">
+                <div id="plugin-log-body"></div>
+            </div>
+            <div class="modal-footer">
+                <button style="background:transparent; border:1px solid #555;" onclick="document.getElementById('plugin-log-modal').style.display='none'">Zavřít</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Ignored Issues Modal -->
     <div class="modal-overlay" role="dialog" aria-modal="true" id="ignored-modal" style="display:none;" onclick="if(event.target===this)closeIgnoredModal()">
         <div class="modal" style="width:680px; max-width:97%;">

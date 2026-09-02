@@ -316,7 +316,7 @@ def main():
                 sock, addr = _make_watchdog_socket()
                 if sock is None:
                     utils.log_message("[WATCHDOG] KRITICKÉ: nelze obnovit watchdog socket!")
-            time.sleep(15)
+            time.sleep(5)
     threading.Thread(target=_watchdog_loop, daemon=True, name="SystemdWatchdog").start()
 
     try:

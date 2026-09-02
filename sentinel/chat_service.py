@@ -1880,6 +1880,11 @@ class ChatService(threading.Thread):
                     f"<td style='padding:5px 8px;color:var(--text-muted);'>{pattern}</td>"
                     f"<td style='padding:5px 8px;text-align:center;'>{status_label}</td>"
                     f"<td style='padding:5px 8px;text-align:center;'>"
+                    f"<button onclick=\"openPluginLog('{name}')\" "
+                    f"style='padding:2px 10px;border-radius:4px;cursor:pointer;font-size:.8em;"
+                    f"background:rgba(80,160,255,.12);color:#7db8ff;border:1px solid rgba(80,160,255,.3);'>"
+                    f"<i class='fa-solid fa-list'></i> Log</button></td>"
+                    f"<td style='padding:5px 8px;text-align:center;'>"
                     f"<button onclick=\"sysTogglePlugin(this,'{name}',{'true' if enabled else 'false'})\" "
                     f"style='padding:2px 10px;border-radius:4px;cursor:pointer;font-size:.8em;{btn_style}'>"
                     f"{btn_label}</button></td>"
@@ -1971,6 +1976,7 @@ class ChatService(threading.Thread):
             <th style='text-align:left;padding:4px 8px;font-weight:500;'>Plugin</th>
             <th style='text-align:left;padding:4px 8px;font-weight:500;'>Soubor</th>
             <th style='text-align:center;padding:4px 8px;font-weight:500;'>Stav</th>
+            <th style='text-align:center;padding:4px 8px;font-weight:500;'>Log</th>
             <th style='text-align:center;padding:4px 8px;font-weight:500;'>Akce</th>
           </tr>
         </thead>
