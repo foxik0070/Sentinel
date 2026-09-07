@@ -1,5 +1,30 @@
 # Historie změn
 
+## [2026.09.009] - 2026-09-08
+
+**Souhrn:** Čítač AI fronty přestal unikat a návrh autofixu přežije JSON, který model rozbil shellovým regexem.
+
+### AI fronta ukazovala dotazy, na které nikdo nečekal
+
+`chat_queue_depth` se zvyšoval před `llm_semaphore.acquire()` a snižoval až za ním. Jakákoli výjimka mezi tím nechala čítač **napořád nahoře** — UI pak hlásilo „AI fronta: 2", zatímco seznam položek byl prázdný. Ve stejném bloku `finally` uvolňoval semafor i tehdy, když se ho nepodařilo zamknout, čímž tiše rostl limit souběžnosti.
+
+Obojí opraveno v `_stream_generator()` i v `execute_ollama()`: dva příznaky (`_queued`, `_acquired`) drží stav a `finally` podle nich uklidí právě jednou.
+
+Pozn.: „AI fronta" a „Položky ve frontě" v modalu měří **různé věci** — první je počet právě běžících streamů v paměti, druhá řádky v tabulce `task_queue`. Shodovat se nemusí ani po téhle opravě.
+
+### Návrh autofixu končil jako syrový text s příkazem „N/A"
+
+Model do JSON stringu napsal shellový regex:
+
+```
+"command": "dmesg | grep -i 'taint\|error\|driver'"
+```
+
+`\|` není platná JSON escape sekvence — JSON zná jen `\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r`, `\t` a `\uXXXX`. `json.loads` proto spadl, `extract_json()` vrátil `None` a uživateli se místo návrhu ukázal celý blok jako text.
+
+`extract_json()` nyní při selhání zkusí ještě jednou s osamocenými lomítky zdvojenými. Platné escape sekvence zůstávají netknuté, což hlídá test.
+
+
 ## [2026.09.008] - 2026-09-08
 
 **Souhrn:** Nová volba `ollama_extra_body` — extra pole do těla OpenAI /v1 požadavku. Otevírá cestu k reasoning modelům jako qwen3.
