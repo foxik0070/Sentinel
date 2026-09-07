@@ -5,7 +5,7 @@ import secrets
 from pathlib import Path
 
 # --- Technical Config ---
-VERSION = "2026.09.007"
+VERSION = "2026.09.008"
 
 def get_git_commit():
     try:
@@ -55,6 +55,11 @@ OLLAMA_URL = "http://localhost:11434/v1/chat/completions"
 OLLAMA_MODEL = "athene-v2"
 OLLAMA_API_KEY = ""
 OLLAMA_NUM_CTX = 2048
+# Extra pole do těla OpenAI /v1 požadavku. Nese vlastnosti konkrétního modelu,
+# ne Sentinelu — např. {"chat_template_kwargs": {"enable_thinking": false}}
+# u qwen3, který jinak posílá <think> bloky rovnou v `content`, kde je nejde
+# oddělit od odpovědi.
+OLLAMA_EXTRA_BODY: dict = {}
 LOG_DIR = "/var/log/sentinel/logs"
 DATA_DIR = "/opt/Sentinel/data"
 KB_FILE_PATH = "/opt/Sentinel/knowledge_base.txt"
@@ -426,7 +431,7 @@ GITEA_TOKEN: str = ""
 GITEA_REPO: str = ""  # e.g. "owner/repo"
 
 def load_config():
-    global OLLAMA_URL, OLLAMA_MODEL, OLLAMA_API_KEY, OLLAMA_NUM_CTX, LOG_DIR, DATA_DIR, KB_FILE_PATH, CHROMADB_PATH, PLUGIN_DIR
+    global OLLAMA_URL, OLLAMA_MODEL, OLLAMA_API_KEY, OLLAMA_NUM_CTX, OLLAMA_EXTRA_BODY, LOG_DIR, DATA_DIR, KB_FILE_PATH, CHROMADB_PATH, PLUGIN_DIR
     global WORKER_THREADS, WEB_HOST, WEB_PORT, WEB_USER, WEB_PASS, WEB_VIEWER_USER, WEB_VIEWER_PASS, SECRET_KEY
     global SECURITY, INFRASTRUCTURE_MAPPING, DETECTORS, PROMPTS, TEAMS_CHANNELS, LOG_GROUPS
     global LDAP_ENABLED, LDAP_HOST, LDAP_PORT, LDAP_USE_SSL, LDAP_BASE_DN, LDAP_USER_LOGIN_ATTR
@@ -487,6 +492,8 @@ def load_config():
     OLLAMA_MODEL = data.get("ollama_model", OLLAMA_MODEL)
     OLLAMA_API_KEY = data.get("ollama_api_key", OLLAMA_API_KEY)
     OLLAMA_NUM_CTX = data.get("ollama_num_ctx", OLLAMA_NUM_CTX)
+    _extra = data.get("ollama_extra_body", OLLAMA_EXTRA_BODY)
+    OLLAMA_EXTRA_BODY = _extra if isinstance(_extra, dict) else {}
     LOG_DIR = data.get("log_dir", LOG_DIR)
     PLUGIN_DIR = data.get("plugin_dir", PLUGIN_DIR) 
     DATA_DIR = data.get("data_dir", DATA_DIR)
@@ -895,7 +902,7 @@ def _schema_validate(data: dict) -> None:
 
 _KNOWN_KEYS = {
     'instance_name', 'version', 'web', 'ldap', 'log_dir', 'plugin_dir', 'data_dir',
-    'knowledge_base_file', 'log_groups', 'ollama_model', 'ollama_url', 'ollama_api_key',
+    'knowledge_base_file', 'log_groups', 'ollama_model', 'ollama_url', 'ollama_api_key', 'ollama_extra_body',
     'ollama_num_ctx', 'embedding_ollama_url', 'hailo_ollama', 'ai_hat', 'worker_threads',
     'detectors', 'teams_channels', 'homeassistant', 'mqtt', 'webhook', 'prometheus',
     'analytics', 'ha_thresholds', 'ssh_execution', 'db_retention_days', 'auto_resolve_hours',
@@ -1012,3 +1019,14 @@ def _apply_db_overrides():
         pass  # DB not ready yet during early boot — config.yaml values remain
 
 load_config()
+
+
+def apply_extra_body(payload: dict) -> dict:
+    """Přimíchá OLLAMA_EXTRA_BODY do těla OpenAI /v1 požadavku.
+
+    Volá se jen na /v1 větvích — hailo-ollama ani legacy /api/generate tahle
+    pole neznají a poslat je tam by request rozbilo.
+    """
+    if OLLAMA_EXTRA_BODY:
+        payload.update(OLLAMA_EXTRA_BODY)
+    return payload

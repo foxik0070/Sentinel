@@ -2273,6 +2273,7 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
                         if "/v1/" in config.OLLAMA_URL:
                             cpu_payload = {"model": config.OLLAMA_MODEL, "messages": cpu_msgs,
                                            "stream": False, "temperature": temperature}
+                            config.apply_extra_body(cpu_payload)
                         else:
                             cpu_payload = {"model": config.OLLAMA_MODEL, "messages": cpu_msgs,
                                            "stream": False, "options": {"temperature": temperature}}
@@ -2302,6 +2303,7 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
                     "temperature": temperature,
                     "max_tokens": num_ctx
                 }
+                config.apply_extra_body(payload_v1)
                 payload_legacy = {
                     "model": config.OLLAMA_MODEL,
                     "prompt": prompt or (messages[-1]["content"] if messages else ""),

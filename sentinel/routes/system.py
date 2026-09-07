@@ -1149,6 +1149,7 @@ def create_blueprint(service):
                         ],
                         "stream": False, "temperature": 0.2
                     }
+                    config.apply_extra_body(payload)
                     resp = _req.post(config.OLLAMA_URL, json=payload, headers=_bm_headers, timeout=180)
                     resp.raise_for_status()
                     d = resp.json()

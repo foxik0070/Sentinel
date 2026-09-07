@@ -269,6 +269,54 @@ class TestRootAuditStaleSweep(unittest.TestCase):
         conn.close()
 
 
+class TestOllamaExtraBody(unittest.TestCase):
+    """Extra pole do těla /v1 požadavku — vlastnost modelu, ne Sentinelu.
+
+    qwen3 bez {"chat_template_kwargs": {"enable_thinking": false}} posílá
+    <think> bloky rovnou v `content`, kde je nejde oddělit od odpovědi —
+    skončily by v chatu i v auto-klasifikaci severity.
+    """
+    def setUp(self):
+        from sentinel import config
+        self._orig = config.OLLAMA_EXTRA_BODY
+
+    def tearDown(self):
+        from sentinel import config
+        config.OLLAMA_EXTRA_BODY = self._orig
+
+    def test_empty_leaves_payload_untouched(self):
+        from sentinel import config
+        config.OLLAMA_EXTRA_BODY = {}
+        p = {"model": "m", "messages": [], "stream": False}
+        self.assertEqual(config.apply_extra_body(dict(p)), p)
+
+    def test_merges_into_payload(self):
+        from sentinel import config
+        config.OLLAMA_EXTRA_BODY = {"chat_template_kwargs": {"enable_thinking": False}}
+        p = config.apply_extra_body({"model": "qwen3-32b", "stream": True})
+        self.assertEqual(p["chat_template_kwargs"], {"enable_thinking": False})
+        self.assertEqual(p["model"], "qwen3-32b", "původní pole musí zůstat")
+
+    def test_non_dict_from_config_is_ignored(self):
+        from sentinel import config
+        # Uživatel napsal do YAML skalár místo mapy — nesmí to shodit start
+        self.assertIsInstance(config.OLLAMA_EXTRA_BODY, dict)
+
+    def test_applied_only_on_v1_branches(self):
+        """Hailo ani legacy /api/generate tahle pole neznají — poslat je tam request rozbije."""
+        import re as _re
+        src = {}
+        for f in ('sentinel/chat_service.py', 'sentinel/ollama_service.py', 'sentinel/routes/chat.py'):
+            src[f] = open(os.path.join(_ROOT, f)).read()
+        joined = "\n".join(src.values())
+        # helper se nesmí objevit ve stejném bloku jako hailo/legacy payload
+        for marker in ('HAILO_OLLAMA_URL', 'payload_legacy'):
+            for m in _re.finditer(_re.escape(marker), joined):
+                window = joined[m.start():m.start() + 400]
+                self.assertNotIn('apply_extra_body', window,
+                                 f"apply_extra_body nesmí být v okolí {marker}")
+
+
 class TestReverseDns(unittest.TestCase):
     def test_bounded_and_safe(self):
         from sentinel import api
