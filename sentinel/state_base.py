@@ -276,6 +276,11 @@ def init_db():
             # is_active=1 navždy (pruning maže jen is_active=0).
             c.execute("PRAGMA table_info(root_audit)")
             _ra_cols = {r[1] for r in c.fetchall()}
+            if 'tty' not in _ra_cols:
+                # Bez tty nejde odlišit dvě souběžné relace téhož roota ze
+                # stejné IP (běžné: pts/0 i pts/3 z 10.34.1.4). Agent cesta by
+                # je pak musela slučovat do jednoho záznamu.
+                c.execute("ALTER TABLE root_audit ADD COLUMN tty TEXT")
             if 'last_seen' not in _ra_cols:
                 c.execute("ALTER TABLE root_audit ADD COLUMN last_seen TEXT")
                 # Běžícím relacím dát jedno plné okno navíc. add_root_audit je

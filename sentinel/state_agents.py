@@ -1,5 +1,6 @@
 import threading
 import logging
+import re
 import sqlite3
 import json
 import os
@@ -744,6 +745,83 @@ agent_watchdog_thread.start()
 
 agent_heartbeat_thread = threading.Thread(target=agent_heartbeat_maintenance_loop, daemon=True, name="Agent-Heartbeat-Maintenance")
 agent_heartbeat_thread.start()
+
+# Hlášení root monitoru: "🟢 [ACTIVE] pts/0 from 10.34.1.4 (since 2026-08-20 11:47)"
+_ROOT_SESSION_RE = re.compile(
+    r'\b(?P<tty>(?:pts/|tty)\d+)\s+from\s+(?P<ip>[^\s(]+)'
+    r'(?:\s*\(since\s+(?P<since>[^)]+)\))?', re.I)
+
+
+def parse_root_sessions(msg_text: str) -> list:
+    """Rozparsuje hlášení root monitoru na jednotlivé relace.
+
+    Vrací [{'tty', 'ip', 'since'}]. `since` je čas přihlášení hlášený agentem,
+    ne čas hlášení — teprve z něj vyjde skutečná délka relace.
+    """
+    out = []
+    for m in _ROOT_SESSION_RE.finditer(msg_text or ''):
+        ip = m.group('ip')
+        if ip.lower().startswith('tmux'):
+            ip = "Neznámá IP"
+        out.append({
+            'tty': m.group('tty'),
+            'ip': ip,
+            'since': (m.group('since') or '').strip(),
+        })
+    return out
+
+
+def _normalize_since(since: str, fallback: str) -> str:
+    """"2026-08-20 11:47" -> "2026-08-20T11:47:00". Neparsovatelné -> fallback.
+
+    Agent posílá čas bez zóny, takže ho ani my zónou neopatřujeme — vydávat
+    lokální čas za UTC by posunulo délku relace o offset stroje.
+    """
+    s = (since or '').strip().replace(' ', 'T')
+    if re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?', s):
+        return s if len(s) > 16 else s + ':00'
+    return fallback
+
+
+def reconcile_root_sessions(conn, hostname: str, sessions: list, now: str) -> tuple:
+    """Sesouhlasí hlášené root relace se stavem v DB. Vrací (nove, potvrzene, uzavrene).
+
+    Trvající relaci jen potvrdí (`last_seen`), novou vloží, a relace, které
+    agent přestal hlásit, uzavře. Dřív se při každém hlášení všechny aktivní
+    záznamy hostitele zavřely a vložily znovu: tabulka rostla o stovky řádků
+    za hodinu (105 tisíc řádků za pár měsíců, historie relací pak byla ve
+    skutečnosti historie pollů) a `connected_at` se resetoval, takže délka
+    relace ukazovala dobu od posledního hlášení místo od přihlášení.
+    """
+    rows = conn.execute(
+        "SELECT id, tty, connected_at FROM root_audit WHERE server = ? AND is_active = 1",
+        (hostname,)
+    ).fetchall()
+    existing = {(r[1], r[2]): r[0] for r in rows}
+
+    seen, new_count = set(), 0
+    for s in sessions:
+        connected_at = _normalize_since(s['since'], now)
+        ident = (s['tty'], connected_at)
+        seen.add(ident)
+        row_id = existing.get(ident)
+        if row_id is not None:
+            conn.execute("UPDATE root_audit SET last_seen = ?, ip = ? WHERE id = ?",
+                         (now, s['ip'], row_id))
+        else:
+            conn.execute(
+                "INSERT INTO root_audit (server, ip, tty, connected_at, is_active, last_seen) "
+                "VALUES (?, ?, ?, ?, 1, ?)",
+                (hostname, s['ip'], s['tty'], connected_at, now)
+            )
+            new_count += 1
+
+    stale = [rid for ident, rid in existing.items() if ident not in seen]
+    for rid in stale:
+        conn.execute("UPDATE root_audit SET disconnected_at = ?, is_active = 0 WHERE id = ?",
+                     (now, rid))
+    return new_count, len(seen) - new_count, len(stale)
+
 
 def log_root_audit(server, ip, is_active):
     with db_lock:

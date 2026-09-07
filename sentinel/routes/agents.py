@@ -1070,20 +1070,18 @@ def create_blueprint(service):
                                 is_active = (status.lower() != "ok" and status.lower() != "resolved")
 
                                 if is_active:
-                                    sessions = msg_text.split(" | ")
-                                    conn.execute("UPDATE root_audit SET disconnected_at = ?, is_active = 0 WHERE server = ? AND is_active = 1", (now, hostname))
-
-                                    for s_msg in sessions:
-                                        # Prefer valid IPv4, then hostname (letter-led), reject timestamps
-                                        _ip = "Neznámá IP"
-                                        _m = re.search(r'from (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', s_msg)
-                                        if _m:
-                                            _ip = _m.group(1)
-                                        else:
-                                            _m = re.search(r'from ([a-zA-Z][\w\.\-]*)', s_msg)
-                                            if _m and not _m.group(1).startswith('tmux'):
-                                                _ip = _m.group(1)
-                                        conn.execute("INSERT INTO root_audit (server, ip, connected_at, is_active, last_seen) VALUES (?, ?, ?, 1, ?)", (hostname, _ip, now, now))
+                                    # Trvající relaci jen potvrdíme, nehlášenou uzavřeme.
+                                    # Dřív se při každém hlášení všechny aktivní záznamy
+                                    # zavřely a vložily znovu — stovky řádků za hodinu
+                                    # a connected_at resetovaný na čas pollu.
+                                    _sessions = state.parse_root_sessions(msg_text)
+                                    if _sessions:
+                                        _new, _kept, _closed = state.reconcile_root_sessions(
+                                            conn, hostname, _sessions, now)
+                                        if _new or _closed:
+                                            logger.info(
+                                                f"Root audit '{hostname}': +{_new} nových, "
+                                                f"{_kept} trvá, -{_closed} ukončených")
                                 else:
                                     conn.execute("UPDATE root_audit SET disconnected_at = ?, is_active = 0 WHERE server = ? AND is_active = 1", (now, hostname))
                             finally:
