@@ -126,5 +126,40 @@ class TestAskJson(unittest.TestCase):
         self.assertEqual(data[0]["name"], "x")
 
 
+class TestInvalidEscapeRepair(unittest.TestCase):
+    """Model do stringu napíše shellový regex a rozbije tím JSON.
+
+    `"grep -i 'a\\|b'"` — `\\|` není platná JSON escape sekvence, json.loads
+    na ní spadne a návrh autofixu se uživateli ukáže jako syrový text s
+    příkazem "N/A". Osamocené lomítko se proto zdvojí a parsuje znovu.
+    """
+    def _x(self, raw):
+        from sentinel.chat_service import ChatService
+        return ChatService.extract_json(raw)
+
+    def test_shell_regex_in_command_survives(self):
+        raw = ('```json {"description": "Kernel je tainted.", '
+               '"command": "dmesg | grep -i \'taint\\|error\\|driver\'", '
+               '"confidence": 60} ```')
+        d = self._x(raw)
+        self.assertIsNotNone(d, "neplatný escape nesmí shodit celý návrh")
+        self.assertEqual(d["confidence"], 60)
+        self.assertIn("dmesg", d["command"])
+        self.assertIn("taint", d["command"])
+
+    def test_valid_escapes_are_not_mangled(self):
+        d = self._x(r'{"a":"radek\nnovy","b":"cesta\\slozka","c":"uvozovka\""}')
+        self.assertEqual(d["a"], "radek\nnovy")
+        self.assertEqual(d["b"], "cesta\\slozka")
+        self.assertEqual(d["c"], 'uvozovka"')
+
+    def test_plain_json_still_parses(self):
+        d = self._x('{"description":"ok","command":"ls -la","confidence":90}')
+        self.assertEqual(d["command"], "ls -la")
+
+    def test_non_json_is_still_none(self):
+        self.assertIsNone(self._x("prostě věta bez jsonu"))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

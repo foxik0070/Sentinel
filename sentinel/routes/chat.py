@@ -346,9 +346,17 @@ def create_blueprint(service):
         def _stream_generator():
             service.chat_queue_depth += 1
             _stream_start = time.time()
+            # Bez těchhle dvou příznaků: jakákoli výjimka mezi inkrementem a
+            # dekrementem nechá čítač napořád nahoře (UI pak hlásí dotazy ve
+            # frontě, na které dávno nikdo nečeká) a `finally` uvolní semafor,
+            # který se možná vůbec nezamkl — tím tiše roste limit souběžnosti.
+            _queued = True
+            _acquired = False
             try:
                 service.llm_semaphore.acquire()
+                _acquired = True
                 service.chat_queue_depth -= 1
+                _queued = False
                 service.metrics["ai_requests"] += 1
 
                 def _stream_hailo_or_fallback():
@@ -490,7 +498,10 @@ def create_blueprint(service):
                     service.metrics["ai_latency_history"].append(duration)
                 raise
             finally:
-                service.llm_semaphore.release()
+                if _queued:
+                    service.chat_queue_depth -= 1
+                if _acquired:
+                    service.llm_semaphore.release()
 
         # 430: nasbírat streamované tokeny a uložit odpověď do per-user historie
         _username = g.username

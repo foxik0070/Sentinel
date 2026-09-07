@@ -1149,11 +1149,26 @@ class ChatService(threading.Thread):
             elif c == close_ch:
                 depth -= 1
                 if depth == 0:
+                    candidate = text[start:i + 1]
                     try:
-                        return json.loads(text[start:i + 1])
+                        return json.loads(candidate)
                     except (ValueError, TypeError):
-                        return None
+                        return ChatService._loads_repaired(candidate)
         return None
+
+    @staticmethod
+    def _loads_repaired(candidate: str):
+        """Poslední pokus o JSON, který model rozbil neplatnou escape sekvencí.
+
+        Typicky napíše do stringu shellový regex — `"grep -i 'a\\|b'"`. JSON zná
+        jen \\" \\\\ \\/ \\b \\f \\n \\r \\t a \\uXXXX, takže `\\|` je nevalidní a
+        json.loads spadne; návrh opravy se pak uživateli ukáže jako syrový text
+        s příkazem "N/A". Osamocené lomítko zdvojíme a zkusíme to znovu.
+        """
+        try:
+            return json.loads(re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', candidate))
+        except (ValueError, TypeError):
+            return None
 
     def ask_json(self, prompt: str, required_keys=None, expect: str = 'object',
                  num_ctx: int = 2048, max_tokens: int = 500, retry: bool = True,
@@ -2229,9 +2244,15 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
     def execute_ollama(self, prompt, num_ctx=2048, messages=None, max_tokens=None, temperature=0.1):
         self.chat_queue_depth += 1
         _ai_timeout = int(getattr(config, 'AI_TIMEOUT_SECONDS', 180))
+        # Viz _stream_generator: bez příznaků nechá výjimka mezi inkrementem a
+        # dekrementem čítač napořád nahoře a `finally` uvolní nezamčený semafor.
+        _queued = True
+        _acquired = False
         try:
             self.llm_semaphore.acquire()
+            _acquired = True
             self.chat_queue_depth -= 1
+            _queued = False
             self.metrics["ai_requests"] += 1
             start_ts = time.time()
 
@@ -2358,7 +2379,10 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
             self.log_event("ai_error", str(e), level=logging.ERROR)
             return AIResult.failure(f"AI Error: {e}")
         finally:
-            self.llm_semaphore.release()
+            if _queued:
+                self.chat_queue_depth -= 1
+            if _acquired:
+                self.llm_semaphore.release()
 
     # ── 435: Token usage tracking ────────────────────────────────────────────
 
