@@ -980,7 +980,7 @@ def create_blueprint(service):
 
             # Zachytit verzi agenta z payload (top-level nebo agent_core_updater event)
             try:
-                _ver = (data.get('version') or data.get('agent_sha') or '').strip()
+                _ver = (data.get('agent_version') or data.get('version') or data.get('agent_sha') or '').strip()
                 if not _ver:
                     for _ev in (data.get("events", []) or []):
                         _plug = _ev.get("plugin", "").lower()
