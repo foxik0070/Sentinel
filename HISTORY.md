@@ -1,5 +1,23 @@
 # Historie změn
 
+## [2026.09.011] - 2026-09-08
+
+**Souhrn:** Chat v UI neposílal modelu aktivní issues, takže na dotaz o problémech odpovídal z knowledge base.
+
+### „Analyzuj aktivní problémy" odpovídalo z KB, ne z issues
+
+Streamovaná větev chatu — ta, kterou používá webové UI — skládala kontext jen ze tří věcí: historie konverzace, knowledge base a otázky. **Aktivní issues v něm nebyly vůbec.** Model tedy na dotaz o aktuálních problémech odpověděl z toho jediného, co dostal — z KB dokumentů o uživatelských účtech a kvótách úložiště.
+
+Starší neproudová větev (`execute_ollama`) přehled alertů posílala, takže UI mělo paradoxně **méně** kontextu než cesta, kterou nahradilo.
+
+Nová `ChatService.build_alerts_context()` skládá přehled aktivních issues a volají ji **obě** větve, aby se znovu nerozešly:
+
+- 15 nejnovějších issues (dřív 5), text 160 znaků místo 60
+- u každé hostitel, kanál a severity (`login1.barbora [AGENT/HIGH] Swap 100 %`)
+- celkový počet, takže model ví, kolik jich nevidí
+- prázdný stav se říká výslovně — jinak si model problémy domyslí z KB
+
+
 ## [2026.09.010] - 2026-09-08
 
 **Souhrn:** Nalezena příčina hlášky „Chyba komunikace" pod hotovou odpovědí — SSE generátor sahal na Flask `g` po zániku request kontextu. Fronta požadavků nově ukazuje to, co doopravdy běží.

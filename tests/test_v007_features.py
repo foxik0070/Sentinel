@@ -357,3 +357,47 @@ class TestSseGeneratorsAvoidRequestContext(unittest.TestCase):
             offenders = [l.strip() for l in body if _re.search(r'\bg\.[a-z_]+', l)]
             self.assertEqual(offenders, [],
                              f'{rel}:{fname} sahá na `g` uvnitř generátoru: {offenders}')
+
+
+class TestAlertsContextInBothChatPaths(unittest.TestCase):
+    """Obě větve chatu musí modelu poslat aktivní issues.
+
+    Streamovaná větev (tu používá UI) je dřív neposílala vůbec — skládala
+    jen historii a knowledge base. Na "analyzuj aktivní problémy" pak model
+    odpovídal z KB o účtech a kvótách místo o tom, co zrovna hoří.
+    """
+    def test_builder_formats_active_issues(self):
+        from sentinel import chat_service, state
+        svc = chat_service.ChatService.__new__(chat_service.ChatService)
+        orig = state.get_active_issues
+        state.get_active_issues = lambda: [
+            {'host': 'login1.barbora', 'channel_type': 'agent', 'severity': 'high',
+             'last_line': 'Swap 100 %', 'last_seen': '2026-09-08T01:00:00'},
+            {'host': 'auto.it4i.cz', 'channel_type': 'security',
+             'last_line': '78 unpatched CVEs', 'last_seen': '2026-09-08T02:00:00'},
+        ]
+        try:
+            out = svc.build_alerts_context()
+        finally:
+            state.get_active_issues = orig
+        self.assertIn('login1.barbora', out)
+        self.assertIn('AGENT/HIGH', out, 'severity patří do kontextu, řídí se jí priorita')
+        self.assertIn('78 unpatched CVEs', out)
+        self.assertIn('2 total', out)
+
+    def test_no_issues_says_so_explicitly(self):
+        from sentinel import chat_service, state
+        svc = chat_service.ChatService.__new__(chat_service.ChatService)
+        orig = state.get_active_issues
+        state.get_active_issues = lambda: []
+        try:
+            out = svc.build_alerts_context()
+        finally:
+            state.get_active_issues = orig
+        self.assertIn('none', out.lower(),
+                      'prázdno musí být řečeno, jinak si model domyslí problémy z KB')
+
+    def test_streaming_path_includes_alerts(self):
+        src = open(os.path.join(_ROOT, 'sentinel/routes/chat.py'), encoding='utf-8').read()
+        self.assertIn('build_alerts_context()', src,
+                      'streamovaná větev musí posílat aktivní issues')

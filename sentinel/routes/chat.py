@@ -331,6 +331,11 @@ def create_blueprint(service):
             user_parts = []
             if history_str:
                 user_parts.append(f"Conversation history:\n{history_str}")
+            # Bez tohohle model na "analyzuj aktivní problémy" odpovídal
+            # z knowledge base — o účtech a kvótách, ne o tom, co hoří.
+            _alerts = service.build_alerts_context()
+            if _alerts:
+                user_parts.append(_alerts)
             if has_ctx:
                 user_parts.append(f"Knowledge base context:\n{context}")
             user_parts.append(f"Question: {msg}")
