@@ -44,7 +44,7 @@ class TestRootAuditDedup(unittest.TestCase):
         conn.execute(
             "CREATE TABLE root_audit (id INTEGER PRIMARY KEY AUTOINCREMENT, "
             "server TEXT, ip TEXT, connected_at TEXT, disconnected_at TEXT, is_active INTEGER, "
-            "last_seen TEXT)"
+            "last_seen TEXT, origin TEXT)"
         )
         conn.commit()
         conn.close()
@@ -90,7 +90,7 @@ class TestRootSessionReconcile(unittest.TestCase):
         c = sqlite3.connect(":memory:")
         c.execute("CREATE TABLE root_audit (id INTEGER PRIMARY KEY AUTOINCREMENT, "
                   "server TEXT, ip TEXT, connected_at TEXT, disconnected_at TEXT, "
-                  "is_active INTEGER, last_seen TEXT, tty TEXT)")
+                  "is_active INTEGER, last_seen TEXT, tty TEXT, origin TEXT)")
         return c
 
     def test_parser_reads_tty_ip_and_since(self):
@@ -242,7 +242,7 @@ class TestRootAuditStaleSweep(unittest.TestCase):
         conn.execute(
             "CREATE TABLE root_audit (id INTEGER PRIMARY KEY AUTOINCREMENT, "
             "server TEXT, ip TEXT, connected_at TEXT, disconnected_at TEXT, is_active INTEGER, "
-            "last_seen TEXT)"
+            "last_seen TEXT, origin TEXT)"
         )
         cases = [
             # (popis, connected_at, last_seen, ma_se_uzavrit)
