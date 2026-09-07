@@ -174,8 +174,8 @@ def create_blueprint(service, socketio):
                 # se stovkami tisíc řádků.
                 per_cluster = int(getattr(config, 'ROOT_AUDIT_HISTORY_PER_CLUSTER', 30))
                 c = conn.execute(
-                    "SELECT server, ip, tty, connected_at, is_active, disconnected_at FROM ("
-                    "  SELECT server, ip, tty, connected_at, is_active, disconnected_at,"
+                    "SELECT server, ip, tty, connected_at, is_active, disconnected_at, origin FROM ("
+                    "  SELECT server, ip, tty, connected_at, is_active, disconnected_at, origin,"
                     "         ROW_NUMBER() OVER (PARTITION BY server"
                     "                            ORDER BY is_active DESC, connected_at DESC) AS rn"
                     "  FROM root_audit"
@@ -185,7 +185,11 @@ def create_blueprint(service, socketio):
                 from .. import api as _api
                 rows, _per_cluster_seen = [], {}
                 for r in c.fetchall():
-                    cluster = _api.get_cluster_from_host(r[0])
+                    origin = r[6] or 'agent'
+                    # Detektor do `server` píše rovnou název clusteru, takže
+                    # ho není z čeho odvozovat — odvozování ho navíc mrší:
+                    # pravidlo ".cs." na holé "CS" nesedí a spadlo by do INFRA.
+                    cluster = r[0] if origin == 'detector' else _api.get_cluster_from_host(r[0])
                     active = bool(r[4])
                     # Aktivní relace projdou vždy — kvůli nim se sem člověk dívá.
                     if not active:
@@ -193,7 +197,8 @@ def create_blueprint(service, socketio):
                             continue
                         _per_cluster_seen[cluster] = _per_cluster_seen.get(cluster, 0) + 1
                     rows.append({"server": r[0], "ip": r[1], "tty": r[2], "connected_at": r[3],
-                                 "is_active": active, "disconnected_at": r[5], "cluster": cluster})
+                                 "is_active": active, "disconnected_at": r[5], "cluster": cluster,
+                                 "origin": origin})
             finally:
                 conn.close()
         return jsonify(rows)

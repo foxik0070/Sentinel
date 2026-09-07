@@ -172,6 +172,8 @@ const TRANSLATIONS = {
     root_active_badge: 'AKTIVNÍ',
     root_audit_export_csv: 'Export CSV',
     root_audit_active_only: 'Jen aktivní',
+    root_detector_label: 'detektor',
+    root_from_detector: 'Záznam z detektoru, ne od agenta na stroji',
     root_audit_stats: '{active} aktivních / {total} celkem',
 
     // ── JS dynamic messages ────────────────────────────────────────────────────
@@ -705,6 +707,8 @@ const TRANSLATIONS = {
     root_active_badge: 'ACTIVE',
     root_audit_export_csv: 'Export CSV',
     root_audit_active_only: 'Active only',
+    root_detector_label: 'detector',
+    root_from_detector: 'Reported by a detector, not by an on-host agent',
     root_audit_stats: '{active} active / {total} total',
 
     // ── JS dynamic messages ────────────────────────────────────────────────────

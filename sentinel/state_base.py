@@ -276,6 +276,16 @@ def init_db():
             # is_active=1 navždy (pruning maže jen is_active=0).
             c.execute("PRAGMA table_info(root_audit)")
             _ra_cols = {r[1] for r in c.fetchall()}
+            if 'origin' not in _ra_cols:
+                # Odkud záznam přišel. Detektor do `server` píše rovnou název
+                # clusteru ("BARBORA2"), agent hostname ("login1.barbora2") —
+                # bez rozlišení se ve výpisu tváří jako dva různé stroje.
+                c.execute("ALTER TABLE root_audit ADD COLUMN origin TEXT")
+                # Zpětně: detektor psal názvy clusterů velkými písmeny,
+                # agent hostname malými.
+                c.execute("UPDATE root_audit SET origin = "
+                          "CASE WHEN server = upper(server) THEN 'detector' ELSE 'agent' END "
+                          "WHERE origin IS NULL")
             if 'tty' not in _ra_cols:
                 # Bez tty nejde odlišit dvě souběžné relace téhož roota ze
                 # stejné IP (běžné: pts/0 i pts/3 z 10.34.1.4). Agent cesta by

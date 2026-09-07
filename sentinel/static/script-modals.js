@@ -2264,7 +2264,9 @@ function _renderRootAudit(activeOnly) {
                         onclick="_toggleRootAuditGroup('${gid}', this)">
                         <td colspan="5" style="padding:7px 14px 7px 30px; color:var(--text-main); font-size:0.92em;">
                             <i class="fa-solid fa-chevron-down" style="font-size:0.75em; color:var(--text-muted); margin-right:8px; transition:transform .15s;"></i>
-                            <span style="font-weight:bold;">${_escape(sv)}</span>
+                            ${rows[0]?.origin === 'detector'
+                                ? `<i class="fa-solid fa-satellite-dish" style="font-size:.8em; color:var(--text-muted); margin-right:6px;" title="${t('root_from_detector')}"></i><span style="font-weight:bold;">${t('root_detector_label')} „${_escape(sv)}"</span>`
+                                : `<span style="font-weight:bold;">${_escape(sv)}</span>`}
                             <span style="font-size:0.82em; color:var(--text-muted); margin-left:8px;">
                                 ${rows.length}× ${svActive ? `· <span style="color:#ffc107;">${svActive} ${t('root_active_badge')}</span>` : ''}
                             </span>

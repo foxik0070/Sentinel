@@ -1,5 +1,21 @@
 # Historie změn
 
+## [2026.09.007] - 2026-09-08
+
+**Souhrn:** Root audit rozlišuje záznamy z detektoru od záznamů z agenta. CS tím přestal padat do INFRA.
+
+### Původ záznamu: detektor vs. agent
+
+Do `root_audit` píšou dvě cesty a každá do `server` ukládá něco jiného: detektor rovnou název clusteru (`BARBORA2`), agent hostname stroje (`login1.barbora2`). Ve výpisu se pak záznam z detektoru tvářil jako další stroj v clusteru a nešel od agentových odlišit.
+
+Nový sloupec `root_audit.origin` (`detector` / `agent`). Migrace ho doplní i zpětně — detektor psal názvy clusterů velkými písmeny, agent hostname malými.
+
+- u záznamu z detektoru je cluster **rovnou hodnota `server`**, nic se neodvozuje
+- ve výpisu je taková skupina označená jako `detektor „BARBORA2"` s vlastní ikonou
+
+Tím se opravilo i zařazení **CS**: pravidlo `host_cluster_rules` má `pattern: .cs.`, které na holé `CS` nesedí, takže cluster spadl na `default_cluster` a CS se schoval do INFRA. Odvozování se u detektoru už nepoužívá, takže CS stojí samostatně.
+
+
 ## [2026.09.006] - 2026-09-08
 
 **Souhrn:** Historie root relací se limituje na cluster, ne globálně — tiché clustery už nevytlačí ten rušný.
