@@ -1,5 +1,53 @@
 # Historie změn
 
+## [2026.09.001] - 2026-09-08
+
+**Souhrn:** Oprava zamrzávání celého procesu při zavírání DB spojení (skutečná příčina watchdog ABRT pádů i nedostupného UI), expirace root relací, které detektor přestal hlásit.
+
+### Zamrzání procesu při close() DB spojení (kritické)
+
+Instance s velkou databází padala na `Failed with result 'watchdog'` několikrát denně a mezitím bylo UI nedostupné. Oprava `settimeout(1.0)` z 2026.08.006 řešila jiný, souběžný problém — pings se sice přestaly ztrácet, ale pády pokračovaly.
+
+**Příčina:** `sqlite3.Connection.close()` neuvolňuje GIL. Sentinel nedržel žádné trvalé DB spojení — otevíral a zavíral ho na každý požadavek, takže každé `close()` bylo *poslední* spojení k databázi a SQLite při něm provedl plný WAL checkpoint. Po celou dobu checkpointu je zmrazený celý proces.
+
+Naměřeno na produkční DB (111 MB), vlákno tikající po 1 ms:
+
+```
+INSERT čekající 6,5 s na zámek   ticks=5992 / oček. 6536  -> GIL se uvolňuje
+close()                          ticks=   1 / oček.  233  -> GIL držen
+```
+
+Projevy jednoho a téhož zamrznutí:
+
+| projev | co se dělo |
+|---|---|
+| UI nedostupné | web vlákno nedostalo GIL, nedošlo k `accept()` → accept fronta rostla ke 128, pak `Connection refused` |
+| SIGABRT | watchdog vlákno nedostalo GIL → žádný ping → systemd po 300 s zabil proces |
+| SIGKILL | signal handler potřebuje GIL → SIGTERM ignorován 91 s → `stop-sigterm timed out` |
+
+**Oprava:** `state_base._ensure_keeper()` otevírá při startu jedno trvalé spojení a drží ho po celý běh procesu. Žádné per-request `close()` pak není poslední, takže checkpoint zůstává jen v `execute()`, kde se GIL řádně uvolňuje.
+
+```
+bez keeper spojení   WAL 52,5 MB | close 0,233 s  -> proces zmrzlý
+s keeper spojením    WAL 52,5 MB | close 0,000 s  -> bez zamrznutí
+```
+
+WAL díky `wal_autocheckpoint` neroste donekonečna — po 120 tisících řádcích zůstal na 8,8 MB.
+
+### Root audit — expirace relací, které detektor přestal hlásit
+
+V `root_audit` zůstávaly relace s `is_active=1` i 67 dní poté, co dávno skončily. Agent cesta se čistí sama (při každém hlášení uzavře staré záznamy hosta a vloží aktuální), ale plugin cesta přes `api.add_root_audit()` záznam jen vloží a spoléhá na `close_root_audit()`, kterou nikdo nevolal. Denní pruning je nemazal, protože maže výhradně `is_active=0`.
+
+**Oprava:**
+
+- nový sloupec `root_audit.last_seen` (idempotentní migrace) — kdy detektor relaci naposled potvrdil
+- `add_root_audit()` u již existující aktivní relace osvěží `last_seen` místo tichého ignorování
+- `agent_watchdog_loop` každou minutu uzavře relace bez potvrzení déle než `root_audit_stale_minutes` (výchozí 30); `COALESCE(last_seen, connected_at)` pokrývá i záznamy z doby před migrací
+
+```yaml
+root_audit_stale_minutes: 30   # výchozí
+```
+
 ## [2026.08.006] - 2026-08-19
 
 **Souhrn:** Oprava kritického watchdog pádu (ABRT), stale ROOT relací, false positives Slurmctld a slurmd na login nodech, univerzální cluster detekce v pluginech.

@@ -261,15 +261,18 @@ def add_root_audit(server: str, ip: str):
         conn = sqlite3.connect(DB_PATH, timeout=5)
         # Dedup: only insert if no active record already exists for this server+ip
         existing = conn.execute(
-            "SELECT 1 FROM root_audit WHERE server=? AND (ip=? OR ip LIKE ?) AND is_active=1 LIMIT 1",
+            "SELECT id FROM root_audit WHERE server=? AND (ip=? OR ip LIKE ?) AND is_active=1 LIMIT 1",
             (server, ip, ip + ' (%')
         ).fetchone()
-        if not existing:
+        if existing:
+            # Relace stále trvá — potvrdíme ji, aby ji sweep neuzavřel.
+            conn.execute("UPDATE root_audit SET last_seen=? WHERE id=?", (now, existing[0]))
+        else:
             conn.execute(
-                "INSERT INTO root_audit (server, ip, connected_at, is_active) VALUES (?, ?, ?, 1)",
-                (server, display, now)
+                "INSERT INTO root_audit (server, ip, connected_at, is_active, last_seen) VALUES (?, ?, ?, 1, ?)",
+                (server, display, now, now)
             )
-            conn.commit()
+        conn.commit()
         conn.close()
     except Exception as e:
         log(f"add_root_audit error: {e}")

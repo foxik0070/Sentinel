@@ -5,7 +5,7 @@ import secrets
 from pathlib import Path
 
 # --- Technical Config ---
-VERSION = "2026.08.006"
+VERSION = "2026.09.001"
 
 def get_git_commit():
     try:
@@ -331,6 +331,8 @@ AUTO_RESOLVE_MISSING_COUNT = 3
 # Per-channel issue expiry (025): {channel: days} — resolved after N days even without agent
 ISSUE_EXPIRY_DAYS: dict = {}
 AGENT_HEARTBEAT_TIMEOUT = 180  # 037: global fallback (seconds)
+# Root relace bez potvrzení detektorem déle než N minut se uzavře jako ukončená
+ROOT_AUDIT_STALE_MINUTES = 30
 # 102: IP whitelist per-role — {role: ["192.168.0.0/24", ...]}; prázdný = vypnuto
 IP_WHITELIST: dict = {}
 # 082: Syslog UDP receiver
@@ -706,6 +708,8 @@ def load_config():
         ISSUE_EXPIRY_DAYS = {k.lower(): float(v) for k, v in _expiry.items()}
     global AGENT_HEARTBEAT_TIMEOUT
     AGENT_HEARTBEAT_TIMEOUT = int(data.get("agent_heartbeat_timeout", AGENT_HEARTBEAT_TIMEOUT))
+    global ROOT_AUDIT_STALE_MINUTES
+    ROOT_AUDIT_STALE_MINUTES = int(data.get("root_audit_stale_minutes", ROOT_AUDIT_STALE_MINUTES))
     global IP_WHITELIST
     _ipwl = data.get("ip_whitelist", {})
     if isinstance(_ipwl, dict):
@@ -895,7 +899,8 @@ _KNOWN_KEYS = {
     'infrastructure_mapping', 'chromadb', 'security', 'auto_tags', 'escalation_rules',
     'sla_rules', 'inbound_webhook', 'telemetry_alerts', 'influxdb', 'self_monitor',
     'weekly_report', 'auto_register_token', 'issue_expiry_days', 'slack', 'pagerduty', 'snmp_trap', 'https', 'topology',
-    'telemetry_aggregate_after_hours', 'agent_heartbeat_timeout', 'channel_colors', 'ip_whitelist',
+    'telemetry_aggregate_after_hours', 'agent_heartbeat_timeout', 'root_audit_stale_minutes',
+    'channel_colors', 'ip_whitelist',
     'syslog_receiver', 'ntfy', 'gotify', 'smtp', 'matrix', 'discord', 'telegram', 'opsgenie',
     'grafana_annotations',
     'issue_history_retention_days', 'display_tz', 'heartbeat_urls', 'gitea',

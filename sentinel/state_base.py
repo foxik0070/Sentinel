@@ -78,6 +78,27 @@ def _get_conn():
     conn.execute("PRAGMA busy_timeout=30000")
     return conn
 
+_keeper_conn = None
+
+def _ensure_keeper():
+    """Otevře jedno trvalé spojení k DB a nechá ho otevřené po celý běh procesu.
+
+    sqlite3.Connection.close() neuvolňuje GIL. Když je zavírané spojení to
+    poslední, SQLite při něm provede WAL checkpoint — a ten na velké DB zmrazí
+    celý proces: web server se nedostane k accept(), systemd watchdog nedostane
+    ping → SIGABRT. Dokud je keeper otevřený, žádné per-request close() není
+    poslední, takže checkpoint zůstává jen v execute(), kde se GIL uvolňuje.
+    """
+    global _keeper_conn
+    if _keeper_conn is not None:
+        try:
+            _keeper_conn.close()
+        except Exception:
+            pass
+    _keeper_conn = sqlite3.connect(_db_file(), timeout=10.0, isolation_level=None,
+                                   check_same_thread=False)
+    _keeper_conn.execute("PRAGMA busy_timeout=30000")
+
 def init_db():
     try:
         with db_lock:
@@ -245,6 +266,14 @@ def init_db():
                          (id INTEGER PRIMARY KEY AUTOINCREMENT,
                           server TEXT, ip TEXT, connected_at TEXT,
                           disconnected_at TEXT, is_active INTEGER)''')
+
+            # last_seen: kdy detektor relaci naposled potvrdil. Bez toho nejde
+            # poznat relaci, kterou detektor přestal hlásit, a záznam zůstane
+            # is_active=1 navždy (pruning maže jen is_active=0).
+            c.execute("PRAGMA table_info(root_audit)")
+            _ra_cols = {r[1] for r in c.fetchall()}
+            if 'last_seen' not in _ra_cols:
+                c.execute("ALTER TABLE root_audit ADD COLUMN last_seen TEXT")
 
             c.execute('''CREATE TABLE IF NOT EXISTS action_audit
                          (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -579,6 +608,7 @@ def init_db():
         logger.error(f"Failed to init DB: {e}")
 
 init_db()
+_ensure_keeper()
 
 MAX_QUEUE_DEPTH = 50  # Maximální pending tasků — nejstarší s nízkou prioritou se zahazují
 
