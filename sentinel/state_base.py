@@ -98,6 +98,10 @@ def _ensure_keeper():
     _keeper_conn = sqlite3.connect(_db_file(), timeout=10.0, isolation_level=None,
                                    check_same_thread=False)
     _keeper_conn.execute("PRAGMA busy_timeout=30000")
+    # Samotný connect() DB reálně neotevře — SQLite k souboru sáhne až při
+    # prvním dotazu. Bez něj nevznikne -wal/-shm a keeper by checkpoint
+    # při cizím close() vůbec neblokoval.
+    _keeper_conn.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone()
 
 def init_db():
     try:

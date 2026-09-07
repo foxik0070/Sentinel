@@ -9,6 +9,7 @@ Run:
 """
 import os
 import sys
+import shutil
 import sqlite3
 import tempfile
 import importlib
@@ -73,6 +74,40 @@ class TestRootAuditDedup(unittest.TestCase):
         finally:
             state_base.DB_FILE = orig
             os.unlink(path)
+
+
+class TestKeeperConnection(unittest.TestCase):
+    """Keeper musí DB skutečně otevřít, ne se jen 'připojit'.
+
+    sqlite3.connect() k souboru sáhne až při prvním dotazu. Bez něj nevznikne
+    -wal/-shm, keeper nedrží WAL session a per-request close() dál spouští
+    checkpoint (= zamrznutí celého procesu, protože close() nepouští GIL).
+    """
+    def test_keeper_holds_wal_session(self):
+        from sentinel import state_base
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "keeper.db")
+        seed = sqlite3.connect(path)
+        seed.execute("PRAGMA journal_mode=WAL")
+        seed.execute("CREATE TABLE t(x)")
+        seed.commit()
+        seed.close()
+        self.assertFalse(os.path.exists(path + "-wal"), "výchozí stav: -wal nemá existovat")
+
+        orig_file, orig_keeper = state_base.DB_FILE, state_base._keeper_conn
+        state_base.DB_FILE = path
+        state_base._keeper_conn = None
+        try:
+            state_base._ensure_keeper()
+            self.assertTrue(os.path.exists(path + "-wal"),
+                            "keeper nedrží WAL session — checkpoint při close() dál zmrazí proces")
+        finally:
+            try:
+                state_base._keeper_conn.close()
+            except Exception:
+                pass
+            state_base.DB_FILE, state_base._keeper_conn = orig_file, orig_keeper
+            shutil.rmtree(d, ignore_errors=True)
 
 
 class TestRootAuditStaleSweep(unittest.TestCase):
