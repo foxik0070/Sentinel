@@ -429,6 +429,7 @@ def create_blueprint(service):
                         payload = {"model": config.OLLAMA_MODEL,
                                    "messages": [{"role": "user", "content": prompt or user_msg}],
                                    "stream": True, "temperature": 0.1}
+                        config.apply_extra_body(payload)
                     else:
                         payload = {"model": config.OLLAMA_MODEL,
                                    "prompt": prompt or user_msg,

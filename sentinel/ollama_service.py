@@ -127,6 +127,7 @@ def process_single_task(item):
                     "stream": False,
                     "temperature": 0.2
                 }
+                config.apply_extra_body(payload)
                 headers = {"Content-Type": "application/json"}
                 if config.OLLAMA_API_KEY:
                     headers["Authorization"] = f"Bearer {config.OLLAMA_API_KEY}"

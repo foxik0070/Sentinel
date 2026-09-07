@@ -1,5 +1,31 @@
 # Historie změn
 
+## [2026.09.008] - 2026-09-08
+
+**Souhrn:** Nová volba `ollama_extra_body` — extra pole do těla OpenAI /v1 požadavku. Otevírá cestu k reasoning modelům jako qwen3.
+
+### ollama_extra_body
+
+Některé modely potřebují v těle požadavku pole, které je vlastností modelu, ne Sentinelu. `qwen3-32b` bez `chat_template_kwargs.enable_thinking=false` posílá uvažování jako `<think>` blok **rovnou v `content`**, ne v `reasoning_content`, kde by ho Sentinel uměl oddělit. Skončilo by v chatu, v denním digestu i v auto-klasifikaci severity — klasifikátor čekající jedno slovo by dostal odstavec anglického přemýšlení.
+
+```yaml
+ollama_extra_body:
+  chat_template_kwargs:
+    enable_thinking: false
+```
+
+Přimíchává se jen na /v1 větvích (`ask_llm`, streaming chat, AI worker, benchmark). Hailo ani legacy `/api/generate` tahle pole neznají a poslat je tam by request rozbilo — hlídá to test.
+
+Naměřeno proti LiteLLM proxy, medián ze čtyř běhů, klasifikace severity:
+
+| model | celkem | první token | znaků | průchodnost |
+|---|---|---|---|---|
+| `it4i-private-qwen2.5_coder:32b` | 2,77 s | 0,05 s | 194 | 70 zn./s |
+| `qwen3-32b` + `enable_thinking=false` | **1,61 s** | 0,06 s | 132 | **82 zn./s** |
+
+Se zapnutým thinkingem trvá qwen3-32b 8,4 s a vygeneruje 1346 znaků, z toho většinu uvažování.
+
+
 ## [2026.09.007] - 2026-09-08
 
 **Souhrn:** Root audit rozlišuje záznamy z detektoru od záznamů z agenta. CS tím přestal padat do INFRA.
