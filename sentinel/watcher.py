@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import re
@@ -304,3 +305,94 @@ class LogHandler(FileSystemEventHandler):
 
         except Exception as e:
             utils.log_message(f"[!] Error processing file {path}: {e}")
+
+
+# --- File Integrity Monitoring (176) ---
+# Výchozí sada, když config.FIM_PATHS nic neuvádí. Soubory, jejichž tichá
+# změna znamená kompromitaci: účty, eskalace práv, vzdálený přístup.
+DEFAULT_FIM_PATHS = [
+    "/etc/passwd",
+    "/etc/shadow",
+    "/etc/group",
+    "/etc/sudoers",
+    "/etc/ssh/sshd_config",
+    "/etc/hosts",
+    "/etc/crontab",
+]
+
+# Baseline musí umět odlišit "soubor tam nebyl" od "soubor jsem nečetl" —
+# jinak by smazání a chybějící oprávnění splynuly v jednu událost.
+_FIM_MISSING = "__missing__"
+
+
+def _fim_digest(path: str):
+    """SHA-256 souboru, _FIM_MISSING když neexistuje, None když je nečitelný."""
+    try:
+        h = hashlib.sha256()
+        with open(path, 'rb') as f:
+            for chunk in iter(lambda: f.read(65536), b''):
+                h.update(chunk)
+        return h.hexdigest()
+    except FileNotFoundError:
+        return _FIM_MISSING
+    except OSError:
+        return None
+
+
+def fim_check() -> list:
+    """Porovná SHA-256 sledovaných souborů proti uložené baseline.
+
+    Vrací cesty, které se od minulého běhu změnily, a k nim zakládá issue
+    v kanálu `security` se severity `high`. První běh baseline jen založí —
+    jinak by po zapnutí FIM vyskočil každý sledovaný soubor najednou.
+
+    Baseline se posouvá i u nahlášené změny, takže se táž změna nehlásí
+    dokola; nečitelný soubor ji naopak nepřepisuje (chybějící oprávnění není
+    integritní událost a nesmí zahodit původní otisk).
+    """
+    if not getattr(config, 'FIM_ENABLED', False):
+        return []
+
+    from . import state
+
+    paths = [p for p in (getattr(config, 'FIM_PATHS', None) or DEFAULT_FIM_PATHS) if p]
+    try:
+        baseline = json.loads(state.get_setting('fim_state') or '{}')
+    except Exception:
+        baseline = {}
+    first_run = not baseline
+
+    changed = []
+    for path in paths:
+        digest = _fim_digest(path)
+        if digest is None:
+            continue
+        previous = baseline.get(path)
+        baseline[path] = digest
+
+        if first_run or previous is None or previous == digest:
+            continue
+
+        if digest == _FIM_MISSING:
+            message = f"Sledovaný soubor byl smazán: {path}"
+        elif previous == _FIM_MISSING:
+            message = f"Sledovaný soubor se znovu objevil: {path}"
+        else:
+            message = f"Obsah sledovaného souboru se změnil: {path}"
+
+        key = f"FIM_CHANGE|{path}"
+        try:
+            state.save_problem(key, {
+                'status': 'active',
+                'channel_type': 'security',
+                'plugin_name': 'file_integrity_monitor',
+                'host': utils.get_hostname() if hasattr(utils, 'get_hostname') else 'localhost',
+                'last_line': message,
+            })
+            state.set_issue_severity(key, 'high')
+        except Exception as e:
+            utils.log_message(f"[!] FIM: nelze založit issue pro {path}: {e}")
+        changed.append(path)
+
+    state.set_setting('fim_state', json.dumps(baseline))
+    return changed
