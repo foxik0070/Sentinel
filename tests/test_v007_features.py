@@ -327,3 +327,33 @@ class TestReverseDns(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSseGeneratorsAvoidRequestContext(unittest.TestCase):
+    """SSE generátor nesmí sahat na `g` — běží až po návratu view.
+
+    Flask tam request kontext už nemá, takže `g.username` uvnitř vyhodí
+    RuntimeError: generátor umře, server utne spojení uprostřed streamu
+    (nginx: "upstream prematurely closed connection") a prohlížeč vypíše
+    chybu ZA už vykreslenou odpovědí. Hodnotu je nutné zachytit předem.
+    """
+    GENERATORS = [
+        ('sentinel/routes/chat.py', '_stream_generator'),
+        ('sentinel/routes/actions.py', '_generate'),
+    ]
+
+    def test_no_flask_g_inside_generator_bodies(self):
+        import re as _re
+        for rel, fname in self.GENERATORS:
+            src = open(os.path.join(_ROOT, rel), encoding='utf-8').read().split('\n')
+            start = next((i for i, l in enumerate(src) if l.strip().startswith(f'def {fname}(')), None)
+            self.assertIsNotNone(start, f'{fname} nenalezen v {rel}')
+            indent = len(src[start]) - len(src[start].lstrip())
+            body = []
+            for line in src[start + 1:]:
+                if line.strip() and (len(line) - len(line.lstrip())) <= indent:
+                    break
+                body.append(line)
+            offenders = [l.strip() for l in body if _re.search(r'\bg\.[a-z_]+', l)]
+            self.assertEqual(offenders, [],
+                             f'{rel}:{fname} sahá na `g` uvnitř generátoru: {offenders}')

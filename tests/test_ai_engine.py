@@ -48,6 +48,9 @@ class TestExecuteOllamaRouting(unittest.TestCase):
             "active_users": set(),
         }
         svc.chat_queue_depth = 0
+        svc.active_ai_requests = {}
+        svc._ai_req_lock = threading.Lock()
+        svc._ai_req_seq = 0
         svc.llm_semaphore = threading.Semaphore(1)
         return svc
 

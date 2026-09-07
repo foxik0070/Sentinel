@@ -270,6 +270,13 @@ class ChatService(threading.Thread):
         self.name = "Sentinel-WebChat"
         self.llm_semaphore = threading.Semaphore(1)
         self.chat_queue_depth = 0
+        # Evidence právě běžících AI požadavků. Modal dřív ukazoval čítač
+        # `chat_queue_depth` vedle seznamu z DB tabulky `task_queue` — dvě
+        # nesouvisející věci, takže hlásil "AI fronta: 1" nad prázdným
+        # seznamem. Tady je to, co ten čítač doopravdy počítá.
+        self.active_ai_requests = {}
+        self._ai_req_lock = threading.Lock()
+        self._ai_req_seq = 0
         self.last_cleanup_time = None
         
         template_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'templates'))
@@ -2241,6 +2248,43 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
         except Exception as e:
             logger.debug(f"gitea_sync: {e}")
 
+    def _ai_req_begin(self, source: str, text: str, channel: str = "ai", host: str = "-"):
+        """Zaeviduje AI požadavek jako čekající. Vrací id pro _ai_req_* volání."""
+        with self._ai_req_lock:
+            self._ai_req_seq += 1
+            rid = self._ai_req_seq
+            self.active_ai_requests[rid] = {
+                "id": rid, "channel": channel, "host": host, "source": source,
+                "text": (text or "")[:2000], "status": "waiting",
+                "started": time.time(), "cancellable": False,
+            }
+        return rid
+
+    def _ai_req_running(self, rid):
+        with self._ai_req_lock:
+            if rid in self.active_ai_requests:
+                self.active_ai_requests[rid]["status"] = "processing"
+
+    def _ai_req_end(self, rid):
+        with self._ai_req_lock:
+            self.active_ai_requests.pop(rid, None)
+
+    def ai_requests_snapshot(self) -> list:
+        """Běžící AI požadavky ve tvaru, jaký čeká modal fronty."""
+        now = time.time()
+        with self._ai_req_lock:
+            rows = list(self.active_ai_requests.values())
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["age_s"] = round(now - d.pop("started"), 1)
+            d["created_at"] = ""
+            d["priority"] = None
+            d["worker_id"] = None
+            d["problem_key"] = None
+            out.append(d)
+        return sorted(out, key=lambda x: -x["age_s"])
+
     def execute_ollama(self, prompt, num_ctx=2048, messages=None, max_tokens=None, temperature=0.1):
         self.chat_queue_depth += 1
         _ai_timeout = int(getattr(config, 'AI_TIMEOUT_SECONDS', 180))
@@ -2248,9 +2292,12 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
         # dekrementem čítač napořád nahoře a `finally` uvolní nezamčený semafor.
         _queued = True
         _acquired = False
+        _rid = self._ai_req_begin("execute_ollama",
+                                  prompt or (messages[-1]["content"] if messages else ""))
         try:
             self.llm_semaphore.acquire()
             _acquired = True
+            self._ai_req_running(_rid)
             self.chat_queue_depth -= 1
             _queued = False
             self.metrics["ai_requests"] += 1
@@ -2379,6 +2426,7 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
             self.log_event("ai_error", str(e), level=logging.ERROR)
             return AIResult.failure(f"AI Error: {e}")
         finally:
+            self._ai_req_end(_rid)
             if _queued:
                 self.chat_queue_depth -= 1
             if _acquired:

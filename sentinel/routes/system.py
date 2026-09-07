@@ -1021,7 +1021,10 @@ def create_blueprint(service):
             "ai_latency": m.get('ai_lat', 'N/A'),
             "ai_requests_total": service.metrics.get('ai_requests', 0),
             "ai_errors_total": service.metrics.get('ai_errors', 0),
-            "requests": state.get_queue_items(),
+            # Nejdřív to, co běží teď — čítač "AI fronta" počítá právě tohle.
+            # Dřív se vedle něj vypisovala DB tabulka task_queue, takže modal
+            # hlásil "AI fronta: 1" nad hláškou "Fronta je prázdná".
+            "requests": service.ai_requests_snapshot() + state.get_queue_items(),
             "server_time": _dt.now().strftime("%Y-%m-%d %H:%M:%S"),
         })
 

@@ -257,6 +257,11 @@ def create_blueprint(service):
             if not state.check_command_allowed(sc):
                 return jsonify({"error": f"Příkaz není v allowlistu: {sc}"}), 403
 
+        # `g` je vázané na request kontext, ale generátor běží až po návratu
+        # view — sáhnutí na g.username uvnitř vyhodí RuntimeError a utne
+        # SSE spojení uprostřed výpisu příkazu.
+        _exec_user = g.username
+
         def _generate():
             ssh_user = getattr(config, 'SSH_USER', 'root')
             ssh_key = getattr(config, 'SSH_KEY_PATH', '')
@@ -273,7 +278,7 @@ def create_blueprint(service):
                     yield f"data: {json.dumps({'line': line.rstrip(), 'type': 'out'})}\n\n"
                 proc.wait()
                 rc = proc.returncode
-                state.log_ssh_execute(host, command, g.username, rc == 0, f"stream (rc={rc})")
+                state.log_ssh_execute(host, command, _exec_user, rc == 0, f"stream (rc={rc})")
                 yield f"data: {json.dumps({'done': True, 'rc': rc})}\n\n"
             except Exception as e:
                 yield f"data: {json.dumps({'line': str(e), 'type': 'err', 'done': True})}\n\n"

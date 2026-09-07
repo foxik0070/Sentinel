@@ -343,6 +343,12 @@ def create_blueprint(service):
                 messages = None
                 prompt = f"{system_msg}\n\n{user_msg}\n\nAnswer:"
 
+        # `g` je vázané na request kontext, ale generátor běží až po návratu
+        # view — sáhnutí na g.username uvnitř vyhodí RuntimeError, generátor
+        # umře a server utne SSE spojení. Prohlížeč pak vypíše chybu ZA už
+        # vykreslenou odpovědí a nginx loguje 'upstream prematurely closed'.
+        _stream_user = g.username
+
         def _stream_generator():
             service.chat_queue_depth += 1
             _stream_start = time.time()
@@ -352,9 +358,12 @@ def create_blueprint(service):
             # který se možná vůbec nezamkl — tím tiše roste limit souběžnosti.
             _queued = True
             _acquired = False
+            _rid = service._ai_req_begin("chat_stream", prompt or user_msg,
+                                         channel="chat", host=_stream_user)
             try:
                 service.llm_semaphore.acquire()
                 _acquired = True
+                service._ai_req_running(_rid)
                 service.chat_queue_depth -= 1
                 _queued = False
                 service.metrics["ai_requests"] += 1
@@ -491,20 +500,21 @@ def create_blueprint(service):
                 service.metrics["ai_latency_history"].append(duration)
                 yield f"data: {json.dumps({'done': True, 'duration': duration})}\n\n"
                 service.log_event("rag_chat_stream", "Streaming response sent",
-                               user=g.username, duration_ms=duration*1000)
+                               user=_stream_user, duration_ms=duration*1000)
             except GeneratorExit:
                 duration = round(time.time() - _stream_start, 2)
                 if duration > 0.1:
                     service.metrics["ai_latency_history"].append(duration)
                 raise
             finally:
+                service._ai_req_end(_rid)
                 if _queued:
                     service.chat_queue_depth -= 1
                 if _acquired:
                     service.llm_semaphore.release()
 
         # 430: nasbírat streamované tokeny a uložit odpověď do per-user historie
-        _username = g.username
+        _username = _stream_user
 
         def _capture_and_stream():
             acc = []
