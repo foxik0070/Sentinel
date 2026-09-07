@@ -2248,6 +2248,32 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
         except Exception as e:
             logger.debug(f"gitea_sync: {e}")
 
+    def build_alerts_context(self, limit: int = 15) -> str:
+        """Přehled aktivních issues pro AI kontext.
+
+        Streamovaná větev chatu ho dřív neskládala vůbec — posílala jen
+        historii a knowledge base, takže na "analyzuj aktivní problémy"
+        model odpovídal z KB (o účtech a kvótách) místo o tom, co hoří.
+        Sdílené, aby se obě větve zase nerozešly.
+        """
+        try:
+            active = state.get_active_issues()
+        except Exception as e:
+            utils.log_message(f"[!] build_alerts_context: {e}")
+            return ""
+        if not active:
+            return "Active infrastructure alerts: none right now."
+        top = sorted(active, key=lambda i: i.get('last_seen', '') or '', reverse=True)[:limit]
+        lines = []
+        for i in top:
+            sev = (i.get('severity') or '').upper()
+            chan = (i.get('channel_type') or '?').upper()
+            tag = f"{chan}/{sev}" if sev else chan
+            lines.append(f"- {i.get('host', '?')} [{tag}] {(i.get('last_line') or '')[:160]}")
+        header = f"Active infrastructure alerts ({len(active)} total"
+        header += f", {len(top)} most recent shown):" if len(active) > len(top) else "):"
+        return header + "\n" + "\n".join(lines)
+
     def _ai_req_begin(self, source: str, text: str, channel: str = "ai", host: str = "-"):
         """Zaeviduje AI požadavek jako čekající. Vrací id pro _ai_req_* volání."""
         with self._ai_req_lock:
@@ -2484,17 +2510,7 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
         history_str = self.conv_history(username, -5, -1)
 
         # Active alerts summary — top 5 by severity/recency
-        alerts_note = ""
-        try:
-            active = state.get_active_issues()
-            if active:
-                top = sorted(active, key=lambda i: i.get('last_seen', ''), reverse=True)[:5]
-                alerts_note = "Active infrastructure alerts: " + "; ".join(
-                    f"{i.get('host','?')} [{(i.get('channel_type','?')).upper()}]: {(i.get('last_line',''))[:60]}"
-                    for i in top
-                )
-        except Exception:
-            pass
+        alerts_note = self.build_alerts_context()
 
         # Host OS summary so AI suggests distro-appropriate commands
         os_summary = ""
