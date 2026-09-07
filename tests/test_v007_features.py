@@ -76,6 +76,84 @@ class TestRootAuditDedup(unittest.TestCase):
             os.unlink(path)
 
 
+class TestRootSessionReconcile(unittest.TestCase):
+    """Opakované hlášení téže relace nesmí množit řádky ani resetovat connected_at.
+
+    Agent cesta dřív při každém hlášení všechny aktivní záznamy hostitele
+    zavřela a vložila znovu — jeden stroj tak vyrobil 126 řádků za 36 minut,
+    tabulka narostla na 105 tisíc a "historie relací" byla historie pollů.
+    """
+    MSG = ("🟢 [ACTIVE] pts/0 from 10.34.1.4 (since 2026-08-20 11:47) | "
+           "🟢 [ACTIVE] pts/1 from 10.34.1.4 (since 2026-08-19 10:53)")
+
+    def _conn(self):
+        c = sqlite3.connect(":memory:")
+        c.execute("CREATE TABLE root_audit (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                  "server TEXT, ip TEXT, connected_at TEXT, disconnected_at TEXT, "
+                  "is_active INTEGER, last_seen TEXT, tty TEXT)")
+        return c
+
+    def test_parser_reads_tty_ip_and_since(self):
+        from sentinel import state_agents as sa
+        s = sa.parse_root_sessions(self.MSG)
+        self.assertEqual([x['tty'] for x in s], ['pts/0', 'pts/1'])
+        self.assertEqual(s[0]['ip'], '10.34.1.4')
+        self.assertEqual(s[0]['since'], '2026-08-20 11:47')
+
+    def test_repeated_report_does_not_grow_table(self):
+        from sentinel import state_agents as sa
+        conn = self._conn()
+        sessions = sa.parse_root_sessions(self.MSG)
+        for i in range(5):
+            sa.reconcile_root_sessions(conn, 'login1.barbora2', sessions, f'2026-09-08T00:0{i}:00+00:00')
+        n = conn.execute("SELECT COUNT(*) FROM root_audit").fetchone()[0]
+        self.assertEqual(n, 2, "pět hlášení téže dvojice relací musí dát dva řádky, ne deset")
+        active = conn.execute("SELECT COUNT(*) FROM root_audit WHERE is_active=1").fetchone()[0]
+        self.assertEqual(active, 2)
+        conn.close()
+
+    def test_connected_at_is_login_time_not_poll_time(self):
+        from sentinel import state_agents as sa
+        conn = self._conn()
+        sessions = sa.parse_root_sessions(self.MSG)
+        sa.reconcile_root_sessions(conn, 'h', sessions, '2026-09-08T00:00:00+00:00')
+        sa.reconcile_root_sessions(conn, 'h', sessions, '2026-09-08T02:00:00+00:00')
+        ca = conn.execute("SELECT connected_at FROM root_audit WHERE tty='pts/0'").fetchone()[0]
+        self.assertEqual(ca, '2026-08-20T11:47:00',
+                         "connected_at musí držet čas přihlášení, jinak délka relace lže")
+        conn.close()
+
+    def test_two_sessions_same_ip_stay_separate(self):
+        from sentinel import state_agents as sa
+        conn = self._conn()
+        sa.reconcile_root_sessions(conn, 'h', sa.parse_root_sessions(self.MSG), '2026-09-08T00:00:00+00:00')
+        n = conn.execute("SELECT COUNT(*) FROM root_audit WHERE is_active=1").fetchone()[0]
+        self.assertEqual(n, 2, "pts/0 a pts/1 ze stejné IP jsou dvě relace, ne jedna")
+        conn.close()
+
+    def test_unreported_session_gets_closed(self):
+        from sentinel import state_agents as sa
+        conn = self._conn()
+        sa.reconcile_root_sessions(conn, 'h', sa.parse_root_sessions(self.MSG), '2026-09-08T00:00:00+00:00')
+        only_one = sa.parse_root_sessions("🟢 [ACTIVE] pts/0 from 10.34.1.4 (since 2026-08-20 11:47)")
+        new, kept, closed = sa.reconcile_root_sessions(conn, 'h', only_one, '2026-09-08T00:05:00+00:00')
+        self.assertEqual((new, kept, closed), (0, 1, 1))
+        row = conn.execute("SELECT is_active, disconnected_at FROM root_audit WHERE tty='pts/1'").fetchone()
+        self.assertEqual(row[0], 0)
+        self.assertIsNotNone(row[1])
+        conn.close()
+
+    def test_relogin_on_same_tty_is_a_new_session(self):
+        from sentinel import state_agents as sa
+        conn = self._conn()
+        sa.reconcile_root_sessions(conn, 'h', sa.parse_root_sessions(self.MSG), '2026-09-08T00:00:00+00:00')
+        relogin = sa.parse_root_sessions("🟢 [ACTIVE] pts/0 from 10.34.1.4 (since 2026-09-08 09:00)")
+        new, _kept, closed = sa.reconcile_root_sessions(conn, 'h', relogin, '2026-09-08T09:01:00+00:00')
+        self.assertEqual(new, 1, "jiný čas přihlášení na stejném pts je nová relace")
+        self.assertEqual(closed, 2, "obě původní relace už se nehlásí")
+        conn.close()
+
+
 class TestRootAuditMigration(unittest.TestCase):
     """Migrace musí běžícím relacím nastavit last_seen, ne je nechat NULL.
 

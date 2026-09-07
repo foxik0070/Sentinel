@@ -1,5 +1,35 @@
 # Historie změn
 
+## [2026.09.005] - 2026-09-08
+
+**Souhrn:** Agent cesta root auditu už relace nemaže a nevkládá znovu — potvrzuje je. Tím přestala růst tabulka a délka relace konečně měří délku relace.
+
+### Root audit: konec znovuvkládání při každém hlášení
+
+Agent cesta při **každém** hlášení root monitoru zavřela všechny aktivní záznamy hostitele a vložila je znovu. Jeden stroj tak vyrobil 126 řádků za 36 minut, tabulka narostla na 105 tisíc řádků a rostla o 300–400 za hodinu.
+
+Dva důsledky:
+
+- „Historie relací" nebyla historie relací, ale historie pollů. Modal má `LIMIT 100` a těch sto nejnovějších řádků zabral jediný cluster — Karolina, CS ani infrastrukturní servery se do okna nevešly.
+- `connected_at` se resetoval při každém pollu, takže „Délka relace" ukazovala dobu od posledního hlášení, ne od přihlášení.
+
+Hlášení přitom nese plnou identitu relace:
+
+```
+🟢 [ACTIVE] pts/0 from 10.34.1.4 (since 2026-08-20 11:47)
+```
+
+Nově se relace sesouhlasí podle `(server, tty, čas přihlášení)`:
+
+- trvající relace se jen potvrdí (`last_seen`)
+- nová se vloží s `connected_at` = **skutečný čas přihlášení** z hlášení
+- relace, kterou agent přestal hlásit, se uzavře
+- dvě souběžné relace z téže IP (`pts/0` i `pts/3` z 10.34.1.4) zůstávají oddělené — proto nový sloupec `root_audit.tty`
+- opětovné přihlášení na stejné pts je nová relace, protože má jiný čas přihlášení
+
+Čas přihlášení hlásí agent bez zóny, takže se ukládá tak, jak přišel — dosazovat mu UTC by posunulo délku relace o offset stroje.
+
+
 ## [2026.09.004] - 2026-09-08
 
 **Souhrn:** Doimplementován File Integrity Monitoring, který dosud existoval jen v configu a dokumentaci. Detekce vymyšlených strojů v AI odpovědích chytá i názvy bez uvozujícího slova.
