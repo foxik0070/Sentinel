@@ -273,6 +273,9 @@ def main():
     # Pozice v logách: po SIGKILL se přehraje maximálně poslední minuta
     OFFSET_SAVE_INTERVAL = 60
     offset_counter = 0
+    # FIM: SHA-256 sledovaných souborů každou minutu (dle dokumentace 11.7)
+    FIM_CHECK_INTERVAL = 60
+    fim_counter = 0
     _scheme = "https" if getattr(config, 'HTTPS_ENABLED', False) else "http"
     WEB_URL = f"{_scheme}://127.0.0.1:{config.WEB_PORT}/api/status_check"
 
@@ -326,10 +329,20 @@ def main():
             stale_counter += 1
             fix_verify_counter += 1
             offset_counter += 1
+            fim_counter += 1
 
             if offset_counter >= OFFSET_SAVE_INTERVAL:
                 offset_counter = 0
                 watcher.save_offsets(dict(log_handler._file_positions))
+
+            if fim_counter >= FIM_CHECK_INTERVAL:
+                fim_counter = 0
+                try:
+                    _changed = watcher.fim_check()
+                    if _changed:
+                        utils.log_message(f"FIM: změna integrity u {len(_changed)} souborů: {', '.join(_changed)}")
+                except Exception as _e:
+                    utils.log_message(f"[!] FIM check failed: {_e}")
 
             if not ollama_thread.is_alive():
                 utils.log_message("CRITICAL: Ollama worker died!")

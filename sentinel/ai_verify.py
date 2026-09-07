@@ -22,7 +22,10 @@ logger = logging.getLogger(__name__)
 
 # Hostname: alfanumerické skupiny oddělené tečkou/pomlčkou. Uvnitř kódu
 # a URL se nechytá, to řešíme níž.
-_HOST_RE = re.compile(r'\b([a-z][a-z0-9]*(?:[-.][a-z0-9]+)+)\b', re.I)
+# Písmena bereme unicodově — model píše česky a halucinovaný název klidně
+# nese diakritiku ("vymyslený-stroj-9"). S [a-z] by se takový token rozpadl
+# na kusy a neprošel vůbec.
+_HOST_RE = re.compile(r'\b([^\W\d_][^\W_]*(?:[-.][^\W_]+)+)\b', re.UNICODE)
 _SERVICE_RE = re.compile(r'\b([a-z][a-z0-9_-]{2,40}\.service)\b', re.I)
 
 # Jednoslovný název (bez tečky a pomlčky) se od běžného podstatného jména
@@ -86,9 +89,13 @@ def _looks_like_host(token: str) -> bool:
         return False
     if len(t) < 4 or len(t) > 63:
         return False
-    # Hyphenated token without dots is much more likely a command than a hostname
+    # Token s pomlčkou a bez tečky bývá spíš příkaz (apt-get, dry-run,
+    # read-only) než stroj. Výjimka je číslovaný segment — "db-master-01",
+    # "cache-node-7": tak se jmenují stroje, ne příkazy. Bez téhle výjimky
+    # projde halucinovaný název jen tehdy, když ho model uvede slovem
+    # "stroj/server", což u holého "Zkontroluj db-master-01" neplatí.
     if '.' not in t and '-' in t:
-        return False
+        return any(seg.isdigit() for seg in t.split('-'))
     return True
 
 

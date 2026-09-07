@@ -1,5 +1,30 @@
 # Historie změn
 
+## [2026.09.004] - 2026-09-08
+
+**Souhrn:** Doimplementován File Integrity Monitoring, který dosud existoval jen v configu a dokumentaci. Detekce vymyšlených strojů v AI odpovědích chytá i názvy bez uvozujícího slova.
+
+### File Integrity Monitoring — implementace (176)
+
+FIM měl config (`fim.enabled`, `fim.paths`), dokumentaci i testy, ale **žádnou implementaci**. Volal ho jen `sentinel/scheduler.py`, který nikdo neimportoval a který byl v 2026.08.x smazán jako mrtvý kód — `watcher.fim_check` v něm byl jeden ze tří odkazů na neexistující symboly.
+
+Nově `watcher.fim_check()` počítá SHA-256 sledovaných souborů a porovnává je s baseline v `kv_settings['fim_state']`. Volá se z hlavní smyčky každou minutu.
+
+- první běh baseline jen založí — jinak by po zapnutí vyskočil každý sledovaný soubor najednou
+- změna zakládá issue `FIM_CHANGE|<cesta>` v kanálu `security`, plugin `file_integrity_monitor`, severity `high`
+- baseline se posouvá i u nahlášené změny, takže se táž změna nehlásí dokola
+- rozlišuje smazání, znovuobjevení a změnu obsahu
+- **nečitelný soubor baseline nepřepíše** — chybějící oprávnění není integritní událost a nesmí zahodit původní otisk
+- prázdný `fim.paths` spadne na `DEFAULT_FIM_PATHS` (passwd, shadow, group, sudoers, sshd_config, hosts, crontab)
+
+### Detekce vymyšlených strojů — názvy bez uvozujícího slova
+
+`ai_verify` označil halucinovaný stroj jen tam, kde ho model uvedl slovem („na stroji web-server-03"). Holé „Zkontroluj db-master-01" prošlo, protože filtr zahazoval každý token s pomlčkou a bez tečky jako příkaz.
+
+- token s pomlčkou projde, když má **číselný segment** (`db-master-01`, `cache-node-7`) — tak se jmenují stroje, ne příkazy; `read-only`, `dry-run`, `self-signed` zůstávají odfiltrované
+- hostname regex pracuje unicodově — s `[a-z]` se `vymyslený-stroj-9` rozpadl na kusy a neprošel vůbec
+
+
 ## [2026.09.003] - 2026-09-08
 
 **Souhrn:** Oprava migrace root_audit — sweep uzavíral i relace, které stále běží.
