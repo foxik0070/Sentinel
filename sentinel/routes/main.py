@@ -169,7 +169,10 @@ def create_blueprint(service, socketio):
             conn = state._get_conn()
             try:
                 c = conn.execute("SELECT server, ip, connected_at, is_active, disconnected_at FROM root_audit ORDER BY is_active DESC, connected_at DESC LIMIT 100")
-                rows = [{"server": r[0], "ip": r[1], "connected_at": r[2], "is_active": bool(r[3]), "disconnected_at": r[4]} for r in c.fetchall()]
+                from .. import api as _api
+                rows = [{"server": r[0], "ip": r[1], "connected_at": r[2], "is_active": bool(r[3]),
+                         "disconnected_at": r[4], "cluster": _api.get_cluster_from_host(r[0])}
+                        for r in c.fetchall()]
             finally:
                 conn.close()
         return jsonify(rows)

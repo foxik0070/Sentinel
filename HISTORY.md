@@ -1,5 +1,18 @@
 # Historie změn
 
+## [2026.09.002] - 2026-09-08
+
+**Souhrn:** Root Audit — historie relací seskupená podle clusteru a serveru.
+
+### Root Audit — přehlednější historie relací
+
+Modal vypisoval až 100 relací plochým seznamem, ve kterém nešlo nic najít. Nově jsou relace seskupené do sbalitelných sekcí **cluster → server**, u každé skupiny počet relací a kolik z nich je aktivních. Skupiny s aktivní relací jsou nahoře, zbytek abecedně.
+
+- `/api/root_audit` vrací navíc `cluster` (odvozeno přes `api.get_cluster_from_host()`, tedy dle `host_cluster_rules`)
+- sloupec Server ve výpisu nahrazen časem připojení — server je teď v hlavičce skupiny
+- kliknutím na server se skupina sbalí/rozbalí
+
+
 ## [2026.09.001] - 2026-09-08
 
 **Souhrn:** Oprava zamrzávání celého procesu při zavírání DB spojení (skutečná příčina watchdog ABRT pádů i nedostupného UI), expirace root relací, které detektor přestal hlásit.
