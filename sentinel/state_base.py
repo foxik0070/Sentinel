@@ -278,6 +278,13 @@ def init_db():
             _ra_cols = {r[1] for r in c.fetchall()}
             if 'last_seen' not in _ra_cols:
                 c.execute("ALTER TABLE root_audit ADD COLUMN last_seen TEXT")
+                # Běžícím relacím dát jedno plné okno navíc. add_root_audit je
+                # idempotentní — trvající relaci jen mlčky potvrdí, takže než
+                # migrace proběhla, nebylo to potvrzení kam zapsat. Bez tohohle
+                # by sweep spadl na connected_at a uzavřel i relace, které žijí
+                # (typicky root přihlášený přes SSH už několik dní).
+                c.execute("UPDATE root_audit SET last_seen = ? WHERE is_active = 1",
+                          (datetime.now(timezone.utc).isoformat(),))
 
             c.execute('''CREATE TABLE IF NOT EXISTS action_audit
                          (id INTEGER PRIMARY KEY AUTOINCREMENT,

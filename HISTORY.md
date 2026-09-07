@@ -1,5 +1,18 @@
 # Historie změn
 
+## [2026.09.003] - 2026-09-08
+
+**Souhrn:** Oprava migrace root_audit — sweep uzavíral i relace, které stále běží.
+
+### Migrace root_audit nesmí uzavřít živé relace
+
+`add_root_audit()` je idempotentní: trvající relaci jen mlčky potvrdí a nový řádek nevytvoří. Dokud neexistoval sloupec `last_seen`, nebylo to potvrzení kam zapsat — a sweep z 2026.09.001 proto spadl na `connected_at` a uzavřel i relace, které běžely (typicky root přihlášený přes SSH už několik dní).
+
+Migrace nyní běžícím relacím (`is_active=1`) nastaví `last_seen` na čas migrace. Dostanou tím jedno plné okno `root_audit_stale_minutes` navíc, ve kterém je detektor stihne potvrdit. Neaktivních řádků se to netýká.
+
+Projevilo se to na instanci s velkou historií: po prvním běhu sweepu zmizely z aktivních relací celé clustery, které ve skutečnosti běžely dál.
+
+
 ## [2026.09.002] - 2026-09-08
 
 **Souhrn:** Root Audit — historie relací seskupená podle clusteru a serveru.

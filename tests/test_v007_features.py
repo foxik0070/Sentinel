@@ -76,6 +76,43 @@ class TestRootAuditDedup(unittest.TestCase):
             os.unlink(path)
 
 
+class TestRootAuditMigration(unittest.TestCase):
+    """Migrace musí běžícím relacím nastavit last_seen, ne je nechat NULL.
+
+    add_root_audit je idempotentní — trvající relaci jen mlčky potvrdí. Před
+    migrací nebylo to potvrzení kam zapsat, takže sweep by spadl na connected_at
+    a uzavřel i relace, které dávno běží (root přes SSH několik dní).
+    """
+    def test_active_sessions_get_last_seen_backfilled(self):
+        from sentinel import state_base
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "mig.db")
+        old = sqlite3.connect(path)
+        old.execute("CREATE TABLE root_audit (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                    "server TEXT, ip TEXT, connected_at TEXT, disconnected_at TEXT, is_active INTEGER)")
+        # živá relace z minulého týdne + dávno uzavřená
+        old.execute("INSERT INTO root_audit (server, ip, connected_at, is_active) "
+                    "VALUES ('KAROLINA','10.0.0.1','2026-09-01T10:00:00+00:00',1)")
+        old.execute("INSERT INTO root_audit (server, ip, connected_at, disconnected_at, is_active) "
+                    "VALUES ('CS','10.0.0.2','2026-09-01T10:00:00+00:00','2026-09-01T11:00:00+00:00',0)")
+        old.commit()
+        old.close()
+
+        orig = state_base.DB_FILE
+        state_base.DB_FILE = path
+        try:
+            state_base.init_db()
+            conn = sqlite3.connect(path)
+            act = conn.execute("SELECT last_seen FROM root_audit WHERE is_active=1").fetchone()[0]
+            ina = conn.execute("SELECT last_seen FROM root_audit WHERE is_active=0").fetchone()[0]
+            conn.close()
+            self.assertIsNotNone(act, "běžící relace musí po migraci mít last_seen, jinak ji sweep zavře")
+            self.assertIsNone(ina, "uzavřené relaci není co doplňovat")
+        finally:
+            state_base.DB_FILE = orig
+            shutil.rmtree(d, ignore_errors=True)
+
+
 class TestKeeperConnection(unittest.TestCase):
     """Keeper musí DB skutečně otevřít, ne se jen 'připojit'.
 
