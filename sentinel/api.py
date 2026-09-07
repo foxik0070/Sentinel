@@ -269,7 +269,7 @@ def add_root_audit(server: str, ip: str):
             conn.execute("UPDATE root_audit SET last_seen=? WHERE id=?", (now, existing[0]))
         else:
             conn.execute(
-                "INSERT INTO root_audit (server, ip, connected_at, is_active, last_seen) VALUES (?, ?, ?, 1, ?)",
+                "INSERT INTO root_audit (server, ip, connected_at, is_active, last_seen, origin) VALUES (?, ?, ?, 1, ?, 'detector')",
                 (server, display, now, now)
             )
         conn.commit()

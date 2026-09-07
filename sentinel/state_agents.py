@@ -810,8 +810,8 @@ def reconcile_root_sessions(conn, hostname: str, sessions: list, now: str) -> tu
                          (now, s['ip'], row_id))
         else:
             conn.execute(
-                "INSERT INTO root_audit (server, ip, tty, connected_at, is_active, last_seen) "
-                "VALUES (?, ?, ?, ?, 1, ?)",
+                "INSERT INTO root_audit (server, ip, tty, connected_at, is_active, last_seen, origin) "
+                "VALUES (?, ?, ?, ?, 1, ?, 'agent')",
                 (hostname, s['ip'], s['tty'], connected_at, now)
             )
             new_count += 1
