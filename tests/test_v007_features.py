@@ -42,7 +42,8 @@ class TestRootAuditDedup(unittest.TestCase):
         conn = sqlite3.connect(path)
         conn.execute(
             "CREATE TABLE root_audit (id INTEGER PRIMARY KEY AUTOINCREMENT, "
-            "server TEXT, ip TEXT, connected_at TEXT, disconnected_at TEXT, is_active INTEGER)"
+            "server TEXT, ip TEXT, connected_at TEXT, disconnected_at TEXT, is_active INTEGER, "
+            "last_seen TEXT)"
         )
         conn.commit()
         conn.close()
@@ -72,6 +73,50 @@ class TestRootAuditDedup(unittest.TestCase):
         finally:
             state_base.DB_FILE = orig
             os.unlink(path)
+
+
+class TestRootAuditStaleSweep(unittest.TestCase):
+    """Root relace, kterou detektor přestal hlásit, musí zestárnout do is_active=0.
+
+    Replikace SQL z agent_watchdog_loop — testuje přímo DB logiku včetně
+    formátů timestampů, které se v root_audit reálně vyskytují.
+    """
+    SWEEP = ("UPDATE root_audit SET disconnected_at = ?, is_active = 0 "
+             "WHERE is_active = 1 AND julianday(COALESCE(last_seen, connected_at)) "
+             "      < julianday('now', ?)")
+
+    def test_stale_closed_fresh_kept(self):
+        from datetime import datetime, timezone, timedelta
+        now = datetime.now(timezone.utc)
+        conn = sqlite3.connect(":memory:")
+        conn.execute(
+            "CREATE TABLE root_audit (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "server TEXT, ip TEXT, connected_at TEXT, disconnected_at TEXT, is_active INTEGER, "
+            "last_seen TEXT)"
+        )
+        cases = [
+            # (popis, connected_at, last_seen, ma_se_uzavrit)
+            ("orphan bez last_seen (plugin cesta, 67 dní)", "2026-07-02T22:30:52.765777+00:00", None, True),
+            ("Z-suffix, dávno neplatná", "2026-08-01T10:00:00Z", None, True),
+            ("potvrzená před minutou", (now - timedelta(days=5)).isoformat(),
+             (now - timedelta(minutes=1)).isoformat(), False),
+            ("nepotvrzená 45 min", (now - timedelta(hours=3)).isoformat(),
+             (now - timedelta(minutes=45)).isoformat(), True),
+            ("nepotvrzená 29 min — těsně pod limitem", (now - timedelta(hours=3)).isoformat(),
+             (now - timedelta(minutes=29)).isoformat(), False),
+            ("čerstvá bez last_seen", (now - timedelta(minutes=2)).isoformat(), None, False),
+        ]
+        for i, (_, ca, ls, _exp) in enumerate(cases, 1):
+            conn.execute("INSERT INTO root_audit (id, server, ip, connected_at, is_active, last_seen) "
+                         "VALUES (?, 'S', '1.2.3.4', ?, 1, ?)", (i, ca, ls))
+
+        conn.execute(self.SWEEP, (now.isoformat(), '-30 minutes'))
+
+        for i, (desc, _ca, _ls, expect_closed) in enumerate(cases, 1):
+            active = conn.execute("SELECT is_active FROM root_audit WHERE id=?", (i,)).fetchone()[0]
+            self.assertEqual(active == 0, expect_closed,
+                             f"{desc}: očekáváno {'uzavřít' if expect_closed else 'ponechat'}")
+        conn.close()
 
 
 class TestReverseDns(unittest.TestCase):

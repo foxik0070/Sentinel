@@ -1083,7 +1083,7 @@ def create_blueprint(service):
                                             _m = re.search(r'from ([a-zA-Z][\w\.\-]*)', s_msg)
                                             if _m and not _m.group(1).startswith('tmux'):
                                                 _ip = _m.group(1)
-                                        conn.execute("INSERT INTO root_audit (server, ip, connected_at, is_active) VALUES (?, ?, ?, 1)", (hostname, _ip, now))
+                                        conn.execute("INSERT INTO root_audit (server, ip, connected_at, is_active, last_seen) VALUES (?, ?, ?, 1, ?)", (hostname, _ip, now, now))
                                 else:
                                     conn.execute("UPDATE root_audit SET disconnected_at = ?, is_active = 0 WHERE server = ? AND is_active = 1", (now, hostname))
                             finally:

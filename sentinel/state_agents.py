@@ -636,6 +636,24 @@ def agent_watchdog_loop():
                         conn.commit()
                     except Exception as fe2:
                         logger.error(f"Watchdog: fail2ban cleanup error: {fe2}")
+
+                    # Uzavřít root relace, které detektor přestal hlásit.
+                    # Bez toho zůstanou is_active=1 navždy — pruning maže jen
+                    # is_active=0, takže je přeskočí. COALESCE kvůli záznamům
+                    # z doby před sloupcem last_seen.
+                    try:
+                        _stale_min = int(getattr(config, 'ROOT_AUDIT_STALE_MINUTES', 30))
+                        cur = conn.execute(
+                            "UPDATE root_audit SET disconnected_at = ?, is_active = 0 "
+                            "WHERE is_active = 1 AND julianday(COALESCE(last_seen, connected_at)) "
+                            "      < julianday('now', ?)",
+                            (now.isoformat(), f'-{_stale_min} minutes')
+                        )
+                        if cur.rowcount:
+                            logger.info(f"Watchdog: uzavřeno {cur.rowcount} root relací bez potvrzení >{_stale_min} min")
+                        conn.commit()
+                    except Exception as ra_err:
+                        logger.error(f"Watchdog: root_audit stale cleanup error: {ra_err}")
                 finally:
                     conn.close()
 
