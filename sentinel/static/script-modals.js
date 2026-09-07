@@ -2280,7 +2280,7 @@ function _renderRootAudit(activeOnly) {
                     html += `
                         <tr data-ra-group="${gid}" style="border-bottom:1px solid var(--border); ${activeBg}">
                             <td style="padding:8px 14px 8px 46px; color:var(--text-muted); font-size:0.85em;">${new Date(r.connected_at).toLocaleString()}</td>
-                            <td style="padding:8px 14px; font-family:monospace; color:var(--text-muted);">root</td>
+                            <td style="padding:8px 14px; font-family:monospace; color:var(--text-muted);">root${r.tty ? `<span style="opacity:.6;">@${_escape(r.tty)}</span>` : ''}</td>
                             <td style="padding:8px 14px; font-family:monospace; color:#aaa; font-size:0.9em;">${_escape(r.ip)}</td>
                             <td style="padding:8px 14px;">${statusBadge}</td>
                             <td style="padding:8px 14px; font-size:0.85em; color:${r.is_active ? 'var(--warning)' : 'var(--text-muted)'}; font-family:monospace;">${duration}</td>

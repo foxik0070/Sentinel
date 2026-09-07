@@ -1,5 +1,22 @@
 # Historie změn
 
+## [2026.09.006] - 2026-09-08
+
+**Souhrn:** Historie root relací se limituje na cluster, ne globálně — tiché clustery už nevytlačí ten rušný.
+
+### Root Audit: 30 posledních relací na cluster
+
+Modal bral `LIMIT 100` přes celou tabulku. Stovka nejnovějších řádků patřila jedinému clusteru, takže Karolina, CS ani infrastrukturní servery ve výpisu vůbec nebyly — i když relace měly.
+
+Nově se bere posledních `root_audit_history_per_cluster` (výchozí 30) **na cluster**. Aktivní relace projdou vždy, bez ohledu na strop — kvůli nim se do modalu člověk dívá. Dotaz zůstává omezený i nad stovkami tisíc řádků, protože okno `ROW_NUMBER() OVER (PARTITION BY server)` ořízne kandidáty už v SQL.
+
+```yaml
+root_audit_history_per_cluster: 30   # výchozí
+```
+
+Ve výpisu navíc přibylo `tty` (`root@pts/0`) — bez něj nešly odlišit dvě souběžné relace téhož roota ze stejné IP.
+
+
 ## [2026.09.005] - 2026-09-08
 
 **Souhrn:** Agent cesta root auditu už relace nemaže a nevkládá znovu — potvrzuje je. Tím přestala růst tabulka a délka relace konečně měří délku relace.

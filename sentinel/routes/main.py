@@ -168,11 +168,32 @@ def create_blueprint(service, socketio):
         with state.db_lock:
             conn = state._get_conn()
             try:
-                c = conn.execute("SELECT server, ip, connected_at, is_active, disconnected_at FROM root_audit ORDER BY is_active DESC, connected_at DESC LIMIT 100")
+                # Globální limit dával celé okno jedinému rušnému clusteru —
+                # ostatní se do výpisu nedostaly vůbec. Bereme proto posledních
+                # N na cluster; okno per server drží dotaz omezený i na tabulce
+                # se stovkami tisíc řádků.
+                per_cluster = int(getattr(config, 'ROOT_AUDIT_HISTORY_PER_CLUSTER', 30))
+                c = conn.execute(
+                    "SELECT server, ip, tty, connected_at, is_active, disconnected_at FROM ("
+                    "  SELECT server, ip, tty, connected_at, is_active, disconnected_at,"
+                    "         ROW_NUMBER() OVER (PARTITION BY server"
+                    "                            ORDER BY is_active DESC, connected_at DESC) AS rn"
+                    "  FROM root_audit"
+                    ") WHERE rn <= ? ORDER BY is_active DESC, connected_at DESC",
+                    (per_cluster,)
+                )
                 from .. import api as _api
-                rows = [{"server": r[0], "ip": r[1], "connected_at": r[2], "is_active": bool(r[3]),
-                         "disconnected_at": r[4], "cluster": _api.get_cluster_from_host(r[0])}
-                        for r in c.fetchall()]
+                rows, _per_cluster_seen = [], {}
+                for r in c.fetchall():
+                    cluster = _api.get_cluster_from_host(r[0])
+                    active = bool(r[4])
+                    # Aktivní relace projdou vždy — kvůli nim se sem člověk dívá.
+                    if not active:
+                        if _per_cluster_seen.get(cluster, 0) >= per_cluster:
+                            continue
+                        _per_cluster_seen[cluster] = _per_cluster_seen.get(cluster, 0) + 1
+                    rows.append({"server": r[0], "ip": r[1], "tty": r[2], "connected_at": r[3],
+                                 "is_active": active, "disconnected_at": r[5], "cluster": cluster})
             finally:
                 conn.close()
         return jsonify(rows)
