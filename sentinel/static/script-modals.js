@@ -1665,7 +1665,7 @@ async function loadPendingActions(isAutoRefresh = false) {
     const empty = document.getElementById('pending-actions-empty');
     const table = document.getElementById('pending-actions-table');
     if (!isAutoRefresh) {
-        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:20px; color:#666;"><i class="fa-solid fa-spinner fa-spin"></i> ${t('loading')}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:20px; color:#666;"><i class="fa-solid fa-spinner fa-spin"></i> ${t('loading')}</td></tr>`;
     }
     try {
         const res = await fetch('/api/v1/actions?status=pending&mode=dry_run');
@@ -1719,7 +1719,7 @@ async function loadPendingActions(isAutoRefresh = false) {
         }).join('');
     } catch (e) {
         if (!isAutoRefresh) {
-            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:20px; color:var(--error);">${t('load_error_detail', {msg: _escape(e.message || e)})}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:20px; color:var(--error);">${t('load_error_detail', {msg: _escape(e.message || e)})}</td></tr>`;
         }
     }
 }
@@ -1861,7 +1861,7 @@ async function loadAllowedCmds() {
         const d = await res.json();
         const rules = d.rules || [];
         if (!rules.length) {
-            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-muted,#888);padding:14px;">${t('no_rules_yet')}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-muted,#888);padding:14px;">${t('no_rules_yet')}</td></tr>`;
             return;
         }
         tbody.innerHTML = rules.map(r => `
@@ -1877,7 +1877,7 @@ async function loadAllowedCmds() {
                 </td>
             </tr>`).join('');
     } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="6" style="color:var(--error,#dc3545);padding:12px;">${t('rules_load_error', {msg: _escape(String(e))})}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" style="color:var(--error,#dc3545);padding:12px;">${t('rules_load_error', {msg: _escape(String(e))})}</td></tr>`;
     }
 }
 
@@ -2187,7 +2187,7 @@ function openRootAudit() {
     const activeOnly = document.getElementById('root-active-only')?.checked || false;
 
     if (!_rootAuditData.length) {
-        tbody.innerHTML = `<tr><td colspan="6" style="padding:30px; text-align:center; color:#666;"><i class="fa-solid fa-spinner fa-spin"></i></td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" style="padding:30px; text-align:center; color:#666;"><i class="fa-solid fa-spinner fa-spin"></i></td></tr>`;
     }
 
     fetch('/api/root_audit')
@@ -2198,7 +2198,7 @@ function openRootAudit() {
         })
         .catch(err => {
             console.error(t('root_audit_load_error'), err);
-            tbody.innerHTML = `<tr><td colspan="6" style="padding:20px; text-align:center; color:var(--error);"><i class="fa-solid fa-circle-exclamation"></i> ${t('load_error')}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="5" style="padding:20px; text-align:center; color:var(--error);"><i class="fa-solid fa-circle-exclamation"></i> ${t('load_error')}</td></tr>`;
         });
 }
 
@@ -2218,22 +2218,86 @@ function _renderRootAudit(activeOnly) {
     }
     if (emptyEl) emptyEl.style.display = 'none';
 
-    tbody.innerHTML = data.map(r => {
-        const activeBg = r.is_active ? 'background:rgba(255,193,7,0.05);' : '';
-        const statusBadge = r.is_active
-            ? `<span style="display:inline-flex;align-items:center;gap:5px;background:rgba(255,193,7,0.15);color:#ffc107;font-weight:bold;padding:3px 8px;border-radius:4px;border:1px solid rgba(255,193,7,0.4);font-size:0.85em;"><i class="fa-solid fa-plug"></i> ${t('root_active_badge')}</span>`
-            : `<span style="display:inline-flex;align-items:center;gap:5px;color:var(--offline);font-size:0.85em;"><i class="fa-solid fa-power-off"></i> ${t('disconnected')}</span>`;
-        const duration = _fmtDuration(r.connected_at, r.disconnected_at);
-        return `
-            <tr style="border-bottom:1px solid var(--border); ${activeBg}">
-                <td style="padding:10px 14px; font-weight:bold; color:var(--text-main);">${_escape(r.server)}</td>
-                <td style="padding:10px 14px; font-family:monospace; color:var(--text-muted);">root</td>
-                <td style="padding:10px 14px; font-family:monospace; color:#aaa; font-size:0.9em;">${_escape(r.ip)}</td>
-                <td style="padding:10px 14px; font-size:0.85em; color:var(--text-muted);">${new Date(r.connected_at).toLocaleString()}</td>
-                <td style="padding:10px 14px;">${statusBadge}</td>
-                <td style="padding:10px 14px; font-size:0.85em; color:${r.is_active ? 'var(--warning)' : 'var(--text-muted)'}; font-family:monospace;">${duration}</td>
+    // Seskupení cluster -> server. Ploché stovky řádků jsou nepřehledné;
+    // relace stejného stroje patří k sobě.
+    const clusters = new Map();
+    data.forEach(r => {
+        const cl = r.cluster || '—', sv = r.server || '—';
+        if (!clusters.has(cl)) clusters.set(cl, new Map());
+        const servers = clusters.get(cl);
+        if (!servers.has(sv)) servers.set(sv, []);
+        servers.get(sv).push(r);
+    });
+    // Aktivní nahoru, pak abecedně
+    const byActivity = (a, b) => (b[1] - a[1]) || a[0].localeCompare(b[0]);
+    const countActive = rows => rows.filter(r => r.is_active).length;
+
+    let html = '';
+    const clusterList = [...clusters.entries()]
+        .map(([cl, servers]) => [cl, [...servers.values()].flat()])
+        .map(([cl, rows]) => [cl, countActive(rows)])
+        .sort(byActivity);
+
+    clusterList.forEach(([cl]) => {
+        const servers = clusters.get(cl);
+        const clRows = [...servers.values()].flat();
+        const clActive = countActive(clRows);
+        html += `
+            <tr class="ra-cluster" style="background:rgba(255,255,255,0.05); border-top:2px solid var(--border);">
+                <td colspan="5" style="padding:8px 14px; font-weight:bold; letter-spacing:0.5px; color:var(--text-main);">
+                    <i class="fa-solid fa-layer-group" style="color:var(--text-muted); margin-right:6px;"></i>${_escape(cl)}
+                    <span style="font-weight:normal; font-size:0.8em; color:var(--text-muted); margin-left:8px;">
+                        ${clRows.length}× ${clActive ? `· <span style="color:#ffc107;">${clActive} ${t('root_active_badge')}</span>` : ''}
+                    </span>
+                </td>
             </tr>`;
-    }).join('');
+
+        [...servers.entries()]
+            .map(([sv, rows]) => [sv, countActive(rows)])
+            .sort(byActivity)
+            .forEach(([sv]) => {
+                const rows = servers.get(sv);
+                const svActive = countActive(rows);
+                const gid = `ra-${cl}-${sv}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+                html += `
+                    <tr class="ra-server" style="background:rgba(255,255,255,0.02); cursor:pointer;"
+                        onclick="_toggleRootAuditGroup('${gid}', this)">
+                        <td colspan="5" style="padding:7px 14px 7px 30px; color:var(--text-main); font-size:0.92em;">
+                            <i class="fa-solid fa-chevron-down" style="font-size:0.75em; color:var(--text-muted); margin-right:8px; transition:transform .15s;"></i>
+                            <span style="font-weight:bold;">${_escape(sv)}</span>
+                            <span style="font-size:0.82em; color:var(--text-muted); margin-left:8px;">
+                                ${rows.length}× ${svActive ? `· <span style="color:#ffc107;">${svActive} ${t('root_active_badge')}</span>` : ''}
+                            </span>
+                        </td>
+                    </tr>`;
+
+                rows.forEach(r => {
+                    const activeBg = r.is_active ? 'background:rgba(255,193,7,0.05);' : '';
+                    const statusBadge = r.is_active
+                        ? `<span style="display:inline-flex;align-items:center;gap:5px;background:rgba(255,193,7,0.15);color:#ffc107;font-weight:bold;padding:3px 8px;border-radius:4px;border:1px solid rgba(255,193,7,0.4);font-size:0.85em;"><i class="fa-solid fa-plug"></i> ${t('root_active_badge')}</span>`
+                        : `<span style="display:inline-flex;align-items:center;gap:5px;color:var(--offline);font-size:0.85em;"><i class="fa-solid fa-power-off"></i> ${t('disconnected')}</span>`;
+                    const duration = _fmtDuration(r.connected_at, r.disconnected_at);
+                    html += `
+                        <tr data-ra-group="${gid}" style="border-bottom:1px solid var(--border); ${activeBg}">
+                            <td style="padding:8px 14px 8px 46px; color:var(--text-muted); font-size:0.85em;">${new Date(r.connected_at).toLocaleString()}</td>
+                            <td style="padding:8px 14px; font-family:monospace; color:var(--text-muted);">root</td>
+                            <td style="padding:8px 14px; font-family:monospace; color:#aaa; font-size:0.9em;">${_escape(r.ip)}</td>
+                            <td style="padding:8px 14px;">${statusBadge}</td>
+                            <td style="padding:8px 14px; font-size:0.85em; color:${r.is_active ? 'var(--warning)' : 'var(--text-muted)'}; font-family:monospace;">${duration}</td>
+                        </tr>`;
+                });
+            });
+    });
+    tbody.innerHTML = html;
+}
+
+function _toggleRootAuditGroup(gid, headerEl) {
+    const rows = document.querySelectorAll(`tr[data-ra-group="${gid}"]`);
+    if (!rows.length) return;
+    const collapsed = rows[0].style.display === 'none';
+    rows.forEach(tr => { tr.style.display = collapsed ? '' : 'none'; });
+    const chevron = headerEl?.querySelector('i');
+    if (chevron) chevron.style.transform = collapsed ? '' : 'rotate(-90deg)';
 }
 
 function exportRootAuditCSV() {
