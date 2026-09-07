@@ -3384,12 +3384,14 @@ async function loadQueueDetails() {
             ? `<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:16px; font-style:italic;">${emptyMsg}</td></tr>`
             : reqs.map((req, i) => {
                 const isProc = req.status === 'processing';
+                const isWait = req.status === 'waiting';
                 const sc = isProc ? '#ffc107' : 'var(--text-muted)';
-                const si = isProc ? 'fa-spinner fa-spin' : 'fa-clock';
+                const si = isProc ? 'fa-spinner fa-spin' : (isWait ? 'fa-hourglass-half' : 'fa-clock');
                 const time = req.created_at ? req.created_at.replace('T',' ').substring(0,16) : '—';
                 const ageStr = _fmtAge(req.age_s);
                 const ageColor = (req.age_s > 300) ? 'var(--error)' : (req.age_s > 60) ? '#ffc107' : 'var(--text-muted)';
-                const canCancel = !isProc;
+                // Běžící AI požadavek je HTTP vlákno, ne řádek v DB — zrušit nejde
+                const canCancel = !isProc && req.cancellable !== false;
                 const isExpanded = _queueExpandedRows.has(req.id);
                 const detailRow = `<tr id="qdet-${req.id}" style="display:${isExpanded?'':'none'}; background:rgba(0,0,0,.2);">
                     <td colspan="7" style="padding:10px 14px;">

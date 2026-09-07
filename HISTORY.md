@@ -1,5 +1,31 @@
 # Historie změn
 
+## [2026.09.010] - 2026-09-08
+
+**Souhrn:** Nalezena příčina hlášky „Chyba komunikace" pod hotovou odpovědí — SSE generátor sahal na Flask `g` po zániku request kontextu. Fronta požadavků nově ukazuje to, co doopravdy běží.
+
+### „Chyba komunikace" pod už vykreslenou odpovědí
+
+Odpověď se zobrazila celá a **pod ní** naskočila chybová hláška. nginx k tomu logoval `upstream prematurely closed connection while reading upstream` na `POST /api/chat/stream`.
+
+Příčina: SSE generátor se vyhodnocuje **až po návratu view**, kdy Flask request kontext už neexistuje. Hned za odesláním události `done` ale volal:
+
+```python
+service.log_event("rag_chat_stream", "Streaming response sent",
+                  user=g.username, duration_ms=duration*1000)
+```
+
+`g.username` tam vyhodí `RuntimeError`, generátor umře a server utne spojení uprostřed streamu. Prohlížeč to vyhodnotí jako chybu čtení — jenže tokeny už vykreslil, takže hláška přistane až za odpovědí.
+
+Hodnota se nyní zachytí do `_stream_user` **před** definicí generátoru. Stejná chyba byla v `actions.py` v SSE výpisu SSH příkazu (`log_ssh_execute(..., g.username, ...)`), opraveno také. Nový test prochází těla obou generátorů a hlídá, že na `g` nesahají.
+
+### Fronta požadavků ukazuje běžící požadavky
+
+Modal vypisoval statistiku „AI fronta" z paměťového čítače, ale seznam pod ní bral z DB tabulky `task_queue` — dvě nesouvisející věci. Výsledkem bylo „AI fronta: 1" nad hláškou „Fronta je prázdná", i když požadavek skutečně běžel (ověřeno py-spy: jeden čekal na semaforu, druhý na odpovědi LLM).
+
+`ChatService` nyní eviduje běžící AI požadavky (`active_ai_requests`) a `/api/queue/details` je vypisuje před řádky z DB. Stav `waiting` (čeká na semafor) je odlišený od `processing` (běží dotaz). Běžící požadavek je HTTP vlákno, ne řádek v DB, takže u něj nejde tlačítko Zrušit — pole `cancellable`.
+
+
 ## [2026.09.009] - 2026-09-08
 
 **Souhrn:** Čítač AI fronty přestal unikat a návrh autofixu přežije JSON, který model rozbil shellovým regexem.
