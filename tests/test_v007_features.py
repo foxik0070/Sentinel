@@ -576,3 +576,37 @@ class TestDetectorSelfCheck(unittest.TestCase):
         ]
         self.pm.load_plugins()
         self.assertEqual(self.saved, [], "vypnutý detektor nechybí, je vypnutý")
+
+
+class TestMetricChartNoDualAxis(unittest.TestCase):
+    """Detail metriky nesmí mít dvě osy y.
+
+    Porovnání dvou metrik dřív přidalo druhý dataset s vlastní osou
+    (`yAxisID: 'y2'`). Dvě osy na jednom grafu umí vyrobit libovolnou
+    korelaci pouhým posunutím měřítka — dvě metriky s různým rozsahem
+    patří pod sebe jako dva grafy se společnou osou x.
+    """
+    def _src(self):
+        return open(os.path.join(_ROOT, 'sentinel/static/script-core.js'), encoding='utf-8').read()
+
+    def test_no_second_y_axis(self):
+        src = self._src()
+        for pattern in ("yAxisID", "y2:", "scales.y2"):
+            self.assertNotIn(pattern, src,
+                             f"'{pattern}' zavádí druhou osu y do grafu metrik")
+
+    def test_compare_renders_as_second_chart(self):
+        src = self._src()
+        self.assertIn('metricChartCompare', src,
+                      "porovnání má být samostatný graf, ne další dataset")
+        self.assertIn('_compareChart.destroy()', src,
+                      "bez destroy() zůstane Chart.js instance viset na canvasu")
+
+    def test_colors_come_from_theme_not_hardcoded(self):
+        """Natvrdo zadané tmavé barvy byly ve světlém motivu nečitelné."""
+        src = self._src()
+        start = src.index('function openGraphModal')
+        body = src[start:start + 6000]
+        for dead in ("'#333'", "'#aaa'", "'#ddd'"):
+            self.assertNotIn(dead, body, f"{dead} je natvrdo zadaná barva motivu")
+        self.assertIn('_graphTheme()', body, "barvy se mají číst z CSS proměnných")

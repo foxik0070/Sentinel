@@ -336,8 +336,16 @@
             </div>
             <div class="modal-body" style="background: var(--bg);">
                 <div id="graph-metric-name" style="font-weight:bold; margin-bottom:10px; color:var(--accent);"></div>
+                <div id="graph-stats" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:8px; margin-bottom:12px;"></div>
                 <div id="graph-container">
                     <canvas id="metricChart"></canvas>
+                </div>
+                <!-- Porovnání jako druhý graf pod prvním, ne druhá osa y:
+                     dvě osy na jednom grafu umí vyrobit libovolnou korelaci
+                     jen posunutím měřítka. -->
+                <div id="graph-compare-wrap" style="display:none; margin-top:14px; padding-top:12px; border-top:1px solid var(--border);">
+                    <div id="graph-compare-name" style="font-size:.82em; color:var(--text-muted); margin-bottom:6px;"></div>
+                    <div style="position:relative; height:150px;"><canvas id="metricChartCompare"></canvas></div>
                 </div>
             </div>
             <div id="graph-compare-area" style="display:none; padding:8px 15px; border-top:1px solid var(--border); background:var(--panel);">

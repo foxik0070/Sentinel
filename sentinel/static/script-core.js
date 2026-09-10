@@ -1313,6 +1313,95 @@ async function _resetHiddenSensors() {
 
 let _currentGraphMetric = null;
 
+// ── Detail metriky: graf historie + predikce ────────────────────────────────
+// Barvy se čtou z CSS proměnných, aby graf fungoval v obou motivech — dřív
+// byly natvrdo tmavé a ve světlém motivu byl popis nečitelný.
+const _GRAPH_SERIES = {
+    // Slot 1 a 2 validované palety (ΔE 33.6 normal, 24.7 protan na obou plochách)
+    light: {metric: '#2a78d6', compare: '#eb6834'},
+    dark:  {metric: '#3987e5', compare: '#d95926'},
+};
+
+function _graphTheme() {
+    const cs = getComputedStyle(document.documentElement);
+    const v = n => (cs.getPropertyValue(n) || '').trim();
+    const panel = v('--panel') || '#1a1a1a';
+    // Tmavý motiv poznáme podle jasu plochy, ne podle třídy — ta se liší
+    const dark = (parseInt(panel.slice(1, 3), 16) || 0) < 128;
+    return {
+        dark,
+        series: dark ? _GRAPH_SERIES.dark : _GRAPH_SERIES.light,
+        text: v('--text-main') || (dark ? '#fff' : '#201f1e'),
+        muted: v('--text-muted') || (dark ? '#888' : '#605e5c'),
+        grid: dark ? 'rgba(255,255,255,.07)' : 'rgba(0,0,0,.07)',
+        panel,
+    };
+}
+
+function _hexA(hex, a) {
+    const n = parseInt(hex.slice(1), 16);
+    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+}
+
+// Svislice pod kurzorem — bez ní se u víc sérií špatně čte, který bod k čemu patří
+const _crosshairPlugin = {
+    id: 'sentinelCrosshair',
+    afterDatasetsDraw(chart) {
+        const act = chart.tooltip?.getActiveElements?.() || [];
+        if (!act.length) return;
+        const x = act[0].element.x, {top, bottom} = chart.chartArea, c = chart.ctx;
+        c.save();
+        c.beginPath();
+        c.moveTo(x, top); c.lineTo(x, bottom);
+        c.lineWidth = 1;
+        c.strokeStyle = chart.$sentinelMuted || 'rgba(128,128,128,.5)';
+        c.setLineDash([3, 3]);
+        c.stroke();
+        c.restore();
+    },
+};
+
+function _linearForecast(history, steps) {
+    if (history.length < 2) return null;
+    const n = Math.min(12, history.length);
+    const y = history.slice(-n);
+    let sx = 0, sy = 0, sxy = 0, sxx = 0;
+    for (let i = 0; i < n; i++) { sx += i; sy += y[i]; sxy += i * y[i]; sxx += i * i; }
+    const denom = n * sxx - sx * sx;
+    if (!denom) return null;
+    const slope = (n * sxy - sx * sy) / denom;
+    const intercept = (sy - slope * sx) / n;
+    return Array.from({length: steps}, (_, i) => slope * (n - 1 + i + 1) + intercept);
+}
+
+function _fmtVal(v) {
+    if (v === null || v === undefined || isNaN(v)) return '—';
+    const a = Math.abs(v);
+    return a >= 100 ? v.toFixed(0) : a >= 1 ? v.toFixed(1) : v.toFixed(2);
+}
+
+function _graphStatTile(label, value, color) {
+    return `<div style="background:var(--panel); border:1px solid var(--border); border-radius:6px; padding:8px 10px;">
+        <div style="font-size:.68em; color:var(--text-muted); text-transform:uppercase; letter-spacing:.4px;">${label}</div>
+        <div style="font-size:1.15em; font-weight:700; color:${color || 'var(--text-main)'};">${value}</div>
+    </div>`;
+}
+
+function _baseScales(th, showX) {
+    return {
+        x: {
+            display: !!showX,
+            grid: {display: false},
+            ticks: {color: th.muted, font: {size: 10}, maxRotation: 0, autoSkipPadding: 16},
+        },
+        y: {
+            grid: {color: th.grid, drawTicks: false},
+            border: {display: false},
+            ticks: {color: th.muted, font: {size: 10}, padding: 6},
+        },
+    };
+}
+
 function openGraphModal(metricName) {
     const history = window.predictionData[metricName];
     if (!history || history.length === 0) return;
@@ -1320,80 +1409,121 @@ function openGraphModal(metricName) {
 
     document.getElementById('graph-metric-name').innerText = metricName;
     document.getElementById('graph-modal').style.display = 'flex';
-    // 068: Naplň compare select dostupnými metrikami
+
     const sel = document.getElementById('graph-compare-select');
     if (sel) {
         const metrics = Object.keys(window.predictionData || {}).filter(m => m !== metricName);
-        sel.innerHTML = '<option value="">— vyberte metriku —</option>' +
+        sel.innerHTML = `<option value="">${t('graph_pick_metric')}</option>` +
             metrics.map(m => `<option value="${_escape(m)}">${_escape(m)}</option>`).join('');
     }
     document.getElementById('graph-compare-area').style.display = 'none';
+    const cmpWrap = document.getElementById('graph-compare-wrap');
+    if (cmpWrap) cmpWrap.style.display = 'none';
+    if (window._compareChart) { window._compareChart.destroy(); window._compareChart = null; }
+
+    const th = _graphTheme();
+    const STEP_MIN = 5, FUTURE = 12;
+    const fc = _linearForecast(history, FUTURE);
+
+    // Popisky: minulost zaporne, budoucnost kladne — osa x uz neni skryta
+    const labels = history.map((_, i) => `${(i - history.length + 1) * STEP_MIN}m`);
+    for (let i = 1; i <= FUTURE; i++) labels.push(`+${i * STEP_MIN}m`);
+
+    // Predikce navazuje na posledni namerenou hodnotu, aby cara nemela skok
+    const predData = new Array(history.length - 1).fill(null);
+    predData.push(history[history.length - 1]);
+    if (fc) fc.forEach(v => predData.push(v));
+
+    const last = history[history.length - 1];
+    const prev = history.length > 1 ? history[history.length - 2] : last;
+    const delta = last - prev;
+    const forecastVal = fc ? fc[fc.length - 1] : null;
+    const deltaColor = delta > 0 ? 'var(--warning)' : delta < 0 ? 'var(--success)' : 'var(--text-muted)';
+    document.getElementById('graph-stats').innerHTML =
+        _graphStatTile(t('graph_current'), _fmtVal(last)) +
+        _graphStatTile(t('graph_change'),
+            `${delta > 0 ? '↗' : delta < 0 ? '↘' : '→'} ${_fmtVal(Math.abs(delta))}`, deltaColor) +
+        _graphStatTile(`${t('graph_forecast')} +${FUTURE * STEP_MIN}m`, _fmtVal(forecastVal)) +
+        _graphStatTile(t('graph_samples'), String(history.length));
 
     const ctx = document.getElementById('metricChart').getContext('2d');
-    if (chartInstance) { chartInstance.destroy(); }
-
-    const labels = history.map((_, i) => `${i - history.length + 1}`); 
-    let predData = new Array(history.length).fill(null);
-    
-    if (history.length >= 2) {
-        const n = Math.min(12, history.length);
-        const subsetY = history.slice(-n);
-        const subsetX = Array.from({length: n}, (_, i) => i);
-        const sumX = subsetX.reduce((a, b) => a + b, 0);
-        const sumY = subsetY.reduce((a, b) => a + b, 0);
-        const sumXY = subsetX.reduce((a, i) => a + i * subsetY[i], 0);
-        const sumXX = subsetX.reduce((a, i) => a + i * i, 0);
-        const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
-        const intercept = (sumY - slope * sumX) / n;
-
-        predData[history.length - 1] = history[history.length - 1];
-        for (let i = 1; i <= 12; i++) {
-            const nextVal = slope * (n - 1 + i) + intercept;
-            predData.push(nextVal);
-            labels.push(`+${i * 5}m`);
-        }
-    }
+    if (chartInstance) chartInstance.destroy();
 
     chartInstance = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: labels,
+            labels,
             datasets: [
                 {
-                    label: 'Historie',
+                    label: t('graph_history'),
                     data: history,
-                    borderColor: '#0078d4',
-                    backgroundColor: 'rgba(0, 120, 212, 0.1)',
+                    borderColor: th.series.metric,
+                    backgroundColor: _hexA(th.series.metric, 0.12),
                     borderWidth: 2,
-                    tension: 0.2,
-                    fill: true
+                    tension: 0.25,
+                    fill: true,
+                    pointRadius: 0,
+                    pointHoverRadius: 5,
+                    pointHoverBorderWidth: 2,
+                    pointHoverBorderColor: th.panel,
+                    pointHoverBackgroundColor: th.series.metric,
                 },
                 {
-                    label: 'Predikce (Trend)',
+                    label: t('graph_prediction'),
                     data: predData,
-                    borderColor: '#17a2b8',
+                    borderColor: th.series.metric,
                     borderWidth: 2,
-                    borderDash: [5, 5],
+                    borderDash: [4, 4],
                     tension: 0,
-                    pointRadius: 0
-                }
-            ]
+                    fill: false,
+                    pointRadius: 0,
+                    pointHoverRadius: 5,
+                    pointHoverBorderWidth: 2,
+                    pointHoverBorderColor: th.panel,
+                    pointHoverBackgroundColor: th.series.metric,
+                },
+            ],
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            scales: {
-                x: { display: false },
-                y: { grid: { color: '#333' }, ticks: { color: '#aaa' } }
+            interaction: {mode: 'index', intersect: false},
+            scales: _baseScales(th, true),
+            plugins: {
+                legend: {
+                    labels: {color: th.text, usePointStyle: true, pointStyle: 'line',
+                             boxWidth: 18, font: {size: 11}},
+                },
+                tooltip: {
+                    backgroundColor: th.panel,
+                    titleColor: th.text,
+                    bodyColor: th.text,
+                    borderColor: th.grid,
+                    borderWidth: 1,
+                    padding: 10,
+                    displayColors: true,
+                    usePointStyle: true,
+                    callbacks: {
+                        title: it => (it[0]?.label || '').startsWith('+')
+                            ? `${t('graph_forecast')} ${it[0].label}` : `${it[0]?.label} ${t('graph_ago')}`,
+                        label: c => c.parsed.y === null ? null : ` ${c.dataset.label}: ${_fmtVal(c.parsed.y)}`,
+                    },
+                },
             },
-            plugins: { legend: { labels: { color: '#ddd' } } }
-        }
+        },
+        plugins: [_crosshairPlugin],
     });
+    chartInstance.$sentinelMuted = th.muted;
 }
 
 function closeGraphModal() {
     document.getElementById('graph-modal').style.display = 'none';
     document.getElementById('graph-compare-area').style.display = 'none';
+    // Bez destroy() zustane Chart.js instance viset na canvasu a pri dalsim
+    // otevreni se prekresluje pres starou.
+    const wrap = document.getElementById('graph-compare-wrap');
+    if (wrap) wrap.style.display = 'none';
+    if (window._compareChart) { window._compareChart.destroy(); window._compareChart = null; }
 }
 
 function _toggleCompareArea() {
@@ -1403,31 +1533,63 @@ function _toggleCompareArea() {
 }
 
 function _compareMetricAdd(metricName) {
-    if (!metricName || !chartInstance) return;
+    const wrap = document.getElementById('graph-compare-wrap');
     const hist2 = (window.predictionData || {})[metricName];
-    if (!hist2) return;
-    // Odstraň předchozí compare dataset (index 2+)
-    while (chartInstance.data.datasets.length > 2) chartInstance.data.datasets.pop();
-    chartInstance.data.datasets.push({
-        label: metricName,
-        data: hist2.slice(0, chartInstance.data.labels.length),
-        borderColor: '#28a745',
-        backgroundColor: 'rgba(40,167,69,0.08)',
-        borderWidth: 2,
-        tension: 0.2,
-        yAxisID: 'y2',
-    });
-    if (!chartInstance.options.scales.y2) {
-        chartInstance.options.scales.y2 = {
-            position: 'right',
-            grid: { drawOnChartArea: false },
-            ticks: { color: '#28a745', font: { size: 9 } }
-        };
+    if (window._compareChart) { window._compareChart.destroy(); window._compareChart = null; }
+    if (!metricName || !hist2 || !chartInstance) {
+        if (wrap) wrap.style.display = 'none';
+        return;
     }
-    chartInstance.update();
+
+    // Druhy graf, ne druha osa y. Dve osy na jednom grafu umi vyrobit
+    // libovolnou korelaci pouhym posunutim meritka — dve metriky s ruznym
+    // rozsahem patri pod sebe se spolecnou osou x.
+    const th = _graphTheme();
+    const labels = chartInstance.data.labels;
+    const data = new Array(labels.length).fill(null);
+    const off = Math.max(0, (window.predictionData[_currentGraphMetric] || []).length - hist2.length);
+    hist2.forEach((v, i) => { if (off + i < labels.length) data[off + i] = v; });
+
+    document.getElementById('graph-compare-name').innerHTML =
+        `<span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${th.series.compare};margin-right:6px;"></span>${_escape(metricName)}`;
+    wrap.style.display = 'block';
+
+    window._compareChart = new Chart(
+        document.getElementById('metricChartCompare').getContext('2d'), {
+        type: 'line',
+        data: {labels, datasets: [{
+            label: metricName,
+            data,
+            borderColor: th.series.compare,
+            backgroundColor: _hexA(th.series.compare, 0.12),
+            borderWidth: 2,
+            tension: 0.25,
+            fill: true,
+            pointRadius: 0,
+            pointHoverRadius: 5,
+            pointHoverBorderWidth: 2,
+            pointHoverBorderColor: th.panel,
+            pointHoverBackgroundColor: th.series.compare,
+        }]},
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {mode: 'index', intersect: false},
+            scales: _baseScales(th, true),
+            plugins: {
+                legend: {display: false},   // jedna serie — nazev je v hlavicce
+                tooltip: {
+                    backgroundColor: th.panel, titleColor: th.text, bodyColor: th.text,
+                    borderColor: th.grid, borderWidth: 1, padding: 10, usePointStyle: true,
+                    callbacks: {label: c => ` ${_fmtVal(c.parsed.y)}`},
+                },
+            },
+        },
+        plugins: [_crosshairPlugin],
+    });
+    window._compareChart.$sentinelMuted = th.muted;
 }
 
-// --- ACTION TIMERS ---
 function updateActionTimers() {
     const now = new Date();
     document.querySelectorAll('.action-timer').forEach(el => {

@@ -1,5 +1,37 @@
 # Historie změn
 
+## [2026.09.014] - 2026-09-10
+
+**Souhrn:** Detail metriky v predikcích přepsán — konec dvou os y, barvy podle motivu, interaktivní graf.
+
+### Porovnání metrik už nepoužívá druhou osu y
+
+Porovnání dvou metrik přidávalo druhý dataset s vlastní osou (`yAxisID: 'y2'`). Dvě osy na jednom grafu umí vyrobit **libovolnou korelaci** pouhým posunutím měřítka — dvě křivky vypadají, že spolu souvisí, i když nesouvisí vůbec.
+
+Porovnávaná metrika se nyní kreslí jako **samostatný graf pod prvním**, se společnou osou x. Rozsahy si nekonkurují a časové zarovnání zůstává. Test hlídá, že se `yAxisID` do kódu nevrátí.
+
+### Barvy podle motivu
+
+Graf měl barvy natvrdo (`#333` mřížka, `#aaa` popisky, `#ddd` legenda). Ve světlém motivu byl popis prakticky nečitelný. Nyní se čtou z CSS proměnných; tmavý motiv se pozná podle jasu plochy, ne podle třídy.
+
+Série používají dva odstíny ověřené validátorem palety na obou plochách (ΔE 33,6 při běžném vidění, 24,7 při protanopii):
+
+| série | světlý | tmavý |
+|---|---|---|
+| metrika | `#2a78d6` | `#3987e5` |
+| porovnání | `#eb6834` | `#d95926` |
+
+Predikce je **tatáž entita** jako historie, takže má stejný odstín a odlišuje se čárkovaně — ne vlastní barvou.
+
+### Interaktivita a čitelnost
+
+- osa x už není skrytá; popisky ukazují čas relativně (`-45m` … `+60m`)
+- svislice pod kurzorem a společný tooltip pro obě série
+- řádek s hodnotami nad grafem: aktuálně, změna proti minulému vzorku, předpověď za hodinu, počet vzorků
+- predikce navazuje na poslední naměřenou hodnotu, takže mezi historií a trendem není skok
+- zavření modalu uklidí i druhý graf — bez `destroy()` zůstávala instance viset na canvasu
+
+
 ## [2026.09.013] - 2026-09-10
 
 **Souhrn:** Sentinel hlásí, když se nenačte detektor, který po něm config chce. Dosud v takovém případě mlčel a tvářil se, že je vše v pořádku.
