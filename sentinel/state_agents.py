@@ -1116,16 +1116,22 @@ def get_user_audit() -> list:
     """Audit uživatelů i s aktuálně nastavenou rolí a počtem živých relací."""
     try:
         conn = _get_conn()
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
+        # Bez row_factory: `sqlite3` je tu stdlib, ale __main__ podstrčí do
+        # sys.modules pysqlite3, takže spojení je pysqlite3 a stdlib
+        # sqlite3.Row ho odmítne ("Row() argument 1 must be sqlite3.Cursor").
+        # V produkci to projde jen shodou pořadí importů. Názvy sloupců proto
+        # bereme z kurzoru.
+        cur = conn.execute(
             "SELECT a.username, a.auth_source, a.first_seen, a.last_login, a.last_ip, "
             "       a.login_count, a.online_seconds, r.role, "
             "       (SELECT COUNT(*) FROM active_sessions s WHERE s.username = a.username) AS active_sessions "
             "FROM user_audit a LEFT JOIN user_roles r ON r.username = a.username "
             "ORDER BY a.last_login DESC"
-        ).fetchall()
+        )
+        cols = [c[0] for c in cur.description]
+        rows = [dict(zip(cols, r)) for r in cur.fetchall()]
         conn.close()
-        return [dict(r) for r in rows]
+        return rows
     except Exception as e:
         logger.error(f"get_user_audit: {e}")
         return []
