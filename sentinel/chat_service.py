@@ -2248,6 +2248,74 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
         except Exception as e:
             logger.debug(f"gitea_sync: {e}")
 
+    def build_logs_context(self, max_files: int = None, lines_per_file: int = None,
+                           max_chars: int = 6000) -> str:
+        """Posledních N řádků z logů, ke kterým se vážou aktivní issues.
+
+        Model dostával jen přehled issues, ne samotné logy — na "shrň logy"
+        proto po pravdě odpovídal, že žádné nemá. Posílat všechny logy nejde,
+        kontext má strop, takže se berou jen soubory, ke kterým se aktivní
+        issues opravdu váží, seřazené podle toho, kolik jich na ně ukazuje.
+
+        Cesta pochází z DB, kam píšou pluginy, takže musí projít
+        `_safe_log_path()` — jinak by šlo přes upravený záznam nechat model
+        přečíst libovolný soubor.
+        """
+        max_files = max_files or int(getattr(config, 'CHAT_LOGS_MAX_FILES', 5))
+        lines_per_file = lines_per_file or int(getattr(config, 'CHAT_LOGS_LINES', 40))
+        if max_files <= 0 or lines_per_file <= 0:
+            return ""
+        try:
+            active = state.get_active_issues()
+        except Exception as e:
+            utils.log_message(f"[!] build_logs_context: {e}")
+            return ""
+
+        counts = {}
+        for i in active:
+            det = i.get('details')
+            if isinstance(det, str):
+                try:
+                    det = json.loads(det)
+                except Exception:
+                    det = None
+            lf = (det or {}).get('log_file') if isinstance(det, dict) else None
+            if lf:
+                counts[lf] = counts.get(lf, 0) + 1
+        if not counts:
+            return ""
+
+        out, used = [], 0
+        for lf, n in sorted(counts.items(), key=lambda kv: -kv[1])[:max_files]:
+            path = self._safe_log_path(lf)
+            if not path or not os.path.isfile(path):
+                continue
+            try:
+                # Číst jen konec — snapshot logy jsou malé, ale strop tu být musí
+                with open(path, 'r', errors='replace') as f:
+                    try:
+                        f.seek(max(0, os.path.getsize(path) - 64 * 1024))
+                    except OSError:
+                        pass
+                    tail = f.read().splitlines()[-lines_per_file:]
+            except OSError as e:
+                utils.log_message(f"[!] build_logs_context: {path} nelze číst ({e})")
+                continue
+            if not tail:
+                continue
+            block = (f"--- {os.path.basename(path)} "
+                     f"({n} aktivních issues, posledních {len(tail)} řádků) ---\n"
+                     + "\n".join(tail))
+            if used + len(block) > max_chars:
+                block = block[:max(0, max_chars - used)]
+                if block:
+                    out.append(block + "\n[…zkráceno, kontext má strop]")
+                break
+            out.append(block)
+            used += len(block)
+        return ("Recent log excerpts (files referenced by active issues):\n"
+                + "\n\n".join(out)) if out else ""
+
     def build_alerts_context(self, limit: int = 15) -> str:
         """Přehled aktivních issues pro AI kontext.
 
@@ -2511,6 +2579,7 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
 
         # Active alerts summary — top 5 by severity/recency
         alerts_note = self.build_alerts_context()
+        logs_note = self.build_logs_context()
 
         # Host OS summary so AI suggests distro-appropriate commands
         os_summary = ""
@@ -2539,6 +2608,8 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
             user_parts.append(os_summary)
         if alerts_note:
             user_parts.append(alerts_note)
+        if logs_note:
+            user_parts.append(logs_note)
         if has_context:
             user_parts.append(f"Knowledge base context (use if relevant):\n{context}")
         user_parts.append(f"Question: {query}")

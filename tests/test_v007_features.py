@@ -7,6 +7,7 @@ Tests pro v2026.06.006/007:
 Run:
     python -m pytest tests/test_v007_features.py -v
 """
+import json
 import os
 import sys
 import shutil
@@ -664,3 +665,80 @@ class TestSelfCheckNotTrackedAsClient(unittest.TestCase):
         src = open(os.path.join(_ROOT, 'sentinel/auth.py'), encoding='utf-8').read()
         self.assertIn('SELF_CHECK_HEADER', src)
         self.assertIn('_is_self_check', src)
+
+
+class TestLogsContext(unittest.TestCase):
+    """Do kontextu jdou poslední řádky logů, ke kterým se vážou aktivní issues.
+
+    Model dostával jen přehled issues, ne logy — na "shrň logy" proto po
+    pravdě odpovídal, že žádné nemá. Všechny logy poslat nejde, kontext má
+    strop, takže se vybírají podle toho, kolik aktivních issues na soubor
+    ukazuje.
+    """
+    def setUp(self):
+        from sentinel import chat_service, config, state
+        self.svc = chat_service.ChatService.__new__(chat_service.ChatService)
+        self.cfg, self.state = config, state
+        self._dir = tempfile.mkdtemp()
+        self._orig_logdir = config.LOG_DIR
+        config.LOG_DIR = self._dir
+        self._orig_issues = state.get_active_issues
+
+    def tearDown(self):
+        self.cfg.LOG_DIR = self._orig_logdir
+        self.state.get_active_issues = self._orig_issues
+        shutil.rmtree(self._dir, ignore_errors=True)
+
+    def _log(self, name, lines):
+        with open(os.path.join(self._dir, name), 'w') as f:
+            f.write("\n".join(lines) + "\n")
+
+    def _issues(self, rows):
+        self.state.get_active_issues = lambda: rows
+
+    def test_tail_of_referenced_log_is_included(self):
+        self._log('icinga.log', [f'radek {i}' for i in range(100)])
+        self._issues([{'details': {'log_file': os.path.join(self._dir, 'icinga.log')}}])
+        out = self.svc.build_logs_context(lines_per_file=10)
+        self.assertIn('icinga.log', out)
+        self.assertIn('radek 99', out, 'musí to být konec souboru')
+        self.assertNotIn('radek 50', out, 'starší řádky se posílat nemají')
+
+    def test_details_as_json_string_also_works(self):
+        self._log('a.log', ['x'])
+        self._issues([{'details': json.dumps({'log_file': os.path.join(self._dir, 'a.log')})}])
+        self.assertIn('a.log', self.svc.build_logs_context())
+
+    def test_files_ordered_by_issue_count(self):
+        self._log('malo.log', ['m'])
+        self._log('hodne.log', ['h'])
+        self._issues(
+            [{'details': {'log_file': os.path.join(self._dir, 'malo.log')}}] +
+            [{'details': {'log_file': os.path.join(self._dir, 'hodne.log')}}] * 5
+        )
+        out = self.svc.build_logs_context(max_files=1)
+        self.assertIn('hodne.log', out, 'přednost má soubor s víc issues')
+        self.assertNotIn('malo.log', out)
+
+    def test_path_outside_logdir_is_refused(self):
+        """Cesta přichází z DB, kam píšou pluginy — nesmí vyvést ven."""
+        secret = os.path.join(tempfile.mkdtemp(), 'secret.txt')
+        with open(secret, 'w') as f:
+            f.write('TAJNE HESLO')
+        self._issues([{'details': {'log_file': secret}},
+                      {'details': {'log_file': '../../../etc/passwd'}}])
+        out = self.svc.build_logs_context()
+        self.assertNotIn('TAJNE', out)
+        self.assertNotIn('root:', out)
+
+    def test_agent_issues_without_logfile_produce_nothing(self):
+        self._issues([{'details': {'host': 'x'}}, {'details': None}])
+        self.assertEqual(self.svc.build_logs_context(), "")
+
+    def test_total_size_is_capped(self):
+        for n in ('a.log', 'b.log', 'c.log'):
+            self._log(n, ['x' * 200] * 50)
+        self._issues([{'details': {'log_file': os.path.join(self._dir, n)}}
+                      for n in ('a.log', 'b.log', 'c.log')])
+        out = self.svc.build_logs_context(max_chars=1000)
+        self.assertLess(len(out), 1400, 'kontext má strop, jinak přeteče okno modelu')
