@@ -1,5 +1,27 @@
 # Historie změn
 
+## [2026.09.016] - 2026-09-10
+
+**Souhrn:** Model dostává v kontextu i poslední řádky logů, ke kterým se vážou aktivní issues.
+
+### Logy v kontextu chatu
+
+Chat posílal modelu přehled aktivních issues, ale ne samotné logy — na „shrň logy za posledních 24 hodin" proto po pravdě odpovídal, že žádné nemá.
+
+Všechny logy poslat nejde, kontextové okno má strop. `ChatService.build_logs_context()` proto vybírá jen soubory, ke kterým se **aktivní issues opravdu váží**, seřazené podle toho, kolik jich na daný soubor ukazuje — nejproblémovější log jde do kontextu první.
+
+```yaml
+chat_logs_max_files: 5   # kolik souborů
+chat_logs_lines: 40      # kolik posledních řádků z každého
+```
+
+Celková délka je navíc omezená (6 000 znaků); při překročení se blok ořízne s poznámkou, aby model věděl, že vidí jen část.
+
+Cesta k souboru pochází z `details.log_file`, tedy z databáze, kam píšou pluginy. Prochází proto `_safe_log_path()`, který ji drží uvnitř `LOG_DIR` — bez toho by šlo upraveným záznamem nechat model přečíst libovolný soubor na stroji. Hlídá to test s `../../../etc/passwd` a s cestou mimo adresář.
+
+Issues z agent ingestu žádný log nemají, takže do výběru nevstupují.
+
+
 ## [2026.09.015] - 2026-09-10
 
 **Souhrn:** Sentinel se přestal vypisovat mezi připojenými klienty jako vlastní uživatel „SSH tunel".

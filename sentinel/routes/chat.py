@@ -336,6 +336,9 @@ def create_blueprint(service):
             _alerts = service.build_alerts_context()
             if _alerts:
                 user_parts.append(_alerts)
+            _logs = service.build_logs_context()
+            if _logs:
+                user_parts.append(_logs)
             if has_ctx:
                 user_parts.append(f"Knowledge base context:\n{context}")
             user_parts.append(f"Question: {msg}")

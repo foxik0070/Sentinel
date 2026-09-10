@@ -5,7 +5,7 @@ import secrets
 from pathlib import Path
 
 # --- Technical Config ---
-VERSION = "2026.09.015"
+VERSION = "2026.09.016"
 
 def get_git_commit():
     try:
@@ -347,6 +347,10 @@ ROOT_AUDIT_STALE_MINUTES = 30
 # Kolik posledních root relací ukázat na cluster (globální limit vytlačoval
 # tiché clustery výpisem toho rušného)
 ROOT_AUDIT_HISTORY_PER_CLUSTER = 30
+# Kolik logů a kolik jejich posledních řádků poslat modelu jako kontext.
+# Posílají se jen soubory, ke kterým se vážou aktivní issues.
+CHAT_LOGS_MAX_FILES = 5
+CHAT_LOGS_LINES = 40
 # 102: IP whitelist per-role — {role: ["192.168.0.0/24", ...]}; prázdný = vypnuto
 IP_WHITELIST: dict = {}
 # 082: Syslog UDP receiver
@@ -728,6 +732,9 @@ def load_config():
     ROOT_AUDIT_STALE_MINUTES = int(data.get("root_audit_stale_minutes", ROOT_AUDIT_STALE_MINUTES))
     global ROOT_AUDIT_HISTORY_PER_CLUSTER
     ROOT_AUDIT_HISTORY_PER_CLUSTER = int(data.get("root_audit_history_per_cluster", ROOT_AUDIT_HISTORY_PER_CLUSTER))
+    global CHAT_LOGS_MAX_FILES, CHAT_LOGS_LINES
+    CHAT_LOGS_MAX_FILES = int(data.get("chat_logs_max_files", CHAT_LOGS_MAX_FILES))
+    CHAT_LOGS_LINES = int(data.get("chat_logs_lines", CHAT_LOGS_LINES))
     global IP_WHITELIST
     _ipwl = data.get("ip_whitelist", {})
     if isinstance(_ipwl, dict):
@@ -918,6 +925,7 @@ _KNOWN_KEYS = {
     'sla_rules', 'inbound_webhook', 'telemetry_alerts', 'influxdb', 'self_monitor',
     'weekly_report', 'auto_register_token', 'issue_expiry_days', 'slack', 'pagerduty', 'snmp_trap', 'https', 'topology',
     'telemetry_aggregate_after_hours', 'agent_heartbeat_timeout', 'root_audit_stale_minutes', 'root_audit_history_per_cluster',
+    'chat_logs_max_files', 'chat_logs_lines',
     'channel_colors', 'ip_whitelist',
     'syslog_receiver', 'ntfy', 'gotify', 'smtp', 'matrix', 'discord', 'telegram', 'opsgenie',
     'grafana_annotations',
