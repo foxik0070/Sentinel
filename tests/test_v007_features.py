@@ -410,23 +410,29 @@ class TestUserAudit(unittest.TestCase):
     z LDAPu, který se přihlásil, ve správě uživatelů vůbec nefiguroval.
     """
     def setUp(self):
+        # `state_agents` i `state_issues` si `_get_conn` naimportovaly hodnotou,
+        # takže po importlib.reload(state_base) v jiném testu ukazují na starý
+        # modul. Přepsat samotné state_base.DB_FILE proto nestačí — cesta se
+        # musí nastavit v globálech té konkrétní funkce, kterou opravdu volají.
+        import sys as _sys
+        from sentinel import state_agents, state_issues
         self._dir = tempfile.mkdtemp()
-        self._orig_env = os.environ.get('SENTINEL_DB_DIR')
-        os.environ['SENTINEL_DB_DIR'] = self._dir
-        from sentinel import state_base, state_agents, state_issues
-        for m in (state_base, state_agents, state_issues):
-            importlib.reload(m)
-        self.sb, self.sa, self.si = state_base, state_agents, state_issues
-        state_base.init_db()
+        path = os.path.join(self._dir, 'audit.db')
+        self.sa, self.si = state_agents, state_issues
+        self._g = state_agents._get_conn.__globals__
+        self._orig_db = self._g['DB_FILE']
+        self._g['DB_FILE'] = path
+        # Fasáda by jinak přebila hodnotu výše (viz _db_file()).
+        self._facade = _sys.modules.get('sentinel.state')
+        self._orig_facade = getattr(self._facade, 'DB_FILE', None) if self._facade else None
+        if self._facade is not None:
+            self._facade.DB_FILE = path
+        self._g['init_db']()
 
     def tearDown(self):
-        if self._orig_env is None:
-            os.environ.pop('SENTINEL_DB_DIR', None)
-        else:
-            os.environ['SENTINEL_DB_DIR'] = self._orig_env
-        from sentinel import state_base, state_agents, state_issues
-        for m in (state_base, state_agents, state_issues):
-            importlib.reload(m)
+        self._g['DB_FILE'] = self._orig_db
+        if self._facade is not None and self._orig_facade is not None:
+            self._facade.DB_FILE = self._orig_facade
         shutil.rmtree(self._dir, ignore_errors=True)
 
     def test_ldap_user_without_role_gets_record(self):
@@ -450,7 +456,7 @@ class TestUserAudit(unittest.TestCase):
     def test_session_close_accumulates_online_time(self):
         self.sa.user_audit_login('u', '10.0.0.1', 'ldap')
         self.si.session_register('s1', 'u', 'admin', '10.0.0.1', 'UA')
-        conn = self.sb._get_conn()
+        conn = self.sa._get_conn()
         conn.execute("UPDATE active_sessions SET created_at=datetime('now','-45 minutes'), "
                      "last_seen=datetime('now') WHERE session_uuid='s1'")
         conn.commit()
