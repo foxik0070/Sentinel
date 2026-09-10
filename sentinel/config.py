@@ -5,7 +5,7 @@ import secrets
 from pathlib import Path
 
 # --- Technical Config ---
-VERSION = "2026.09.014"
+VERSION = "2026.09.015"
 
 def get_git_commit():
     try:
@@ -102,6 +102,12 @@ WEB_USER = "admin"
 WEB_PASS = "admin"
 WEB_VIEWER_USER = "viewer"
 WEB_VIEWER_PASS = "viewer"
+
+# Hlavička, kterou si Sentinel značí vlastní volání na sebe (watchdog
+# self-check, kontrola bezpečnostních hlaviček). Bez ní se objeví mezi
+# připojenými klienty jako uživatel z 127.0.0.1 — tedy jako "SSH tunel".
+# Vyřadit celý loopback nejde: přes SSH tunel chodí i skuteční lidé.
+SELF_CHECK_HEADER = "X-Sentinel-Self-Check"
 
 def _load_or_create_secret_key(path: str = "/var/lib/sentinel/secret_key") -> str:
     """235: Načte SECRET_KEY ze souboru, nebo vygeneruje a uloží nový. Přežije restart."""

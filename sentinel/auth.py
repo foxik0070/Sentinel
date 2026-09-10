@@ -353,7 +353,11 @@ def requires_auth(f):
         _agent_paths = ('/api/v1/', '/api/sentinel-hw/', '/api/sentinel-alert')
         _is_agent_request = any(request.path.startswith(p) for p in _agent_paths)
         _is_excluded_device = client_ip in getattr(config, 'EXCLUDED_CLIENT_IPS', [])
-        if not _is_agent_request and not _is_excluded_device:
+        # Vlastní self-check Sentinelu není klient — jinak se sám vypisuje mezi
+        # připojenými uživateli jako "admin @ SSH tunel".
+        _is_self_check = bool(request.headers.get(
+            getattr(config, 'SELF_CHECK_HEADER', 'X-Sentinel-Self-Check')))
+        if not _is_agent_request and not _is_excluded_device and not _is_self_check:
             now = time.time()
             device_id = request.headers.get('X-Device-ID', client_ip)
             with global_active_clients_lock:

@@ -1,5 +1,22 @@
 # Historie změn
 
+## [2026.09.015] - 2026-09-10
+
+**Souhrn:** Sentinel se přestal vypisovat mezi připojenými klienty jako vlastní uživatel „SSH tunel".
+
+### Fantomový klient „admin @ SSH tunel"
+
+V přehledu připojených klientů se trvale držel uživatel `admin` z „SSH tunelu" s hláškou „ISP nedostupné". Nebyl to nikdo přihlášený — byl to **Sentinel monitorující sám sebe**.
+
+Vnitřní watchdog volá každých 30 s vlastní `/api/status_check` a autentizuje se přitom jako `WEB_USER`. `requires_auth` zapisuje **každý** autentizovaný požadavek mezi připojené klienty, klíčovaný podle `X-Device-ID` nebo IP. Vzniklý klient měl IP `127.0.0.1`, a tu `system.py` natvrdo přejmenuje na „SSH tunel"; „ISP nedostupné" je pak jen důsledek toho, že se pro loopback nedá dohledat poskytovatel.
+
+Stejný efekt měla i kontrola bezpečnostních hlaviček, která si volá vlastní `/` s cookie uživatele.
+
+**Oprava:** obě vnitřní volání se značí hlavičkou `X-Sentinel-Self-Check` a tracker je přeskakuje.
+
+Nabízelo se jednodušší řešení — přidat `127.0.0.1` do `excluded_client_ips`. To se ale zahodit nedá: **přes SSH tunel chodí i skuteční lidé** a právě pro ně ten popisek existuje. Vyřazení celého loopbacku by je skrylo taky. Hlavička rozliší vlastní volání od cizího, IP to neumí.
+
+
 ## [2026.09.014] - 2026-09-10
 
 **Souhrn:** Detail metriky v predikcích přepsán — konec dvou os y, barvy podle motivu, interaktivní graf.

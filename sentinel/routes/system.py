@@ -2604,7 +2604,9 @@ SwaggerUIBundle({
         results = []
         try:
             _base = f"http://127.0.0.1:{getattr(config, 'WEB_PORT', 5050)}"
-            _req = _ur.Request(f"{_base}/", headers={"Cookie": request.headers.get("Cookie", "")})
+            _req = _ur.Request(f"{_base}/", headers={
+                "Cookie": request.headers.get("Cookie", ""),
+                config.SELF_CHECK_HEADER: "1"})
             _resp = _ur.urlopen(_req, timeout=5)
             _headers = dict(_resp.headers)
         except Exception as e:
