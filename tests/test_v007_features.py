@@ -610,3 +610,57 @@ class TestMetricChartNoDualAxis(unittest.TestCase):
         for dead in ("'#333'", "'#aaa'", "'#ddd'"):
             self.assertNotIn(dead, body, f"{dead} je natvrdo zadaná barva motivu")
         self.assertIn('_graphTheme()', body, "barvy se mají číst z CSS proměnných")
+
+
+class TestSelfCheckNotTrackedAsClient(unittest.TestCase):
+    """Sentinel se nesmí vypisovat mezi připojenými klienty.
+
+    Vnitřní watchdog volá vlastní /api/status_check každých 30 s a autentizuje
+    se jako admin. requires_auth každý autentizovaný požadavek zapíše mezi
+    připojené klienty, takže vznikl klient z 127.0.0.1 — a ten se v UI zobrazí
+    jako "SSH tunel" s nedostupným ISP. Vyřadit celý loopback nejde, přes SSH
+    tunel chodí i skuteční lidé; self-check se proto značí hlavičkou.
+    """
+    def setUp(self):
+        from flask import Flask
+        from sentinel import auth, config
+        self.auth, self.config = auth, config
+        self.app = Flask(__name__)
+        self.app.config['SECRET_KEY'] = 'x'
+        with auth.global_active_clients_lock:
+            auth.global_active_clients.clear()
+
+    def _call(self, headers):
+        """Projde tělem requires_auth až k zápisu do trackeru."""
+        from sentinel import auth
+        with self.app.test_request_context('/api/status_check', headers=headers):
+            from flask import g, request
+            g.username, g.user_role = 'admin', 'admin'
+            client_ip = '127.0.0.1'
+            _agent_paths = ('/api/v1/', '/api/sentinel-hw/', '/api/sentinel-alert')
+            is_agent = any(request.path.startswith(p) for p in _agent_paths)
+            excluded = client_ip in getattr(self.config, 'EXCLUDED_CLIENT_IPS', [])
+            is_self = bool(request.headers.get(
+                getattr(self.config, 'SELF_CHECK_HEADER', 'X-Sentinel-Self-Check')))
+            if not is_agent and not excluded and not is_self:
+                with auth.global_active_clients_lock:
+                    auth.global_active_clients[client_ip] = {'user': 'admin', 'ip': client_ip}
+            return len(auth.global_active_clients)
+
+    def test_self_check_header_is_not_tracked(self):
+        n = self._call({self.config.SELF_CHECK_HEADER: '1'})
+        self.assertEqual(n, 0, "vlastní self-check se nesmí objevit mezi klienty")
+
+    def test_real_loopback_user_is_still_tracked(self):
+        n = self._call({})
+        self.assertEqual(n, 1, "skutečný uživatel přes SSH tunel se sledovat musí")
+
+    def test_watchdog_sends_the_header(self):
+        src = open(os.path.join(_ROOT, 'sentinel/__main__.py'), encoding='utf-8').read()
+        self.assertIn('config.SELF_CHECK_HEADER', src,
+                      "watchdog musí své volání označit, jinak fantom zůstane")
+
+    def test_auth_checks_the_header(self):
+        src = open(os.path.join(_ROOT, 'sentinel/auth.py'), encoding='utf-8').read()
+        self.assertIn('SELF_CHECK_HEADER', src)
+        self.assertIn('_is_self_check', src)

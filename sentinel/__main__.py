@@ -396,7 +396,8 @@ def main():
                 try:
                     auth_str = f"{config.WEB_USER}:{config.WEB_PASS}"
                     b64_auth = base64.b64encode(auth_str.encode()).decode()
-                    hdrs = {"Authorization": f"Basic {b64_auth}", "Connection": "close"}
+                    hdrs = {"Authorization": f"Basic {b64_auth}", "Connection": "close",
+                            config.SELF_CHECK_HEADER: "1"}
 
                     # HTTP check běží v separátním vlákně s tvrdým wall-clock limitem.
                     # Zabraňuje zablokování main threadu při zavěšeném TCP spojení.
