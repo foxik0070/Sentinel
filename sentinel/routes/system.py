@@ -1467,6 +1467,32 @@ def create_blueprint(service):
                 users.append({"username": u, "role": "viewer", "source": "ldap"})
         db_roles = state.get_all_user_roles()
         users.extend(db_roles)
+
+        # Audit: kdo se kdy skutečně přihlásil. Bez něj seznam ukazoval jen
+        # ty, kdo jsou v configu nebo komu někdo ručně nastavil roli — reálně
+        # přihlášený uživatel z LDAPu v něm chyběl.
+        audit = {a['username']: a for a in state.get_user_audit()}
+        seen = set()
+        for u in users:
+            a = audit.get(u['username'])
+            if a:
+                u.update({k: a[k] for k in
+                          ('first_seen', 'last_login', 'last_ip', 'login_count',
+                           'online_seconds', 'active_sessions')})
+                if a.get('auth_source'):
+                    u['auth_source'] = a['auth_source']
+            seen.add(u['username'])
+        for name, a in audit.items():
+            if name in seen:
+                continue
+            users.append({
+                "username": name,
+                "role": a.get('role') or '—',
+                "source": a.get('auth_source') or 'ldap',
+                "auth_source": a.get('auth_source'),
+                **{k: a[k] for k in ('first_seen', 'last_login', 'last_ip',
+                                     'login_count', 'online_seconds', 'active_sessions')},
+            })
         return jsonify({"users": users})
 
     @bp.route('/api/users/roles', methods=['POST'])

@@ -88,9 +88,12 @@ def create_blueprint(service, socketio):
         session['_born'] = time.time()  # 348: absolute timeout marker
         _suuid = secrets.token_hex(16)
         session['_suuid'] = _suuid
-        state.session_register(_suuid, u, role,
-                               get_real_ip(),
+        _ip = get_real_ip()
+        state.session_register(_suuid, u, role, _ip,
                                request.headers.get('User-Agent', ''))
+        # Lokální účty jsou jen ty dva z configu; cokoli jiného prošlo LDAPem.
+        _src = 'local' if u in (config.WEB_USER, config.WEB_VIEWER_USER) else 'ldap'
+        state.user_audit_login(u, _ip, _src)
         svc.log_event("auth_login", f"User {u} logged in as {role}")
 
     @bp.route('/logout')

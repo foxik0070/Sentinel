@@ -1651,11 +1651,26 @@ def session_remove(session_uuid: str):
     with db_lock:
         try:
             conn = _get_conn()
+            # Před smazáním si spočítat, jak dlouho relace trvala — jinak ta
+            # informace zmizí s řádkem a "jak dlouho byl online" nejde zjistit.
+            row = conn.execute(
+                "SELECT username, created_at, last_seen FROM active_sessions WHERE session_uuid=?",
+                (session_uuid,)
+            ).fetchone()
             conn.execute("DELETE FROM active_sessions WHERE session_uuid=?", (session_uuid,))
             conn.commit()
             conn.close()
         except Exception as e:
             logger.error(f"session_remove: {e}")
+            return
+    if row:
+        try:
+            from .state_agents import user_audit_add_online
+            start = datetime.fromisoformat(str(row[1]).replace('Z', '+00:00'))
+            end = datetime.fromisoformat(str(row[2]).replace('Z', '+00:00'))
+            user_audit_add_online(row[0], int((end - start).total_seconds()))
+        except Exception as e:
+            logger.debug(f"session_remove: dobu relace nelze spocitat: {e}")
 
 def list_sessions() -> list:
     try:

@@ -358,6 +358,19 @@ def init_db():
                           role TEXT NOT NULL,
                           updated_at TEXT DEFAULT (datetime('now')))''')
 
+            # Audit uživatelů: kdo se kdy přihlásil a jak dlouho byl online.
+            # `user_roles` drží jen roli a jen u těch, komu ji někdo nastavil —
+            # uživatel z LDAPu, který se přihlásil, se tam neobjevil vůbec.
+            c.execute('''CREATE TABLE IF NOT EXISTS user_audit
+                         (username TEXT PRIMARY KEY,
+                          auth_source TEXT DEFAULT 'local',
+                          first_seen TEXT,
+                          last_login TEXT,
+                          last_ip TEXT DEFAULT '',
+                          login_count INTEGER DEFAULT 0,
+                          online_seconds INTEGER DEFAULT 0)''')
+            c.execute('CREATE INDEX IF NOT EXISTS idx_user_audit_last ON user_audit(last_login)')
+
             c.execute('''CREATE TABLE IF NOT EXISTS kv_settings
                          (key TEXT PRIMARY KEY,
                           value TEXT NOT NULL,

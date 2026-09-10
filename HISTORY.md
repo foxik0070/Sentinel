@@ -1,5 +1,21 @@
 # Historie změn
 
+## [2026.09.012] - 2026-09-10
+
+**Souhrn:** Audit uživatelů — každý přihlášený má záznam včetně těch z LDAPu, s historií přihlášení a dobou strávenou online.
+
+### Správa uživatelů ukazovala jen ty z configu
+
+Seznam ve správě rolí se skládal z `WEB_USER`/`WEB_VIEWER_USER`, LDAP skupin z konfigurace a tabulky `user_roles`. `user_roles` ale obsahuje **jen ty, komu někdo roli ručně změnil** — uživatel z LDAPu, který se běžně přihlašuje, tam nefiguroval vůbec a nebylo o něm nic vidět.
+
+Nová tabulka `user_audit` (`username`, `auth_source`, `first_seen`, `last_login`, `last_ip`, `login_count`, `online_seconds`). Zápis visí na `_complete_login()`, tedy na jediném místě, kudy projde každé přihlášení — lokální i LDAP, včetně druhého kroku s TOTP.
+
+- **doba online** se přičítá při zavření relace; `session_remove()` si délku spočítá z `created_at`/`last_seen`, **než** řádek smaže — jinak ta informace zmizí s ním
+- nesmyslné hodnoty (záporné, delší než týden) se ignorují, aby jedna rozbitá relace nerozhodila součet
+- role se dotahuje z `user_roles`, takže obojí je vidět pohromadě
+- ve výpisu přibyl počet živých relací, poslední přihlášení, celkový čas online, počet přihlášení, poslední IP a datum prvního výskytu
+
+
 ## [2026.09.011] - 2026-09-08
 
 **Souhrn:** Chat v UI neposílal modelu aktivní issues, takže na dotaz o problémech odpovídal z knowledge base.
