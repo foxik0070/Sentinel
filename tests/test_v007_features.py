@@ -476,3 +476,103 @@ class TestUserAudit(unittest.TestCase):
         self.sa.user_audit_login('u', '', 'ldap')
         self.sa.set_user_role('u', 'operator')
         self.assertEqual(self.sa.get_user_audit()[0]['role'], 'operator')
+
+
+class TestDetectorSelfCheck(unittest.TestCase):
+    """Chybějící soubor detektoru musí založit issue, ne mlčet.
+
+    Přesně tohle se stalo v provozu: zdrojáky it4i detektorů zmizely z
+    plugins/, běžící proces si je držel v paměti, ale po restartu se
+    nenačetly. Config chtěl 12, načetlo se 0, v logu jen řádek u každého —
+    a protože logy nikdo nedispatchoval, jejich issues se do hodiny uklidily
+    jako vyřešené. Sentinel dva dny hlásil OK.
+
+    Testuje se logika self-checku, ne SQLite, takže se zápis do stavu jen
+    odchytí — DB round-trip by sem přinesl jen křehkost.
+    """
+    DETECTOR_SRC = (
+        "class Detector:\n"
+        "    def __init__(self, name, config_params=None):\n"
+        "        self.name = name\n"
+        "    def process(self, lines, file_path):\n"
+        "        pass\n"
+    )
+
+    def setUp(self):
+        from sentinel import config, plugin_manager, state
+        self.cfg, self.pm, self.state = config, plugin_manager, state
+        self._dir = tempfile.mkdtemp()
+        self._plugins = os.path.join(self._dir, 'plugins')
+        os.makedirs(self._plugins)
+        self._orig_cfg = (config.DETECTORS, config.PLUGIN_DIR)
+        config.PLUGIN_DIR = self._plugins
+
+        self.saved, self.resolved, self.severities = [], [], []
+        self._orig_fns = (state.save_problem, state.resolve_problem, state.set_issue_severity)
+        state.save_problem = lambda k, d: self.saved.append((k, d))
+        state.resolve_problem = lambda k, **kw: self.resolved.append(k)
+        state.set_issue_severity = lambda k, sev: self.severities.append((k, sev))
+
+    def tearDown(self):
+        self.cfg.DETECTORS, self.cfg.PLUGIN_DIR = self._orig_cfg
+        (self.state.save_problem, self.state.resolve_problem,
+         self.state.set_issue_severity) = self._orig_fns
+        self.pm.active_plugins.clear()
+        shutil.rmtree(self._dir, ignore_errors=True)
+
+    def _write(self, name):
+        with open(os.path.join(self._plugins, f'{name}.py'), 'w') as f:
+            f.write(self.DETECTOR_SRC)
+
+    def test_missing_detector_files_raise_issue(self):
+        self.cfg.DETECTORS = [
+            {'plugin': 'detector_icinga', 'match_pattern': 'icinga.log', 'enabled': True},
+            {'plugin': 'detector_ecc', 'match_pattern': 'ecc.log', 'enabled': True},
+        ]
+        self.pm.load_plugins()
+        self.assertEqual(len(self.pm.active_plugins), 0)
+        self.assertEqual(len(self.saved), 1, "chybějící detektory musí založit issue")
+        key, data = self.saved[0]
+        self.assertEqual(key, self.pm.SELF_CHECK_KEY)
+        self.assertIn('detector_icinga', data['last_line'])
+        self.assertIn('detector_ecc', data['last_line'])
+        self.assertEqual(self.severities, [(self.pm.SELF_CHECK_KEY, 'critical')])
+
+    def test_all_loaded_means_no_issue(self):
+        self._write('detector_a')
+        self._write('detector_b')
+        self.cfg.DETECTORS = [
+            {'plugin': 'detector_a', 'match_pattern': 'a.log', 'enabled': True},
+            {'plugin': 'detector_b', 'match_pattern': 'b.log', 'enabled': True},
+        ]
+        self.pm.load_plugins()
+        self.assertEqual(len(self.pm.active_plugins), 2)
+        self.assertEqual(self.saved, [])
+        self.assertEqual(self.resolved, [self.pm.SELF_CHECK_KEY])
+
+    def test_partial_load_still_reports(self):
+        self._write('detector_a')
+        self.cfg.DETECTORS = [
+            {'plugin': 'detector_a', 'match_pattern': 'a.log', 'enabled': True},
+            {'plugin': 'detector_chybi', 'match_pattern': 'b.log', 'enabled': True},
+        ]
+        self.pm.load_plugins()
+        self.assertEqual(len(self.saved), 1, "i jeden chybějící z dvou je problém")
+        self.assertIn('detector_chybi', self.saved[0][1]['last_line'])
+        self.assertNotIn('detector_a', self.saved[0][1]['last_line'])
+
+    def test_issue_clears_once_detectors_return(self):
+        self.cfg.DETECTORS = [{'plugin': 'detector_a', 'match_pattern': 'a.log', 'enabled': True}]
+        self.pm.load_plugins()
+        self.assertEqual(len(self.saved), 1)
+        self._write('detector_a')
+        self.pm.load_plugins()
+        self.assertEqual(self.resolved, [self.pm.SELF_CHECK_KEY],
+                         "po obnovení souborů se issue musí uklidit")
+
+    def test_disabled_detector_is_not_counted_as_missing(self):
+        self.cfg.DETECTORS = [
+            {'plugin': 'detector_vypnuty', 'match_pattern': 'x.log', 'enabled': False},
+        ]
+        self.pm.load_plugins()
+        self.assertEqual(self.saved, [], "vypnutý detektor nechybí, je vypnutý")

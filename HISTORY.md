@@ -1,5 +1,20 @@
 # Historie změn
 
+## [2026.09.013] - 2026-09-10
+
+**Souhrn:** Sentinel hlásí, když se nenačte detektor, který po něm config chce. Dosud v takovém případě mlčel a tvářil se, že je vše v pořádku.
+
+### Nenačtený detektor už není tichá porucha
+
+V provozu zmizely zdrojové soubory it4i detektorů z `plugins/`. Běžící proces si je držel naimportované, takže dál fungovaly — **teprve restart to odhalil**. Po startu se nenačetl ani jeden, `plugin_manager` u každého zalogoval řádek a pokračoval dál, a protože logy neměl kdo dispatchovat, uklidil stale cleanup do hodiny všechny jejich issues jako vyřešené.
+
+Výsledek: config vyžadoval 12 detektorů, načteno bylo 0, a Sentinel dva dny hlásil OK.
+
+`load_plugins()` nyní na konci porovná zapnuté detektory z configu proti skutečně načteným a rozdíl zapíše jako issue `SENTINEL|detectors_missing` v kanálu `infra` se severity `critical`, včetně výpisu, které chybí. Jakmile se detektory vrátí, issue se sám uklidí. Vypnutých detektorů se to netýká.
+
+Self-check nesmí shodit start, takže je obalený — ale případné selhání se zaloguje, ne spolkne.
+
+
 ## [2026.09.012] - 2026-09-10
 
 **Souhrn:** Audit uživatelů — každý přihlášený má záznam včetně těch z LDAPu, s historií přihlášení a dobou strávenou online.
