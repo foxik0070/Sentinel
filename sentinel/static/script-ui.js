@@ -4087,18 +4087,47 @@ async function openRoleModal() {
                 <div id="role-add-msg" style="font-size:0.82em; margin-top:6px; min-height:16px;"></div>
             </div>
             <div style="display:flex; flex-direction:column; gap:6px;">
-                ${users.map(u => `
-                    <div style="display:flex; align-items:center; gap:8px; padding:8px 12px; background:var(--panel); border:1px solid var(--border); border-radius:6px;">
-                        <i class="fa-solid fa-user" style="color:var(--text-muted); flex-shrink:0;"></i>
-                        <span style="flex:1; font-size:0.88em; font-weight:600;">${_escape(u.username)}</span>
-                        <span style="font-size:0.78em; color:var(--text-muted);">${_escape(u.source)}</span>
-                        <span style="font-size:0.82em; padding:2px 8px; border-radius:10px; background:rgba(99,102,241,0.15); color:var(--accent);">${_escape(u.role)}</span>
-                        ${u.source === 'db' ? `<button onclick="deleteUserRole('${_escape(u.username)}')" style="background:transparent; border:none; color:var(--error); cursor:pointer; font-size:0.85em; padding:2px 6px;"><i class="fa-solid fa-trash"></i></button>` : ''}
-                    </div>`).join('')}
+                ${users.map(u => {
+                    const online = (u.active_sessions || 0) > 0;
+                    return `
+                    <div style="padding:8px 12px; background:var(--panel); border:1px solid var(--border); border-radius:6px;">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <i class="fa-solid fa-user" style="color:${online ? 'var(--success)' : 'var(--text-muted)'}; flex-shrink:0;" title="${online ? t('user_online_now') : ''}"></i>
+                            <span style="flex:1; font-size:0.88em; font-weight:600;">${_escape(u.username)}${online ? ` <span style="font-size:.75em; color:var(--success);">● ${u.active_sessions}</span>` : ''}</span>
+                            <span style="font-size:0.78em; color:var(--text-muted);">${_escape(u.source)}</span>
+                            <span style="font-size:0.82em; padding:2px 8px; border-radius:10px; background:rgba(99,102,241,0.15); color:var(--accent);">${_escape(u.role)}</span>
+                            ${u.source === 'db' ? `<button onclick="deleteUserRole('${_escape(u.username)}')" style="background:transparent; border:none; color:var(--error); cursor:pointer; font-size:0.85em; padding:2px 6px;"><i class="fa-solid fa-trash"></i></button>` : ''}
+                        </div>
+                        ${u.last_login ? `
+                        <div style="display:flex; gap:14px; flex-wrap:wrap; margin-top:5px; padding-left:24px; font-size:.75em; color:var(--text-muted);">
+                            <span title="${t('user_last_login')}"><i class="fa-regular fa-clock" style="margin-right:3px;"></i>${_fmtUserTime(u.last_login)}</span>
+                            <span title="${t('user_total_online')}"><i class="fa-solid fa-hourglass-half" style="margin-right:3px;"></i>${_fmtOnline(u.online_seconds)}</span>
+                            <span title="${t('user_login_count')}"><i class="fa-solid fa-right-to-bracket" style="margin-right:3px;"></i>${u.login_count || 0}×</span>
+                            ${u.last_ip ? `<span style="font-family:monospace;">${_escape(u.last_ip)}</span>` : ''}
+                            ${u.first_seen ? `<span style="opacity:.7;" title="${t('user_first_seen')}">${t('user_since')} ${_fmtUserTime(u.first_seen)}</span>` : ''}
+                        </div>` : `
+                        <div style="margin-top:5px; padding-left:24px; font-size:.75em; color:var(--text-muted); opacity:.7;">
+                            ${t('user_never_logged_in')}
+                        </div>`}
+                    </div>`;
+                }).join('')}
             </div>`;
     } catch(e) {
         el.innerHTML = `<div style="color:var(--error); padding:16px;">${t('data_load_failed')}</div>`;
     }
+}
+
+function _fmtUserTime(iso) {
+    if (!iso) return '—';
+    try { return new Date(iso).toLocaleString(); } catch { return iso; }
+}
+
+function _fmtOnline(secs) {
+    secs = Number(secs) || 0;
+    if (secs < 60) return `${secs}s`;
+    if (secs < 3600) return `${Math.floor(secs / 60)}m`;
+    const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60);
+    return h < 24 ? `${h}h ${m}m` : `${Math.floor(h / 24)}d ${h % 24}h`;
 }
 
 function closeRoleModal() { document.getElementById('role-modal').style.display = 'none'; }

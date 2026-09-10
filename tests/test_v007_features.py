@@ -401,3 +401,72 @@ class TestAlertsContextInBothChatPaths(unittest.TestCase):
         src = open(os.path.join(_ROOT, 'sentinel/routes/chat.py'), encoding='utf-8').read()
         self.assertIn('build_alerts_context()', src,
                       'streamovaná větev musí posílat aktivní issues')
+
+
+class TestUserAudit(unittest.TestCase):
+    """Každý přihlášený musí mít záznam, i když mu nikdo nenastavil roli.
+
+    `user_roles` obsahuje jen ty, u kterých někdo roli změnil — uživatel
+    z LDAPu, který se přihlásil, ve správě uživatelů vůbec nefiguroval.
+    """
+    def setUp(self):
+        self._dir = tempfile.mkdtemp()
+        self._orig_env = os.environ.get('SENTINEL_DB_DIR')
+        os.environ['SENTINEL_DB_DIR'] = self._dir
+        from sentinel import state_base, state_agents, state_issues
+        for m in (state_base, state_agents, state_issues):
+            importlib.reload(m)
+        self.sb, self.sa, self.si = state_base, state_agents, state_issues
+        state_base.init_db()
+
+    def tearDown(self):
+        if self._orig_env is None:
+            os.environ.pop('SENTINEL_DB_DIR', None)
+        else:
+            os.environ['SENTINEL_DB_DIR'] = self._orig_env
+        from sentinel import state_base, state_agents, state_issues
+        for m in (state_base, state_agents, state_issues):
+            importlib.reload(m)
+        shutil.rmtree(self._dir, ignore_errors=True)
+
+    def test_ldap_user_without_role_gets_record(self):
+        self.sa.user_audit_login('kru0052', '10.0.0.5', 'ldap')
+        rows = self.sa.get_user_audit()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['username'], 'kru0052')
+        self.assertEqual(rows[0]['auth_source'], 'ldap')
+        self.assertEqual(rows[0]['login_count'], 1)
+        self.assertIsNone(rows[0]['role'], 'roli nikdo nenastavil, ale záznam existovat musí')
+
+    def test_repeated_login_counts_and_updates_ip(self):
+        self.sa.user_audit_login('u', '10.0.0.1', 'ldap')
+        first = self.sa.get_user_audit()[0]['first_seen']
+        self.sa.user_audit_login('u', '10.0.0.2', 'ldap')
+        r = self.sa.get_user_audit()[0]
+        self.assertEqual(r['login_count'], 2)
+        self.assertEqual(r['last_ip'], '10.0.0.2')
+        self.assertEqual(r['first_seen'], first, 'first_seen se nesmí přepsat')
+
+    def test_session_close_accumulates_online_time(self):
+        self.sa.user_audit_login('u', '10.0.0.1', 'ldap')
+        self.si.session_register('s1', 'u', 'admin', '10.0.0.1', 'UA')
+        conn = self.sb._get_conn()
+        conn.execute("UPDATE active_sessions SET created_at=datetime('now','-45 minutes'), "
+                     "last_seen=datetime('now') WHERE session_uuid='s1'")
+        conn.commit()
+        conn.close()
+        self.si.session_remove('s1')
+        secs = self.sa.get_user_audit()[0]['online_seconds']
+        self.assertGreater(secs, 2600, 'doba relace se musí přičíst')
+        self.assertLess(secs, 2800)
+
+    def test_nonsense_durations_ignored(self):
+        self.sa.user_audit_login('u', '', 'local')
+        self.sa.user_audit_add_online('u', -5)
+        self.sa.user_audit_add_online('u', 999_999_999)
+        self.assertEqual(self.sa.get_user_audit()[0]['online_seconds'], 0)
+
+    def test_role_is_joined_in(self):
+        self.sa.user_audit_login('u', '', 'ldap')
+        self.sa.set_user_role('u', 'operator')
+        self.assertEqual(self.sa.get_user_audit()[0]['role'], 'operator')

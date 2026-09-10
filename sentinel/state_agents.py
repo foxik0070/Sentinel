@@ -1074,6 +1074,62 @@ def delete_user_role(username: str):
         except Exception as e:
             logger.error(f"delete_user_role: {e}")
 
+def user_audit_login(username: str, ip: str = '', auth_source: str = 'local'):
+    """Zaznamená přihlášení. Volá se z jediného místa, kudy projde každý login.
+
+    Díky tomu má záznam i uživatel z LDAPu, kterému nikdo ručně nenastavil roli —
+    `user_roles` obsahuje jen ty, u kterých někdo roli změnil.
+    """
+    with db_lock:
+        try:
+            now = datetime.now(timezone.utc).isoformat()
+            conn = _get_conn()
+            conn.execute(
+                "INSERT INTO user_audit (username, auth_source, first_seen, last_login, last_ip, login_count) "
+                "VALUES (?,?,?,?,?,1) "
+                "ON CONFLICT(username) DO UPDATE SET "
+                "  last_login=excluded.last_login, last_ip=excluded.last_ip, "
+                "  auth_source=excluded.auth_source, "
+                "  login_count=user_audit.login_count+1",
+                (username, auth_source, now, now, ip)
+            )
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"user_audit_login: {e}")
+
+def user_audit_add_online(username: str, seconds: int):
+    """Přičte odslouženou dobu relace. Záporné či nesmyslné hodnoty ignoruje."""
+    if not username or seconds <= 0 or seconds > 86400 * 7:
+        return
+    with db_lock:
+        try:
+            conn = _get_conn()
+            conn.execute("UPDATE user_audit SET online_seconds = online_seconds + ? WHERE username = ?",
+                         (int(seconds), username))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"user_audit_add_online: {e}")
+
+def get_user_audit() -> list:
+    """Audit uživatelů i s aktuálně nastavenou rolí a počtem živých relací."""
+    try:
+        conn = _get_conn()
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT a.username, a.auth_source, a.first_seen, a.last_login, a.last_ip, "
+            "       a.login_count, a.online_seconds, r.role, "
+            "       (SELECT COUNT(*) FROM active_sessions s WHERE s.username = a.username) AS active_sessions "
+            "FROM user_audit a LEFT JOIN user_roles r ON r.username = a.username "
+            "ORDER BY a.last_login DESC"
+        ).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        logger.error(f"get_user_audit: {e}")
+        return []
+
 def get_setting(key: str, default=None):
     try:
         conn = _get_conn()
