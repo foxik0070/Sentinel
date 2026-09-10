@@ -12,6 +12,46 @@ Handles dynamic imports from absolute paths and line dispatching to agnostic plu
 
 active_plugins = []
 
+SELF_CHECK_KEY = "SENTINEL|detectors_missing"
+
+
+def _report_load_result():
+    """Založí issue, když se nenačetl detektor, který config vyžaduje.
+
+    Bez tohohle Sentinel po smazání souborů detektorů hlásil vesele OK:
+    config chtěl 12 detektorů, načetlo se 0, v logu jen řádek u každého —
+    a protože je nikdo nedispatchoval, jejich issues se do hodiny uklidily
+    jako vyřešené. Vypadalo to, že je infrastruktura v pořádku.
+    """
+    expected = {d.get("plugin") for d in (config.DETECTORS or [])
+                if d.get("enabled", True) and d.get("plugin") and d.get("match_pattern")}
+    loaded = {inst.name for _, inst in active_plugins}
+    missing = sorted(expected - loaded)
+
+    try:
+        from . import state
+        if missing:
+            state.save_problem(SELF_CHECK_KEY, {
+                'status': 'active',
+                'channel_type': 'infra',
+                'plugin_name': 'sentinel_self_check',
+                'host': 'sentinel',
+                'last_line': (f"Nenačetlo se {len(missing)} z {len(expected)} detektorů "
+                              f"z config.yaml: {', '.join(missing)}. "
+                              f"Logy, které mají na starost, nikdo nezpracovává."),
+            })
+            state.set_issue_severity(SELF_CHECK_KEY, 'critical')
+        else:
+            state.resolve_problem(SELF_CHECK_KEY, reason='detectors_loaded')
+    except Exception as e:
+        # Self-check nesmí shodit start, ale nesmí ani selhat potichu
+        utils.log_message(f"[!] PluginManager: self-check selhal: {e}")
+
+    if missing:
+        utils.log_message(f"[!] PluginManager: KRITICKÉ — nenačteno {len(missing)}/{len(expected)} "
+                          f"detektorů: {', '.join(missing)}")
+
+
 def load_plugins():
     """Initializes plugins based on config.DETECTORS and config.PLUGIN_DIR."""
     global active_plugins
@@ -81,6 +121,8 @@ def load_plugins():
              utils.log_message(f"[!] PluginManager: Plugin '{p_name}' is missing 'Detector' class: {e}")
         except Exception as e:
             utils.log_message(f"[!] PluginManager: Error loading '{p_name}': {e}")
+
+    _report_load_result()
 
 def dispatch(file_path: str, lines: list):
     """Dispatches lines to all plugins matching the file pattern."""
