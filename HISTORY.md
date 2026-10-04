@@ -1,5 +1,21 @@
 # Historie změn
 
+## [2026.10.001] - 2026-10-03
+
+**Souhrn:** Chat posílá logy, alerty a soubory modelu jako nedůvěryhodná data a varuje před rizikovými příkazy v odpovědi.
+
+### Prompt injection přes logy v chatu
+
+Ochrana `ai_guard.wrap_untrusted()` (543) existovala, ale používala ji jen diagnostika, knowledge a incident analysis. Chat ji obcházel: ocas logů z `build_logs_context()`, řádky alertů, obsah otevřeného souboru i hláška pro autofix šly do promptu holé, ve stejné zprávě jako otázka uživatele. Řádek „ignore previous instructions" tak model nijak neodlišil od pokynu.
+
+- Logy, alerty, soubory (stream i non-stream) a autofix hláška jsou teď ohraničené `<<<UNTRUSTED_LOG_DATA … UNTRUSTED_LOG_DATA>>>`. Typické injection fráze se označí `[POKUS-O-INJECTION:…]` a oddělovač uvnitř dat se odstraní, takže log nemůže blok ukončit předčasně.
+- Všechny chatové system prompty nesou `ai_guard.UNTRUSTED_RULE`. Samotná poznámka uvnitř bloku nestačí, protože sedí ve stejné zprávě jako útočníkův text.
+- `ai_guard.risky_commands()` projde code bloky a inline příkazy v odpovědi přes `safety.classify()`. U rizikových se pod odpovědí zobrazí varování (u streamu přes `warning_html` v `done` události). Model sám nic nespustí, ale uživatel příkaz zkopíruje. Autofix risk skóre měl, volný chat ne.
+- Odpověď ukládaná do historie konverzace prochází `sanitize()`, aby se podstrčená instrukce nevracela do dalších dotazů.
+
+Ohraničení injection neznemožní, jen ji ztíží. Skutečnou pojistkou zůstává, že chat nemá nástroje a každý příkaz potvrzuje člověk.
+
+
 ## [2026.09.016] - 2026-09-10
 
 **Souhrn:** Model dostává v kontextu i poslední řádky logů, ke kterým se vážou aktivní issues.

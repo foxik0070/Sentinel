@@ -30,6 +30,7 @@ from . import state
 from . import utils
 from . import config
 from . import actions
+from . import ai_guard
 from . import rag 
 from . import analytics
 
@@ -2313,8 +2314,15 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
                 break
             out.append(block)
             used += len(block)
-        return ("Recent log excerpts (files referenced by active issues):\n"
-                + "\n\n".join(out)) if out else ""
+        if not out:
+            return ""
+        # 543: obsah logů může zapsat kdokoli, kdo umí psát do sledované
+        # služby — do promptu jde jako data, ne jako pokyny
+        block, hits = ai_guard.wrap_untrusted("\n\n".join(out), "výňatky z logů",
+                                              max_len=max_chars + 200)
+        if hits:
+            utils.log_message(f"[543] build_logs_context: {len(hits)} pokusů o injection v logech")
+        return "Recent log excerpts (files referenced by active issues):\n" + block
 
     def build_alerts_context(self, limit: int = 15) -> str:
         """Přehled aktivních issues pro AI kontext.
@@ -2340,7 +2348,9 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
             lines.append(f"- {i.get('host', '?')} [{tag}] {(i.get('last_line') or '')[:160]}")
         header = f"Active infrastructure alerts ({len(active)} total"
         header += f", {len(top)} most recent shown):" if len(active) > len(top) else "):"
-        return header + "\n" + "\n".join(lines)
+        # 543: last_line je řádek z logu — stejně nedůvěryhodný jako logy samy
+        block, _ = ai_guard.wrap_untrusted("\n".join(lines), "přehled alertů")
+        return header + "\n" + block
 
     def _ai_req_begin(self, source: str, text: str, channel: str = "ai", host: str = "-"):
         """Zaeviduje AI požadavek jako čekající. Vrací id pro _ai_req_* volání."""
@@ -2598,7 +2608,8 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
             f"{status_note}"
             "Answer in ENGLISH. Be concise and structured (bullet points or short paragraphs). "
             "If the provided context is not relevant to the question, answer from your general "
-            "Linux/infrastructure expertise and say so briefly. Never hallucinate commands or facts."
+            "Linux/infrastructure expertise and say so briefly. Never hallucinate commands or facts. "
+            + ai_guard.UNTRUSTED_RULE
         )
 
         user_parts = []

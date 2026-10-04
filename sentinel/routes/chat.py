@@ -8,12 +8,34 @@ import subprocess
 import requests
 from flask import Blueprint, request, jsonify, g, Response
 from ..auth import requires_auth, get_real_ip, int_param
-from .. import state, config, utils
+from .. import state, config, utils, ai_guard
 from werkzeug.utils import secure_filename
 import logging
 from datetime import datetime, timezone
 
 logger = logging.getLogger("sentinel.chat")
+
+
+def _risk_warning_html(reply: str) -> str:
+    """543: Varování u rizikových příkazů v odpovědi chatu.
+
+    Log nebo soubor v kontextu může model přimět doporučit škodlivý příkaz.
+    Sám nic nespustí, ale uživatel ho zkopíruje — autofix risk skóre měl,
+    volný chat ne.
+    """
+    risky = ai_guard.risky_commands(reply)
+    if not risky:
+        return ""
+    rows = "".join(
+        f"<div><code>{html.escape(r['command'])}</code> — {r['score']}/100"
+        f"{' · ' + html.escape(' | '.join(r['reasons'])) if r['reasons'] else ''}</div>"
+        for r in risky[:5])
+    return (
+        "<div style='background:rgba(220,53,69,0.12);border:1px solid #dc3545;"
+        "border-radius:4px;padding:7px 10px;margin-top:8px;font-size:0.8em;color:#dc3545;'>"
+        "⚠️ Odpověď obsahuje rizikové příkazy. Model mohl být ovlivněn obsahem "
+        f"logů — před spuštěním je ověř.{rows}</div>"
+    )
 
 
 def create_blueprint(service):
@@ -307,9 +329,12 @@ def create_blueprint(service):
             content = af['content'][:_MAX_FILE_CHARS]
             if len(af['content']) > _MAX_FILE_CHARS:
                 content += "\n\n[...zkráceno na 2048 tokenů...]"
+            content, _ = ai_guard.wrap_untrusted(content, "obsah souboru",
+                                                 max_len=_MAX_FILE_CHARS + 200)
             history_str = service.conv_history(g.username, -4, 0)
             system_msg = (f"You are Sentinel, a Linux infrastructure support assistant. "
-                          f"The user is examining file '{fname}'. Answer concisely in ENGLISH.")
+                          f"The user is examining file '{fname}'. Answer concisely in ENGLISH. "
+                          + ai_guard.UNTRUSTED_RULE)
             user_msg = (f"{f'Conversation history:{chr(10)}{history_str}{chr(10)}{chr(10)}' if history_str else ''}"
                         f"File content:\n{content}\n\nQuestion: {msg}")
             if config.HAILO_OLLAMA_ENABLED:
@@ -327,7 +352,8 @@ def create_blueprint(service):
             history_str = service.conv_history(g.username, -5, -1)
             system_msg = (f"You are Sentinel, an AI assistant for Linux infrastructure administration. "
                           f"{status_note}Answer in ENGLISH. Be concise. "
-                          "If the context is irrelevant, answer from general expertise.")
+                          "If the context is irrelevant, answer from general expertise. "
+                          + ai_guard.UNTRUSTED_RULE)
             user_parts = []
             if history_str:
                 user_parts.append(f"Conversation history:\n{history_str}")
@@ -530,13 +556,21 @@ def create_blueprint(service):
                 try:
                     payload = json.loads(sse[5:].strip())
                     tok = payload.get('token')
-                    if tok:
+                    if tok and not payload.get('reasoning'):
                         acc.append(tok)
+                    if payload.get('done'):
+                        # 543: rizikové příkazy se dají posoudit až v celé odpovědi
+                        warn = _risk_warning_html("".join(acc))
+                        if warn:
+                            payload['warning_html'] = warn
+                            sse = f"data: {json.dumps(payload)}\n\n"
                 except Exception:
                     pass
                 yield sse
             if acc:
-                service.conv_append(_username, "Sentinel: " + "".join(acc)[:300])
+                # 543: do historie jde odpověď zneškodněná — jinak by se
+                # podstrčená instrukce vracela do každého dalšího dotazu
+                service.conv_append(_username, "Sentinel: " + ai_guard.sanitize("".join(acc)[:300])[0])
 
         return Response(_capture_and_stream(), mimetype='text/event-stream',
                         headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
@@ -693,14 +727,17 @@ def create_blueprint(service):
                 except Exception:
                     pass
 
+                # 543: hláška pochází z logu — model z ní generuje shell příkaz
+                safe_msg, _ = ai_guard.wrap_untrusted(clean_msg, "hláška z logu")
                 cfg_autofix = config.PROMPTS.get("chat_autofix", "")
                 if cfg_autofix:
-                    prompt = cfg_autofix.replace("{clean_msg}", clean_msg)
+                    prompt = cfg_autofix.replace("{clean_msg}", safe_msg)
                     autofix_messages = None
                 else:
                     autofix_messages = [
-                        {"role": "system", "content": default_autofix_sys + os_hint},
-                        {"role": "user", "content": f"Issue: {clean_msg}"},
+                        {"role": "system", "content": default_autofix_sys + os_hint
+                                                      + "\n" + ai_guard.UNTRUSTED_RULE},
+                        {"role": "user", "content": f"Issue:\n{safe_msg}"},
                     ]
                     prompt = None
                 raw_response = service.execute_ollama(prompt, num_ctx=1024, messages=autofix_messages, max_tokens=200).strip()
@@ -953,10 +990,13 @@ def create_blueprint(service):
             if len(af['content']) > _MAX_FILE_CHARS:
                 content += f"\n\n[... obsah zkrácen na 2048 tokenů z {len(af['content'])//4} tokenů celkem ...]"
             history_str = service.conv_history(g.username, -4, 0)
+            content, _ = ai_guard.wrap_untrusted(content, "obsah souboru",
+                                                 max_len=_MAX_FILE_CHARS + 200)
             system_content = (
                 f"You are Sentinel, a Linux infrastructure support assistant. The user is examining file '{fname}'. "
                 "Answer in ENGLISH. Be concise. Base your answer on the file content when relevant; "
-                "supplement with general Linux knowledge if needed."
+                "supplement with general Linux knowledge if needed. "
+                + ai_guard.UNTRUSTED_RULE
             )
             user_content_parts = []
             if history_str:
@@ -973,11 +1013,12 @@ def create_blueprint(service):
                 reply = service.execute_ollama(f"{system_content}\n\n{user_content}\n\nAnswer:")
             duration = time.time() - start_ts
             service.log_event("file_chat", "Answered from file context", user=g.username, duration_ms=duration*1000)
-            service.conv_append(g.username, f"Sentinel: {reply[:300]}")
+            service.conv_append(g.username, f"Sentinel: {ai_guard.sanitize(reply[:300])[0]}")
             _fb_b64 = base64.b64encode(reply[:500].encode()).decode()
             return jsonify({
                 "reply": (
                     f"<b>🤖 Sentinel ({duration:.2f}s) [File]:</b><br>{html.escape(reply).replace(chr(10), '<br>')}"
+                    f"{_risk_warning_html(reply)}"
                     f"<div style='margin-top:8px;display:flex;gap:5px;align-items:center;'>"
                     f"<span style='font-size:0.75em;color:var(--text-muted);'>Pomohlo?</span>"
                     f"<button onclick='aiFeedback(this,\"chat\",\"up\",\"{_fb_b64}\")' "
@@ -991,11 +1032,12 @@ def create_blueprint(service):
         reply = service.call_ai_knowledge_base(msg, username=g.username)
         duration = time.time() - start_ts
         service.log_event("rag_chat", "Answered from RAG", user=g.username, duration_ms=duration*1000)
-        service.conv_append(g.username, f"Sentinel: {reply[:300]}")
+        service.conv_append(g.username, f"Sentinel: {ai_guard.sanitize(reply[:300])[0]}")
         _fb_b64 = base64.b64encode(reply[:500].encode()).decode()
         return jsonify({
             "reply": (
                 f"<b>🤖 Sentinel ({duration:.2f}s):</b><br>{html.escape(reply).replace(chr(10), '<br>')}"
+                f"{_risk_warning_html(reply)}"
                 f"<div style='margin-top:8px;display:flex;gap:5px;align-items:center;'>"
                 f"<span style='font-size:0.75em;color:var(--text-muted);'>Pomohlo?</span>"
                 f"<button onclick='aiFeedback(this,\"chat\",\"up\",\"{_fb_b64}\")' "
