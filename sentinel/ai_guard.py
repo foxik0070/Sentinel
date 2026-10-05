@@ -106,6 +106,12 @@ def wrap_untrusted(text: str, label: str = "obsah logu",
     return block, hits
 
 
+def untrusted(text: str, label: str = "hláška z logu",
+                max_len: int = MAX_UNTRUSTED_LEN) -> str:
+    """wrap_untrusted bez nálezů — pro skládání promptů v jednom výrazu."""
+    return wrap_untrusted(text, label, max_len)[0]
+
+
 # Věta do system promptu všude, kde user zpráva nese zabalená data. Samotná
 # poznámka uvnitř bloku nestačí — sedí ve stejné zprávě jako útočníkův text.
 UNTRUSTED_RULE = (

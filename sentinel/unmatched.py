@@ -93,12 +93,13 @@ def clear():
 
 def suggest_prompt(items) -> str:
     """Prompt pro návrh patternů z nezachycených řádků."""
+    from .ai_guard import untrusted
     block = "\n".join(f"[{i['file']}] (×{i['count']}) {i['sample'][:200]}"
                       for i in (items or [])[:15])
     return (
         "Jsi expert na monitoring logů. Následující řádky vypadají jako problém, "
         "ale žádný detektor je nezachytil.\n\n"
-        f"ŘÁDKY:\n{block}\n\n"
+        f"ŘÁDKY:\n{untrusted(block, 'nezachycené řádky logů')}\n\n"
         "Navrhni nejvýše 3 regexy, které by tyhle případy detekovaly. Regex musí "
         "být konkrétní — příliš obecný by hlásil i běžný provoz.\n"
         'Odpověz POUZE JSON pole: [{"name":"...", "pattern":"...", '

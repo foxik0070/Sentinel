@@ -9,7 +9,7 @@ from datetime import datetime, timezone, timedelta
 from flask import Blueprint, request, jsonify, g, Response
 from ..auth import requires_auth, int_param
 from .. import (state, config, utils, analytics, actions, diagnostics, fix_verify,
-                remediation, issue_lifecycle)
+                remediation, issue_lifecycle, ai_guard)
 
 logger = logging.getLogger("sentinel.chat")
 
@@ -695,7 +695,8 @@ def create_blueprint(service):
         plugin, host, last_line, channel, first_seen = row
         context = service.call_ai_knowledge_base(last_line or '')
         prompt_template = config.PROMPTS.get(channel or 'default', config.PROMPTS.get('default', '{line}'))
-        prompt = prompt_template.replace('{line}', f"[{plugin}] {host}: {last_line or ''}")
+        prompt = prompt_template.replace(
+            '{line}', f"[{plugin}] {host}:\n{ai_guard.untrusted(last_line or '')}")
         if context:
             prompt += f"\n\nKontext z knowledge base:\n{context}"
         # 449: telemetrie kolem vzniku incidentu — AI dosud viděla jen text
@@ -784,7 +785,7 @@ def create_blueprint(service):
         prompt = (
             "Jsi zkušený SRE. Níže je skupina alertů, které vznikly krátce po sobě.\n"
             "Urči, který alert je PŘÍČINA (root cause) a které jsou jen NÁSLEDKY.\n\n"
-            f"ALERTY:\n{listing}\n\n"
+            f"ALERTY:\n{ai_guard.untrusted(listing, 'seznam alertů')}\n\n"
             'Odpověz POUZE JSON: {"root_cause_index": <číslo alertu nebo null>, '
             '"reasoning": "<1-2 věty česky proč>", '
             '"symptom_indexes": [<čísla následků>], '
@@ -987,7 +988,7 @@ def create_blueprint(service):
         if body.get('ai'):
             try:
                 p = (f"Systémový alert: [{prob.get('plugin_name', '?')}] "
-                     f"{prob.get('host', '?')}: {(prob.get('last_line') or '')[:200]}\n"
+                     f"{prob.get('host', '?')}:\n{ai_guard.untrusted((prob.get('last_line') or '')[:200])}\n"
                      f"Naposledy detekován před {int(age_min)} minutami. "
                      f"Odpověz 1-2 větami česky: je pravděpodobné, že problém stále trvá?")
                 ai_opinion = html.escape(service.execute_ollama(p, num_ctx=1024, max_tokens=120) or '')
@@ -1900,9 +1901,10 @@ def create_blueprint(service):
             f"z monitorovacího systému Sentinel (kategorie: {channel_label}).\n\n"
             f"Pro každou skupinu podobných problémů navrhni jeden konkrétní akční krok. "
             f"Identifikuj nejkritičtější problém. Odpověz strukturovaně, max 300 slov.\n\n"
-            f"ALERTY:\n{issues_text}" +
+            f"ALERTY:\n{ai_guard.untrusted(issues_text, 'seznam alertů', max_len=8000)}" +
             (("\n\nHISTORIE HOSTŮ (posledně vyřešené issues):\n" +
-              "\n".join(f"{h}:\n" + "\n".join(v) for h, v in host_history.items()))
+              ai_guard.untrusted("\n".join(f"{h}:\n" + "\n".join(v) for h, v in host_history.items()),
+                                 "historie issues"))
              if host_history else "")
         )
         try:
@@ -2090,7 +2092,8 @@ def create_blueprint(service):
                 prompt = (
                     "Jsi senior sysadmin. Pro každý cluster issues níže napiš JEDNU větu s pravděpodobnou root cause.\n"
                     "Odpověz POUZE čísly a větami, bez dalšího textu:\n"
-                    "1. <root cause>\n2. <root cause>\n...\n\n" + cluster_text
+                    "1. <root cause>\n2. <root cause>\n...\n\n"
+                    + ai_guard.untrusted(cluster_text, "clustery issues", max_len=8000)
                 )
                 raw = service.execute_ollama(prompt, num_ctx=2048, max_tokens=300)
                 for line in raw.splitlines():
@@ -2136,7 +2139,8 @@ def create_blueprint(service):
             f"1. Jméno skupiny a počet issues\n"
             f"2. Pravděpodobná příčina (1 věta)\n"
             f"3. Doporučená akce\n\n"
-            f"Odpověz stručně a strukturovaně. Max 400 slov.\n\nALERTY:\n" + '\n'.join(lines)
+            f"Odpověz stručně a strukturovaně. Max 400 slov.\n\nALERTY:\n"
+            + ai_guard.untrusted('\n'.join(lines), "seznam alertů", max_len=6000)
         )
         try:
             reply = service.execute_ollama(prompt, num_ctx=4096, max_tokens=600)
@@ -2183,7 +2187,7 @@ def create_blueprint(service):
             f"Jsi senior sysadmin. Vytvoř stručný runbook (krok-za-krokem postup řešení) "
             f"pro tento typ incidentu:\n\n"
             f"Plugin: {plugin}\nKanál: {channel or 'obecný'}\n"
-            f"Příklad zprávy: {last_line[:200] if last_line else 'N/A'}\n\n"
+            f"Příklad zprávy:\n{ai_guard.untrusted(last_line[:200]) if last_line else 'N/A'}\n\n"
             f"Runbook musí obsahovat:\n"
             f"1. Příčina (1-2 věty)\n"
             f"2. Okamžité kroky (číslovaný seznam, max 5)\n"
@@ -2681,7 +2685,7 @@ def create_blueprint(service):
         prompt = (
             f"Vytvoř postmortem report v Markdownu pro incident:\n"
             f"Host: {host}, Plugin: {plugin}, Kanál: {ch}, Severity: {severity}\n"
-            f"Zpráva: {last_line}\n"
+            f"Zpráva:\n{ai_guard.untrusted(last_line or '')}\n"
             f"Začátek: {first_seen}, Konec: {last_seen}, Status: {status}\n"
             f"Komentáře: {comments_text}\n\n"
             f"Postmortem musí obsahovat: Shrnutí, Timeline, Root Cause, Impact, Action Items. Piš česky."
