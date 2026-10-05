@@ -150,6 +150,8 @@ def create_blueprint(service):
             _max_c = 8192
             content_trimmed = content[-_max_c:] + (f"\n[...zkráceno na posledních {_max_c} znaků...]" if len(content) > _max_c else "")
             default_prompt = "IT Admin. Log '{filename}':\n\n{content}\n\nBriefly (max 4 sentences) summarize the errors. Answer in ENGLISH."
+            # 543: obsah logu je cizí vstup — i ve vlastní šabloně z configu
+            content_trimmed = ai_guard.untrusted(content_trimmed, "obsah logu", max_len=_max_c + 200)
             prompt = config.PROMPTS.get("chat_analyze_single", default_prompt).replace("{filename}", filename).replace("{content}", content_trimmed)
             ai_reply = service.execute_ollama(prompt, num_ctx=2048, max_tokens=400)
             return jsonify({"reply": html.escape(ai_reply).replace('\n', '<br>')})
@@ -183,6 +185,7 @@ def create_blueprint(service):
 
         file_list_str = ", ".join(analyzed_files)
         default_complex = "IT Admin. Logs ({files_list}):\n\n{content}\n\nFind the main problems (max 5 sentences). Answer in ENGLISH."
+        combined_content = ai_guard.untrusted(combined_content, "obsah logů", max_len=MAX_TOTAL + 1000)
         prompt = config.PROMPTS.get("chat_analyze_complex", default_complex).replace("{files_list}", file_list_str).replace("{content}", combined_content)
         ai_reply = service.execute_ollama(prompt, num_ctx=config.OLLAMA_NUM_CTX or 8000, max_tokens=500)
         files_html = "".join([f"<span style='background:rgba(0,120,212,0.2); padding:2px 6px; border-radius:4px; margin-right:5px; font-size:0.85em; border:1px solid rgba(0,120,212,0.4);'>{f}</span>" for f in analyzed_files])

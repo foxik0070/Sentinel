@@ -1,5 +1,19 @@
 # Historie změn
 
+## [2026.10.002] - 2026-10-05
+
+**Souhrn:** Ochrana proti prompt injection (543) teď platí pro všechny AI prompty, ne jen pro chat a diagnostiku.
+
+### Řádky logů ve všech promptech jako data
+
+Po opravě chatu (2026.10.001) zbylo asi 15 míst, kde šel `last_line` nebo obsah logu do modelu holý. Teď procházejí `ai_guard.untrusted()`, tenkou obálkou nad `wrap_untrusted()` pro skládání promptu v jednom výrazu:
+
+- **Moduly:** eskalační shrnutí (`escalation.ai_prompt`), kategorie remediace (`remediation.plan_prompt`), řetěz příčin (`correlate.chain_prompt`), návrh patternů z nezachycených řádků (`unmatched.suggest_prompt`), hláška v `diagnostics.interpret_prompt` (výstupy příkazů už obalené byly) a denní AI digest.
+- **Routy:** re-analýza issue (i s vlastní šablonou z configu), root cause incidentu, AI názor u recheck, hromadná analýza a korelace alertů včetně historie hostů, AI clustery, generování runbooku, postmortem, návrh patternů z historie, analýza jednoho logu a skupiny logů.
+
+Neobaleno zůstává jen to, co z logů nepochází: telemetrie (čísla a názvy metrik), týdenní trend (počty), komentáře přihlášených uživatelů a statické evaly.
+
+
 ## [2026.10.001] - 2026-10-03
 
 **Souhrn:** Chat posílá logy, alerty a soubory modelu jako nedůvěryhodná data a varuje před rizikovými příkazy v odpovědi.

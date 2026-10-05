@@ -133,12 +133,13 @@ def ai_prompt(issue, ctx, age_hours) -> str:
         for m in (ctx.get("metrics") or [])
         if isinstance(m.get('delta_pct'), (int, float))
     ) or "beze změny"
+    from .ai_guard import untrusted
     return (
         "Jsi SRE. Problém se nedaří vyřešit a eskaluje se. Napiš 1-2 věty česky "
         "pro kolegu, který ho přebírá: co je nejpravděpodobnější příčina a co "
         "zkusit dál. Neopakuj, co už selhalo.\n\n"
-        f"PROBLÉM: [{issue.get('plugin_name', '?')}] {issue.get('host', '?')}: "
-        f"{(issue.get('last_line') or '')[:200]}\n"
+        f"PROBLÉM: [{issue.get('plugin_name', '?')}] {issue.get('host', '?')}:\n"
+        f"{untrusted((issue.get('last_line') or '')[:200])}\n"
         f"AKTIVNÍ: {age_hours:.1f} h\n"
         f"UŽ SE ZKOUŠELO:\n{tried}\n"
         f"TELEMETRIE: {metrics}\n\n"

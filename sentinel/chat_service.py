@@ -1026,7 +1026,9 @@ class ChatService(threading.Thread):
             prompt = (
                 "Jsi Sentinel, monitorovací systém. Napiš stručný denní přehled česky "
                 "(max 6 vět): co je nejdůležitější, co se vyřešilo, na co se zaměřit. "
-                "Bez úvodních frází, rovnou k věci.\n\nData:\n" + "\n".join(lines)
+                "Bez úvodních frází, rovnou k věci.\n\nData:\n"
+                # 543: hlášky issues jsou řádky z logů
+                + ai_guard.untrusted("\n".join(lines), "přehled issues")
             )
             digest = (self.execute_ollama(prompt, num_ctx=2048, max_tokens=350) or "").strip()
             if not self._ai_reply_ok(digest):
