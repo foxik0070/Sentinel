@@ -2628,6 +2628,8 @@ async function _actionAddToAllowed(actionId, autoExec) {
 
 // --- AI UŽIVATELÉ: zachycená AI sezení z agentů -----------------------------
 let _aiSessionsData = [];
+// Zavrene/otevrene skupiny prezijou refresh i prekresleni pri filtrovani.
+const _aiOpenState = new Map();
 
 const _AI_CAT = {
     cli:     {icon: 'fa-robot',          color: 'var(--accent)', label: 'CLI agent'},
@@ -2722,55 +2724,111 @@ function _renderAiSessions() {
     }
     if (emptyEl) emptyEl.style.display = 'none';
 
-    // Hlavní osa: technologie -> jednotlivá sezení.
-    const groups = new Map();
+    // Tri skladaci urovne: technologie -> agent (stroj) -> uzivatel -> sezeni.
+    // Pri stovkach sezeni je plochy seznam necitelny; stav skupin prezije
+    // refresh pres data-group-key, stejne jako u issues modalu.
+    const nest = new Map();
     data.forEach(r => {
-        const k = r.tool || '—';
-        if (!groups.has(k)) groups.set(k, []);
-        groups.get(k).push(r);
+        const tool = r.tool || '—', host = r.host || '—', user = r.user || '?';
+        if (!nest.has(tool)) nest.set(tool, new Map());
+        const hosts = nest.get(tool);
+        if (!hosts.has(host)) hosts.set(host, new Map());
+        const users = hosts.get(host);
+        if (!users.has(user)) users.set(user, []);
+        users.get(user).push(r);
     });
 
-    const countActive = rows => rows.filter(r => r.is_active).length;
-    const ordered = [...groups.entries()]
-        .sort((a, b) => (countActive(b[1]) - countActive(a[1])) || b[1].length - a[1].length);
+    const act = rows => rows.filter(r => r.is_active).length;
+    const flat = m => [...m.values()].flatMap(v => v instanceof Map ? flat(v) : v);
+    // Co rozbalit: pri malem poctu vse, jinak jen prvni uroven.
+    const bigView = data.length > 50;
 
-    bodyEl.innerHTML = ordered.map(([tool, rows]) => {
-        const c = _AI_CAT[rows[0].category] || _AI_CAT.cli;
-        const act = countActive(rows);
-        const items = rows.map(r => {
-            const dot = r.is_active
-                ? `<span style="color:var(--success);"><i class="fa-solid fa-circle" style="font-size:.5em; vertical-align:middle;"></i> ${t('ai_running')}</span>`
-                : `<span style="color:var(--text-muted);"><i class="fa-regular fa-circle" style="font-size:.5em; vertical-align:middle;"></i> ${t('ai_ended')}</span>`;
-            const meta = [
-                `<b style="color:var(--text-main);">${_escape(r.user || '?')}</b>`,
-                `<span style="color:var(--text-muted);">${_escape(r.host || '?')}</span>`,
-                r.model ? `<code style="color:var(--accent); font-size:.9em;">${_escape(r.model)}</code>` : '',
-                r.remote ? `<span style="color:#fbbf24;">→ ${_escape(r.remote)}</span>` : '',
-            ].filter(Boolean).join(' · ');
-            const when = r.is_active
-                ? `${t('ai_started')} ${_aiWhen(r.started_at)}`
-                : `${_aiWhen(r.started_at)} → ${_aiWhen(r.ended_at || r.last_seen)}`;
-            return `<div style="padding:8px 14px 8px 30px; border-top:1px solid var(--border); ${r.is_active ? '' : 'opacity:.62;'}">
-                <div style="display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; align-items:baseline;">
-                    <div style="font-size:.86em;">${meta}</div>
-                    <div style="font-size:.76em; display:flex; gap:10px; align-items:baseline; flex-shrink:0;">
-                        ${dot}
-                        <span style="color:var(--text-muted);" title="${_escape(when)}">${_aiDuration(r)}</span>
-                        <span style="color:var(--text-muted); font-family:monospace;">PID ${_escape(String(r.pid ?? '?'))}</span>
-                    </div>
+    const _count = (rows) => `<span style="font-weight:normal; font-size:.78em; color:var(--text-muted);">${rows.length}×${act(rows) ? ` · <span style="color:var(--success);">${act(rows)} ${t('ai_running')}</span>` : ''}</span>`;
+
+    const sessionHtml = (r, color) => {
+        const dot = r.is_active
+            ? `<span style="color:var(--success);"><i class="fa-solid fa-circle" style="font-size:.5em; vertical-align:middle;"></i> ${t('ai_running')}</span>`
+            : `<span style="color:var(--text-muted);"><i class="fa-regular fa-circle" style="font-size:.5em; vertical-align:middle;"></i> ${t('ai_ended')}</span>`;
+        const when = r.is_active
+            ? `${t('ai_started')} ${_aiWhen(r.started_at)}`
+            : `${_aiWhen(r.started_at)} → ${_aiWhen(r.ended_at || r.last_seen)}`;
+        const meta = [
+            r.model ? `<code style="color:var(--accent); font-size:.9em;">${_escape(r.model)}</code>` : '',
+            r.remote ? `<span style="color:#fbbf24;">→ ${_escape(r.remote)}</span>` : '',
+        ].filter(Boolean).join(' · ');
+        return `<div style="padding:7px 14px 7px 42px; border-top:1px solid var(--border); ${r.is_active ? '' : 'opacity:.62;'}">
+            <div style="display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; align-items:baseline;">
+                <div style="font-size:.84em;">${meta || '<span style="color:var(--text-muted);">—</span>'}</div>
+                <div style="font-size:.76em; display:flex; gap:10px; align-items:baseline; flex-shrink:0;">
+                    ${dot}
+                    <span style="color:var(--text-muted);" title="${_escape(when)}">${_aiDuration(r)}</span>
+                    <span style="color:var(--text-muted); font-family:monospace;">PID ${_escape(String(r.pid ?? '?'))}</span>
                 </div>
-                <div style="font-size:.76em; color:var(--text-muted); margin-top:3px;">${_escape(when)}</div>
-                ${r.cwd ? `<div style="font-size:.78em; color:var(--text-muted); margin-top:2px;"><i class="fa-solid fa-folder" style="opacity:.6; margin-right:4px;"></i><span style="font-family:monospace;">${_escape(r.cwd)}</span></div>` : ''}
-                ${r.cmdline ? `<div style="font-size:.76em; font-family:monospace; margin-top:4px; background:var(--bg); border-left:2px solid ${c.color}; padding:4px 8px; border-radius:0 3px 3px 0; word-break:break-all; white-space:pre-wrap;">${_escape(r.cmdline)}</div>` : ''}
-            </div>`;
-        }).join('');
-        return `<div>
-            <div style="background:rgba(255,255,255,0.04); border-top:2px solid var(--border); padding:8px 14px; font-weight:bold; letter-spacing:.4px; display:flex; align-items:center; gap:8px;">
-                <i class="fa-solid ${c.icon}" style="color:${c.color};"></i>${_escape(tool)}
-                <span style="font-weight:normal; font-size:.78em; color:var(--text-muted);">${_escape(c.label)} · ${rows.length}×${act ? ` · <span style="color:var(--success);">${act} ${t('ai_running')}</span>` : ''}</span>
-            </div>${items}
+            </div>
+            <div style="font-size:.75em; color:var(--text-muted); margin-top:3px;">${_escape(when)}</div>
+            ${r.cwd ? `<div style="font-size:.77em; color:var(--text-muted); margin-top:2px;"><i class="fa-solid fa-folder" style="opacity:.6; margin-right:4px;"></i><span style="font-family:monospace;">${_escape(r.cwd)}</span></div>` : ''}
+            ${r.cmdline ? `<div style="font-size:.75em; font-family:monospace; margin-top:4px; background:var(--bg); border-left:2px solid ${color}; padding:4px 8px; border-radius:0 3px 3px 0; word-break:break-all; white-space:pre-wrap;">${_escape(r.cmdline)}</div>` : ''}
         </div>`;
-    }).join('');
+    };
+
+    bodyEl.innerHTML = [...nest.entries()]
+        .map(([tool, hosts]) => [tool, hosts, flat(hosts)])
+        .sort((a, b) => (act(b[2]) - act(a[2])) || (b[2].length - a[2].length))
+        .map(([tool, hosts, toolRows]) => {
+            const c = _AI_CAT[toolRows[0].category] || _AI_CAT.cli;
+            const hostsHtml = [...hosts.entries()]
+                .map(([host, users]) => [host, users, flat(users)])
+                .sort((a, b) => (act(b[2]) - act(a[2])) || (b[2].length - a[2].length))
+                .map(([host, users, hostRows]) => {
+                    const usersHtml = [...users.entries()]
+                        .sort((a, b) => (act(b[1]) - act(a[1])) || (b[1].length - a[1].length))
+                        .map(([user, rows]) => `
+                            <details data-group-key="ai|${_escape(tool)}|${_escape(host)}|${_escape(user)}" ${(!bigView && rows.length <= 5) ? 'open' : ''}>
+                                <summary style="cursor:pointer; padding:5px 14px 5px 30px; font-size:.84em; border-top:1px solid var(--border); display:flex; align-items:center; gap:7px;">
+                                    <i class="fa-solid fa-user" style="color:var(--text-muted); font-size:.85em;"></i>
+                                    <b style="color:var(--text-main);">${_escape(user)}</b> ${_count(rows)}
+                                </summary>
+                                ${rows.map(r => sessionHtml(r, c.color)).join('')}
+                            </details>`).join('');
+                    return `
+                        <details data-group-key="ai|${_escape(tool)}|${_escape(host)}" ${bigView ? '' : 'open'}>
+                            <summary style="cursor:pointer; padding:6px 14px 6px 22px; font-size:.86em; border-top:1px solid var(--border); background:rgba(255,255,255,0.015); display:flex; align-items:center; gap:7px;">
+                                <i class="fa-solid fa-server" style="color:var(--text-muted); font-size:.85em;"></i>
+                                <b style="color:var(--text-main);">${_escape(host)}</b> ${_count(hostRows)}
+                            </summary>
+                            ${usersHtml}
+                        </details>`;
+                }).join('');
+            return `
+                <details data-group-key="ai|${_escape(tool)}" open>
+                    <summary style="cursor:pointer; background:rgba(255,255,255,0.04); border-top:2px solid var(--border); padding:8px 14px; font-weight:bold; letter-spacing:.4px; display:flex; align-items:center; gap:8px;">
+                        <i class="fa-solid ${c.icon}" style="color:${c.color};"></i>${_escape(tool)}
+                        <span style="font-weight:normal; font-size:.78em; color:var(--text-muted);">${_escape(c.label)}</span>
+                        ${_count(toolRows)}
+                    </summary>
+                    ${hostsHtml}
+                </details>`;
+        }).join('');
+
+    // Stav skupin z predchoziho vykresleni (refresh nesmi rozbalit, co clovek zavrel)
+    if (_aiOpenState.size) {
+        bodyEl.querySelectorAll('details[data-group-key]').forEach(d => {
+            const st = _aiOpenState.get(d.dataset.groupKey);
+            if (st !== undefined) d.open = st;
+        });
+    }
+    bodyEl.querySelectorAll('details[data-group-key]').forEach(d => {
+        d.addEventListener('toggle', () => _aiOpenState.set(d.dataset.groupKey, d.open));
+    });
+}
+
+function _aiToggleAll(open) {
+    const body = document.getElementById('ai-sessions-body');
+    if (!body) return;
+    body.querySelectorAll('details[data-group-key]').forEach(d => {
+        d.open = open;
+        _aiOpenState.set(d.dataset.groupKey, open);
+    });
 }
 
 function _aiFilterTo(encodedTool) {

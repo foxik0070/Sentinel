@@ -925,6 +925,8 @@
                         <input type="checkbox" id="ai-active-only" onchange="_renderAiSessions()"> <span data-i18n="ai_active_only">Jen běžící</span>
                     </label>
                     <input id="ai-sessions-filter" oninput="_renderAiSessions()" placeholder="filtr…" data-i18n-placeholder="ai_filter_ph" style="background:var(--input-bg); color:var(--text-main); border:1px solid var(--border); border-radius:3px; padding:3px 8px; font-size:0.8em; width:150px;">
+                    <i class="fa-solid fa-angles-down" style="cursor:pointer; font-size:.9em;" onclick="_aiToggleAll(true)" data-i18n-title="ai_expand_all" title="Rozbalit vše"></i>
+                    <i class="fa-solid fa-angles-up" style="cursor:pointer; font-size:.9em;" onclick="_aiToggleAll(false)" data-i18n-title="ai_collapse_all" title="Sbalit vše"></i>
                     <i title="Obnovit" aria-label="Obnovit" class="fa-solid fa-rotate" style="cursor:pointer" onclick="openAiSessions()"></i>
                     <i title="Zavřít" aria-label="Zavřít" class="fa-solid fa-times" style="cursor:pointer" onclick="closeAiSessions()"></i>
                 </div>
