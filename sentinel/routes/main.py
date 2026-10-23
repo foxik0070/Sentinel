@@ -214,13 +214,17 @@ def create_blueprint(service, socketio):
         with state.db_lock:
             conn = state._get_conn()
             try:
+                # Strop plati JEN na ukoncena sezeni. Kdyz partition zahrnovala
+                # i aktivni, stroj se stovkami bezicich procesu jich vratil 30
+                # a badge (ktery pocita vsechna aktivni) pak nesedel na nic,
+                # co bylo v modalu videt.
                 c = conn.execute(
                     "SELECT host, username, tool, category, model, pid, cwd, cmdline,"
                     "       remote, started_at, first_seen, last_seen, ended_at, is_active FROM ("
-                    "  SELECT *, ROW_NUMBER() OVER (PARTITION BY host"
-                    "                               ORDER BY is_active DESC, last_seen DESC) AS rn"
+                    "  SELECT *, ROW_NUMBER() OVER (PARTITION BY host, is_active"
+                    "                               ORDER BY last_seen DESC) AS rn"
                     "  FROM ai_sessions"
-                    ") WHERE rn <= ? ORDER BY is_active DESC, last_seen DESC",
+                    ") WHERE is_active = 1 OR rn <= ? ORDER BY is_active DESC, last_seen DESC",
                     (per_host,))
                 from .. import api as _api
                 rows = []
