@@ -1881,6 +1881,16 @@ async function updateStatus() {
             }
         }
 
+        // 5. BĚŽÍCÍ AI SEZENÍ — informativní, ne alert: nebliká a nebarví se červeně.
+        const aiInd = document.getElementById('ai-sessions-indicator');
+        if (aiInd) {
+            const n = d.ai_sessions || 0;
+            aiInd.style.background = 'rgba(255,255,255,0.05)';
+            aiInd.style.border = '1px solid #444';
+            aiInd.style.color = n > 0 ? 'var(--accent)' : 'var(--text-muted)';
+            aiInd.querySelector('span').innerText = ` ${n}`;
+        }
+
         if (lastIssueCount !== -1 && d.issues !== lastIssueCount) {
             refreshLastStatusTable();
         }

@@ -1,5 +1,34 @@
 # Historie změn
 
+## [2026.09.017] - 2026-10-23
+
+**Souhrn:** Nový přehled „AI uživatelé" — kdo, čím a jak dlouho na strojích pouští AI.
+
+### Zachycená AI sezení
+
+Agent od v2026.10 hlásí běžící AI procesy (`agent_ai_session_monitor`), ale posílal jen textovou zprávu se statusem `OK`. Ingest všechno mimo `ok`/`resolved` zakládá jako aktivní issue, takže informativní stav nešlo poslat jinak — a `OK` zpráva se po `mark_resolved()` nikde neuložila. V databázi tak zbyl jen počet jako telemetrie; detail „kdo a co pouští" se ztrácel.
+
+Agent proto nově posílá vedle textu i **strukturovaný seznam** (`ai_sessions` v payloadu) a Sentinel ho ukládá do vlastní tabulky — mimo issues, takže nic nealertuje a nic nevisí.
+
+```
+ai_sessions(host, username, tool, category, model, pid, cwd, cmdline,
+            remote, started_at, first_seen, last_seen, ended_at, is_active)
+```
+
+Identita sezení je `(host, pid, started_at)`. Samotný pid se po restartu stroje recykluje, čas startu procesu se naopak mezi polly nemění. Opakovaný poll proto řádek jen potvrdí (`last_seen`), nezakládá nový — přesně tímhle způsobem narostl kdysi `root_audit` na 101 tisíc řádků. Sezení, které agent přestane hlásit, se uzavře (`is_active=0`, `ended_at`); prázdný seznam je platné tvrzení „nic neběží" a uzavře všechno na daném stroji.
+
+`started_at` chybí u procesu, který zmizel dřív, než se stihl dočíst `/proc/<pid>/stat`. Ukládá se jako prázdný řetězec, ne `NULL` — dva `NULL` se v `UNIQUE` indexu nerovnají a takové sezení by se dedupovat nedalo.
+
+### Přehled v UI
+
+Nový badge za „Bezpečnostními incidenty" otevírá modal seskupený **po technologiích** (CLI agent / LLM runtime / MCP server / spojení na AI API). Nahoře dlaždice s počtem `běží / celkem` na technologii, klik na dlaždici filtruje. U každého sezení uživatel, stroj, model, pracovní adresář, příkazová řádka, PID, doba běhu a stav **běží / ukončeno** včetně času ukončení. Filtr fulltextem, přepínač „jen běžící", export CSV.
+
+Badge je informativní — nebliká a nebarví se červeně ani při desítkách sezení. Hlídá se jinde: `WARNING` od agenta při AI pod rootem a anomálie nad metrikou `ai_sessions`.
+
+### Nové volby v `config.yaml`
+- `ai_sessions_retention_days` (30) — jak dlouho držet ukončená sezení
+- `ai_sessions_history_per_host` (30) — strop záznamů na stroj; aktivní projdou vždy
+
 ## [2026.09.016] - 2026-09-10
 
 **Souhrn:** Model dostává v kontextu i poslední řádky logů, ke kterým se vážou aktivní issues.

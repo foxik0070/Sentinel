@@ -2625,3 +2625,169 @@ async function _actionAddToAllowed(actionId, autoExec) {
         else alert('Chyba: ' + (d.reply || d.message || '?'));
     } catch(e) { alert('Chyba: ' + e); }
 }
+
+// --- AI UŽIVATELÉ: zachycená AI sezení z agentů -----------------------------
+let _aiSessionsData = [];
+
+const _AI_CAT = {
+    cli:     {icon: 'fa-robot',          color: 'var(--accent)', label: 'CLI agent'},
+    runtime: {icon: 'fa-microchip',      color: '#a78bfa',       label: 'LLM runtime'},
+    mcp:     {icon: 'fa-plug',           color: '#38bdf8',       label: 'MCP server'},
+    api:     {icon: 'fa-globe',          color: '#fbbf24',       label: 'Spojení na AI API'},
+};
+
+function openAiSessions() {
+    const modal = document.getElementById('ai-sessions-modal');
+    if (modal) modal.style.display = 'flex';
+    const body = document.getElementById('ai-sessions-body');
+    if (!_aiSessionsData.length && body) {
+        body.innerHTML = `<div style="padding:30px; text-align:center; color:#666;"><i class="fa-solid fa-spinner fa-spin"></i></div>`;
+    }
+    fetch('/api/ai_sessions')
+        .then(r => r.json())
+        .then(data => { _aiSessionsData = data || []; _renderAiSessions(); })
+        .catch(() => {
+            if (body) body.innerHTML = `<div style="padding:20px; text-align:center; color:var(--error);"><i class="fa-solid fa-circle-exclamation"></i> ${t('load_error')}</div>`;
+        });
+}
+
+function closeAiSessions() {
+    const m = document.getElementById('ai-sessions-modal');
+    if (m) m.style.display = 'none';
+}
+
+function closeAiSessionsOutside(e) {
+    if (e.target === document.getElementById('ai-sessions-modal')) closeAiSessions();
+}
+
+function _aiDuration(row) {
+    const from = Date.parse(row.started_at || row.first_seen || '');
+    if (!from) return '—';
+    const to = row.is_active ? Date.now() : Date.parse(row.ended_at || row.last_seen || '') || Date.now();
+    const sec = Math.max(0, Math.round((to - from) / 1000));
+    if (sec < 3600) return `${Math.floor(sec / 60)} min`;
+    if (sec < 86400) return `${Math.floor(sec / 3600)} h ${Math.floor((sec % 3600) / 60)} min`;
+    return `${Math.floor(sec / 86400)} d ${Math.floor((sec % 86400) / 3600)} h`;
+}
+
+function _aiWhen(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return isNaN(d) ? '—' : d.toLocaleString();
+}
+
+function _renderAiSessions() {
+    const tilesEl = document.getElementById('ai-sessions-tiles');
+    const bodyEl  = document.getElementById('ai-sessions-body');
+    const emptyEl = document.getElementById('ai-sessions-empty');
+    const statsEl = document.getElementById('ai-sessions-stats');
+    if (!bodyEl) return;
+
+    const activeOnly = document.getElementById('ai-active-only')?.checked || false;
+    const q = (document.getElementById('ai-sessions-filter')?.value || '').trim().toLowerCase();
+
+    let data = _aiSessionsData;
+    if (activeOnly) data = data.filter(r => r.is_active);
+    if (q) data = data.filter(r => [r.user, r.tool, r.host, r.model, r.cwd, r.cmdline, r.cluster]
+        .some(v => (v || '').toLowerCase().includes(q)));
+
+    const activeTotal = _aiSessionsData.filter(r => r.is_active).length;
+    if (statsEl) statsEl.textContent = t('ai_sessions_stats', {active: activeTotal, total: _aiSessionsData.length});
+
+    // Dlaždice podle technologie — rychlý přehled, čeho je kolik.
+    const byTool = new Map();
+    _aiSessionsData.forEach(r => {
+        const k = r.tool || '—';
+        if (!byTool.has(k)) byTool.set(k, {total: 0, active: 0, category: r.category});
+        const e = byTool.get(k);
+        e.total++;
+        if (r.is_active) e.active++;
+    });
+    if (tilesEl) {
+        tilesEl.innerHTML = [...byTool.entries()]
+            .sort((a, b) => (b[1].active - a[1].active) || (b[1].total - a[1].total))
+            .map(([tool, e]) => {
+                const c = _AI_CAT[e.category] || _AI_CAT.cli;
+                return `<div onclick="_aiFilterTo('${encodeURIComponent(tool)}')" title="${_escape(c.label)}" style="cursor:pointer; background:var(--card-bg); border:1px solid var(--border); border-left:3px solid ${c.color}; border-radius:4px; padding:7px 12px; min-width:130px;">
+                    <div style="font-size:.78em; color:var(--text-muted); display:flex; align-items:center; gap:6px;"><i class="fa-solid ${c.icon}" style="color:${c.color};"></i>${_escape(tool)}</div>
+                    <div style="font-size:1.25em; font-weight:bold; color:var(--text-main);">${e.active}<span style="font-size:.55em; font-weight:normal; color:var(--text-muted);"> / ${e.total}</span></div>
+                </div>`;
+            }).join('') || `<span style="font-size:.8em; color:var(--text-muted);">${t('ai_sessions_none')}</span>`;
+    }
+
+    if (!data.length) {
+        bodyEl.innerHTML = '';
+        if (emptyEl) emptyEl.style.display = 'block';
+        return;
+    }
+    if (emptyEl) emptyEl.style.display = 'none';
+
+    // Hlavní osa: technologie -> jednotlivá sezení.
+    const groups = new Map();
+    data.forEach(r => {
+        const k = r.tool || '—';
+        if (!groups.has(k)) groups.set(k, []);
+        groups.get(k).push(r);
+    });
+
+    const countActive = rows => rows.filter(r => r.is_active).length;
+    const ordered = [...groups.entries()]
+        .sort((a, b) => (countActive(b[1]) - countActive(a[1])) || b[1].length - a[1].length);
+
+    bodyEl.innerHTML = ordered.map(([tool, rows]) => {
+        const c = _AI_CAT[rows[0].category] || _AI_CAT.cli;
+        const act = countActive(rows);
+        const items = rows.map(r => {
+            const dot = r.is_active
+                ? `<span style="color:var(--success);"><i class="fa-solid fa-circle" style="font-size:.5em; vertical-align:middle;"></i> ${t('ai_running')}</span>`
+                : `<span style="color:var(--text-muted);"><i class="fa-regular fa-circle" style="font-size:.5em; vertical-align:middle;"></i> ${t('ai_ended')}</span>`;
+            const meta = [
+                `<b style="color:var(--text-main);">${_escape(r.user || '?')}</b>`,
+                `<span style="color:var(--text-muted);">${_escape(r.host || '?')}</span>`,
+                r.model ? `<code style="color:var(--accent); font-size:.9em;">${_escape(r.model)}</code>` : '',
+                r.remote ? `<span style="color:#fbbf24;">→ ${_escape(r.remote)}</span>` : '',
+            ].filter(Boolean).join(' · ');
+            const when = r.is_active
+                ? `${t('ai_started')} ${_aiWhen(r.started_at)}`
+                : `${_aiWhen(r.started_at)} → ${_aiWhen(r.ended_at || r.last_seen)}`;
+            return `<div style="padding:8px 14px 8px 30px; border-top:1px solid var(--border); ${r.is_active ? '' : 'opacity:.62;'}">
+                <div style="display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; align-items:baseline;">
+                    <div style="font-size:.86em;">${meta}</div>
+                    <div style="font-size:.76em; display:flex; gap:10px; align-items:baseline; flex-shrink:0;">
+                        ${dot}
+                        <span style="color:var(--text-muted);" title="${_escape(when)}">${_aiDuration(r)}</span>
+                        <span style="color:var(--text-muted); font-family:monospace;">PID ${_escape(String(r.pid ?? '?'))}</span>
+                    </div>
+                </div>
+                <div style="font-size:.76em; color:var(--text-muted); margin-top:3px;">${_escape(when)}</div>
+                ${r.cwd ? `<div style="font-size:.78em; color:var(--text-muted); margin-top:2px;"><i class="fa-solid fa-folder" style="opacity:.6; margin-right:4px;"></i><span style="font-family:monospace;">${_escape(r.cwd)}</span></div>` : ''}
+                ${r.cmdline ? `<div style="font-size:.76em; font-family:monospace; margin-top:4px; background:var(--bg); border-left:2px solid ${c.color}; padding:4px 8px; border-radius:0 3px 3px 0; word-break:break-all; white-space:pre-wrap;">${_escape(r.cmdline)}</div>` : ''}
+            </div>`;
+        }).join('');
+        return `<div>
+            <div style="background:rgba(255,255,255,0.04); border-top:2px solid var(--border); padding:8px 14px; font-weight:bold; letter-spacing:.4px; display:flex; align-items:center; gap:8px;">
+                <i class="fa-solid ${c.icon}" style="color:${c.color};"></i>${_escape(tool)}
+                <span style="font-weight:normal; font-size:.78em; color:var(--text-muted);">${_escape(c.label)} · ${rows.length}×${act ? ` · <span style="color:var(--success);">${act} ${t('ai_running')}</span>` : ''}</span>
+            </div>${items}
+        </div>`;
+    }).join('');
+}
+
+function _aiFilterTo(encodedTool) {
+    const tool = decodeURIComponent(encodedTool);
+    const f = document.getElementById('ai-sessions-filter');
+    if (f) { f.value = f.value === tool ? '' : tool; _renderAiSessions(); }
+}
+
+function exportAiSessionsCSV() {
+    const cols = ['host', 'cluster', 'user', 'tool', 'category', 'model', 'pid',
+                  'cwd', 'remote', 'started_at', 'ended_at', 'last_seen', 'is_active', 'cmdline'];
+    const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const lines = [cols.join(','), ..._aiSessionsData.map(r => cols.map(c => esc(r[c])).join(','))];
+    const url = URL.createObjectURL(new Blob([lines.join('\n')], {type: 'text/csv;charset=utf-8;'}));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ai_sessions_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+}

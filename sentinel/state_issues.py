@@ -2660,3 +2660,80 @@ def get_user_last_login(username: str) -> str | None:
     except Exception as e:
         logger.warning(f"get_user_last_login: {e}")
         return None
+
+
+def save_ai_sessions(host, sessions):
+    """Uloží snímek AI sezení jednoho stroje a uzavře ta, která už nehlásí.
+
+    Identita sezení je `(host, pid, started_at)` — samotný pid se po restartu
+    stroje recykluje, čas startu procesu se naopak mezi polly nemění. Opakovaný
+    poll proto stávající řádek jen potvrdí (`last_seen`), nezakládá nový; právě
+    tímhle způsobem narostl kdysi `root_audit` na 101 tisíc řádků.
+
+    `started_at` chybí u procesu, který zmizel dřív, než se stihl dočíst
+    /proc/<pid>/stat. Ukládá se jako prázdný řetězec, ne NULL — v SQLite se
+    dva NULL v UNIQUE indexu nerovnají, takže by se takové sezení dedupovat
+    nedalo a každý cyklus by přibyl řádek.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    with db_lock:
+        try:
+            conn = _get_conn()
+            seen = []
+            for s in sessions:
+                pid = s.get("pid")
+                if pid is None:
+                    continue
+                started = s.get("started_at") or ''
+                seen.append(f"{pid}|{started}")
+                conn.execute(
+                    "INSERT INTO ai_sessions "
+                    "(host, username, tool, category, model, pid, cwd, cmdline, remote,"
+                    " started_at, first_seen, last_seen, ended_at, is_active) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,NULL,1) "
+                    "ON CONFLICT(host, pid, started_at) DO UPDATE SET "
+                    "  last_seen = excluded.last_seen,"
+                    "  model     = excluded.model,"
+                    "  cwd       = excluded.cwd,"
+                    "  cmdline   = excluded.cmdline,"
+                    "  remote    = excluded.remote,"
+                    "  ended_at  = NULL,"
+                    "  is_active = 1",
+                    (host, s.get("user") or '', s.get("tool") or '', s.get("category") or '',
+                     s.get("model") or '', int(pid), s.get("cwd") or '', s.get("cmdline") or '',
+                     s.get("remote") or '', started, now, now))
+
+            # Co agent přestal hlásit, skončilo. Prázdný seznam je legitimní
+            # tvrzení "nic neběží" a uzavře všechno.
+            if seen:
+                marks = ",".join("?" * len(seen))
+                conn.execute(
+                    f"UPDATE ai_sessions SET is_active = 0, ended_at = ? "
+                    f"WHERE host = ? AND is_active = 1 "
+                    f"AND (CAST(pid AS TEXT) || '|' || COALESCE(started_at,'')) NOT IN ({marks})",
+                    [now, host] + seen)
+            else:
+                conn.execute("UPDATE ai_sessions SET is_active = 0, ended_at = ? "
+                             "WHERE host = ? AND is_active = 1", (now, host))
+
+            # Retence: ukončená sezeni starší N dní, a strop na stroj. Aktivní
+            # projdou vždy — kvůli nim se člověk do modalu dívá.
+            days = int(getattr(config, 'AI_SESSIONS_RETENTION_DAYS', 30))
+            conn.execute("DELETE FROM ai_sessions WHERE is_active = 0 "
+                         "AND last_seen < datetime('now', ?)", (f'-{days} days',))
+            cap = int(getattr(config, 'AI_SESSIONS_HISTORY_PER_HOST', 30))
+            conn.execute(
+                "DELETE FROM ai_sessions WHERE id IN ("
+                "  SELECT id FROM ("
+                "    SELECT id, ROW_NUMBER() OVER (ORDER BY last_seen DESC) AS rn"
+                "    FROM ai_sessions WHERE host = ? AND is_active = 0"
+                "  ) WHERE rn > ?)",
+                (host, cap))
+            conn.commit()
+        except Exception as e:
+            logger.error(f"save_ai_sessions ({host}): {e}")
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass

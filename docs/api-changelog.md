@@ -2,6 +2,27 @@
 
 Tento dokument zaznamenává breaking changes a nové endpointy mezi verzemi.
 
+## v2026.09.017 (2026-10-23)
+
+**Bez breaking changes.** Žádný existující endpoint nezměnil tvar odpovědi.
+
+### Nový endpoint
+- `GET /api/ai_sessions` — zachycená AI sezení. Vrací pole objektů s poli
+  `host`, `cluster`, `user`, `tool`, `category` (`cli`|`runtime`|`mcp`|`api`),
+  `model`, `pid`, `cwd`, `cmdline`, `remote`, `started_at`, `first_seen`,
+  `last_seen`, `ended_at`, `is_active`. Aktivní sezení projdou vždy, ukončená
+  jsou omezená na `ai_sessions_history_per_host` na stroj.
+
+### Rozšířená odpověď
+- `GET /api/status` nově vrací i `ai_sessions` — počet právě běžících AI sezení
+  pro badge v hlavičce. Ostatní pole beze změny.
+
+### Agent → Sentinel (ingest)
+- `POST /api/v1/agent/ingest` přijímá volitelný klíč `ai_sessions` (pole objektů).
+  Chybějící klíč se ignoruje, **prázdné pole je platné tvrzení „nic neběží"** a
+  uzavře evidovaná sezení daného stroje. Starší agenti klíč neposílají a chovají
+  se beze změny.
+
 ## v2026.08.003 (2026-08-17)
 
 **Bez breaking changes.** Žádný endpoint nezměnil tvar odpovědi ani nepřibyl.
