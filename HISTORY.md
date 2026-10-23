@@ -1,5 +1,24 @@
 # Historie změn
 
+## [2026.10.005] - 2026-10-23
+
+**Souhrn:** Počet AI sezení v hlavičce neodpovídal ničemu, co šlo v modalu najít.
+
+### Strop ořezával i běžící sezení
+
+Badge počítá všechna aktivní sezení, ale `GET /api/ai_sessions` je protahoval `ROW_NUMBER() OVER (PARTITION BY host …)` se stropem 30 na stroj — a ten nerozlišoval stav. Stroj se stovkami běžících procesů jich tedy vrátil 30 a zbytek zmizel: v hlavičce svítilo 384, modal uměl ukázat 131.
+
+Strop má přitom platit jen na historii, jak stojí i v patičce modalu. Partition je proto nově `(host, is_active)` a běžící sezení projdou vždy. Dokumentovaného chování se to drží stejně jako `root_audit`.
+
+### Sezení po spadlém agentovi
+
+Sezení se uzavírá tím, že chybí v dalším snímku svého stroje. Když agent přestane hlásit úplně, žádný další snímek nepřijde a jeho sezení zůstanou „běžící" navždy — tichý nárůst čísla v hlavičce, který nejde odnikud vysvětlit.
+
+Nově se při každém zápisu uzavře, co nikdo nepotvrdil déle než `ai_sessions_stale_minutes` (30), s `ended_at` nastaveným na poslední potvrzení. Stejné opatření má u root relací `root_audit_stale_minutes`.
+
+### Nová volba v `config.yaml`
+- `ai_sessions_stale_minutes` (30) — po jaké době nepotvrzené sezení uzavřít
+
 ## [2026.10.004] - 2026-10-23
 
 **Souhrn:** Přehled AI uživatelů se skládá po agentech a uživatelích — s plochým seznamem byl při stovkách sezení nečitelný.

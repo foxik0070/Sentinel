@@ -2716,6 +2716,15 @@ def save_ai_sessions(host, sessions):
                 conn.execute("UPDATE ai_sessions SET is_active = 0, ended_at = ? "
                              "WHERE host = ? AND is_active = 1", (now, host))
 
+            # Sezení ze stroje, jehož agent přestal hlásit úplně, by zůstalo
+            # aktivní navždy: uzavírá se jen to, co nebylo v posledním snímku
+            # daného stroje, a ten už nepřijde. Totéž řeší u root relací
+            # ROOT_AUDIT_STALE_MINUTES.
+            stale = int(getattr(config, 'AI_SESSIONS_STALE_MINUTES', 30))
+            conn.execute("UPDATE ai_sessions SET is_active = 0, ended_at = COALESCE(ended_at, last_seen) "
+                         "WHERE is_active = 1 AND last_seen < datetime('now', ?)",
+                         (f'-{stale} minutes',))
+
             # Retence: ukončená sezeni starší N dní, a strop na stroj. Aktivní
             # projdou vždy — kvůli nim se člověk do modalu dívá.
             days = int(getattr(config, 'AI_SESSIONS_RETENTION_DAYS', 30))

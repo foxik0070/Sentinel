@@ -157,3 +157,92 @@ class TestRetention(AiSessionsBase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestStale(AiSessionsBase):
+    """Agent, ktery prestane hlasit uplne, nesmi nechat sezeni viset aktivni."""
+
+    def _age_rows(self, minutes):
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute("UPDATE ai_sessions SET last_seen = datetime('now', ?)",
+                         (f'-{minutes} minutes',))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def test_forgotten_host_sessions_are_closed(self):
+        si.save_ai_sessions("mrtvy-stroj", [_session()])
+        self._age_rows(120)
+        # Hlaseni z jineho stroje; mrtvy uz nikdy nic neposle.
+        si.save_ai_sessions("jiny-stroj", [_session(pid=999)])
+        closed = self.rows("WHERE host = 'mrtvy-stroj'")
+        self.assertEqual(closed[0][5], 0, "sezeni zapomenuteho stroje zustalo aktivni")
+        self.assertIsNotNone(closed[0][6], "ended_at musi byt vyplnene")
+
+    def test_recently_confirmed_sessions_survive(self):
+        si.save_ai_sessions("rpi5", [_session()])
+        si.save_ai_sessions("jiny-stroj", [_session(pid=999)])
+        self.assertEqual(len(self.rows("WHERE is_active = 1")), 2)
+
+    def test_stale_threshold_is_configurable(self):
+        from sentinel import config
+        orig = getattr(config, 'AI_SESSIONS_STALE_MINUTES', 30)
+        config.AI_SESSIONS_STALE_MINUTES = 240
+        try:
+            si.save_ai_sessions("pomaly-stroj", [_session()])
+            self._age_rows(120)
+            si.save_ai_sessions("jiny-stroj", [_session(pid=999)])
+            self.assertEqual(self.rows("WHERE host = 'pomaly-stroj'")[0][5], 1)
+        finally:
+            config.AI_SESSIONS_STALE_MINUTES = orig
+
+
+class TestModalQuery(AiSessionsBase):
+    """Dotaz /api/ai_sessions: strop smi orezat jen ukoncena sezeni.
+
+    Badge v hlavicce pocita vsechna aktivni. Kdyz partition zahrnovala i je,
+    stroj se stovkami procesu jich vratil 30 a cislo v badge neodpovidalo
+    nicemu, co bylo v modalu videt.
+    """
+
+    # Drzeno shodne s dotazem v routes/main.py:get_ai_sessions.
+    SQL = ("SELECT host, is_active FROM ("
+           "  SELECT *, ROW_NUMBER() OVER (PARTITION BY host, is_active"
+           "                               ORDER BY last_seen DESC) AS rn"
+           "  FROM ai_sessions"
+           ") WHERE is_active = 1 OR rn <= ? ORDER BY is_active DESC, last_seen DESC")
+
+    def _query(self, cap=30):
+        conn = sqlite3.connect(self.db_path)
+        try:
+            return conn.execute(self.SQL, (cap,)).fetchall()
+        finally:
+            conn.close()
+
+    def setUp(self):
+        super().setUp()
+        # Jeden rusny stroj: 120 bezicich + 90 ukoncenych.
+        batch = [_session(pid=p, started=f"2026-10-23T08:{p % 60:02d}:{p // 60:02d}+00:00")
+                 for p in range(1000, 1120)]
+        si.save_ai_sessions("rusny", batch)
+        for p in range(2000, 2090):
+            si.save_ai_sessions("rusny", batch + [_session(pid=p, started=f"2026-10-22T07:{p % 60:02d}:00+00:00")])
+        si.save_ai_sessions("rusny", batch)
+
+    def test_every_active_session_is_returned(self):
+        rows = self._query()
+        active_in_db = len(self.rows("WHERE is_active = 1"))
+        self.assertEqual(sum(1 for r in rows if r[1]), active_in_db)
+        self.assertEqual(active_in_db, 120)
+
+    def test_finished_sessions_are_capped(self):
+        self.assertLessEqual(sum(1 for r in self._query() if not r[1]), 30)
+
+    def test_badge_count_matches_returned_active(self):
+        conn = sqlite3.connect(self.db_path)
+        try:
+            badge = conn.execute("SELECT count(*) FROM ai_sessions WHERE is_active=1").fetchone()[0]
+        finally:
+            conn.close()
+        self.assertEqual(badge, sum(1 for r in self._query() if r[1]))
