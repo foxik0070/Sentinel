@@ -1,5 +1,17 @@
 # Historie změn
 
+## [2026.10.004] - 2026-10-23
+
+**Souhrn:** Přehled AI uživatelů se skládá po agentech a uživatelích — s plochým seznamem byl při stovkách sezení nečitelný.
+
+### Skládací úrovně
+
+Hned po nasazení se ukázalo, kolik toho na login uzlech běží: ~380 souběžných AI procesů, z toho 118 instancí `codex app-server` jediného uživatele na jednom stroji. Plochý seznam pod technologií se tím stal nepoužitelným.
+
+Modal má proto tři skládací úrovně — **technologie → agent (stroj) → uživatel → sezení**. Každá nese počet `běží / celkem`, takže se dá číst i zavřená. Řadí se podle počtu běžících, ne abecedně: co je aktivní, je nahoře.
+
+Co je rozbalené, závisí na objemu. Nad 50 sezeními se otevře jen technologie, jinak i stroje a uživatelé do pěti sezení. Ruční zásah má přednost: stav každé skupiny se drží v `_aiOpenState` podle `data-group-key` a přežije refresh i přefiltrování — zavřená skupina se sama neotevře. V hlavičce přibyla tlačítka rozbalit/sbalit vše.
+
 ## [2026.10.003] - 2026-10-23
 
 **Souhrn:** Nový přehled „AI uživatelé" — kdo, čím a jak dlouho na strojích pouští AI.

@@ -202,6 +202,8 @@ const TRANSLATIONS = {
     ai_running: 'běží',
     ai_ended: 'ukončeno',
     ai_started: 'start',
+    ai_expand_all: 'Rozbalit vše',
+    ai_collapse_all: 'Sbalit vše',
 
     // ── JS dynamic messages ────────────────────────────────────────────────────
     comm_error: '⚠️ Chyba komunikace nebo vypršel časový limit.',
@@ -764,6 +766,8 @@ const TRANSLATIONS = {
     ai_running: 'running',
     ai_ended: 'ended',
     ai_started: 'started',
+    ai_expand_all: 'Expand all',
+    ai_collapse_all: 'Collapse all',
 
     // ── JS dynamic messages ────────────────────────────────────────────────────
     comm_error: '⚠️ Communication error or request timed out.',
