@@ -169,7 +169,7 @@ def interpret_prompt(host: str, message: str, hypothesis: str, results: list) ->
     return (
         "Jsi zkušený SRE. Níže je problém, tvá původní hypotéza a skutečné "
         "výstupy diagnostických příkazů z daného stroje.\n\n"
-        f"PROBLÉM: {host}: {message}\n"
+        f"PROBLÉM: {host}:\n{wrap_untrusted(message, 'hláška z logu')[0]}\n"
         f"PŮVODNÍ HYPOTÉZA: {hypothesis or '(žádná)'}\n\n"
         f"VÝSTUPY:\n" + "\n\n".join(blocks) + "\n\n"
         "Vyhodnoť, co data ukazují. Pokud hypotézu vyvracejí, řekni to.\n"

@@ -1,6 +1,6 @@
 # Historie změn
 
-## [2026.09.017] - 2026-10-23
+## [2026.10.003] - 2026-10-23
 
 **Souhrn:** Nový přehled „AI uživatelé" — kdo, čím a jak dlouho na strojích pouští AI.
 
@@ -28,6 +28,36 @@ Badge je informativní — nebliká a nebarví se červeně ani při desítkách
 ### Nové volby v `config.yaml`
 - `ai_sessions_retention_days` (30) — jak dlouho držet ukončená sezení
 - `ai_sessions_history_per_host` (30) — strop záznamů na stroj; aktivní projdou vždy
+
+## [2026.10.002] - 2026-10-05
+
+**Souhrn:** Ochrana proti prompt injection (543) teď platí pro všechny AI prompty, ne jen pro chat a diagnostiku.
+
+### Řádky logů ve všech promptech jako data
+
+Po opravě chatu (2026.10.001) zbylo asi 15 míst, kde šel `last_line` nebo obsah logu do modelu holý. Teď procházejí `ai_guard.untrusted()`, tenkou obálkou nad `wrap_untrusted()` pro skládání promptu v jednom výrazu:
+
+- **Moduly:** eskalační shrnutí (`escalation.ai_prompt`), kategorie remediace (`remediation.plan_prompt`), řetěz příčin (`correlate.chain_prompt`), návrh patternů z nezachycených řádků (`unmatched.suggest_prompt`), hláška v `diagnostics.interpret_prompt` (výstupy příkazů už obalené byly) a denní AI digest.
+- **Routy:** re-analýza issue (i s vlastní šablonou z configu), root cause incidentu, AI názor u recheck, hromadná analýza a korelace alertů včetně historie hostů, AI clustery, generování runbooku, postmortem, návrh patternů z historie, analýza jednoho logu a skupiny logů.
+
+Neobaleno zůstává jen to, co z logů nepochází: telemetrie (čísla a názvy metrik), týdenní trend (počty), komentáře přihlášených uživatelů a statické evaly.
+
+
+## [2026.10.001] - 2026-10-03
+
+**Souhrn:** Chat posílá logy, alerty a soubory modelu jako nedůvěryhodná data a varuje před rizikovými příkazy v odpovědi.
+
+### Prompt injection přes logy v chatu
+
+Ochrana `ai_guard.wrap_untrusted()` (543) existovala, ale používala ji jen diagnostika, knowledge a incident analysis. Chat ji obcházel: ocas logů z `build_logs_context()`, řádky alertů, obsah otevřeného souboru i hláška pro autofix šly do promptu holé, ve stejné zprávě jako otázka uživatele. Řádek „ignore previous instructions" tak model nijak neodlišil od pokynu.
+
+- Logy, alerty, soubory (stream i non-stream) a autofix hláška jsou teď ohraničené `<<<UNTRUSTED_LOG_DATA … UNTRUSTED_LOG_DATA>>>`. Typické injection fráze se označí `[POKUS-O-INJECTION:…]` a oddělovač uvnitř dat se odstraní, takže log nemůže blok ukončit předčasně.
+- Všechny chatové system prompty nesou `ai_guard.UNTRUSTED_RULE`. Samotná poznámka uvnitř bloku nestačí, protože sedí ve stejné zprávě jako útočníkův text.
+- `ai_guard.risky_commands()` projde code bloky a inline příkazy v odpovědi přes `safety.classify()`. U rizikových se pod odpovědí zobrazí varování (u streamu přes `warning_html` v `done` události). Model sám nic nespustí, ale uživatel příkaz zkopíruje. Autofix risk skóre měl, volný chat ne.
+- Odpověď ukládaná do historie konverzace prochází `sanitize()`, aby se podstrčená instrukce nevracela do dalších dotazů.
+
+Ohraničení injection neznemožní, jen ji ztíží. Skutečnou pojistkou zůstává, že chat nemá nástroje a každý příkaz potvrzuje člověk.
+
 
 ## [2026.09.016] - 2026-09-10
 

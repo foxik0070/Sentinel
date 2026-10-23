@@ -9,7 +9,7 @@ import yaml
 from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify, g, Response, session
 from ..auth import requires_auth, int_param, _REVOKED_SESSIONS, global_active_clients, global_active_clients_lock
-from .. import state, config, rag, analytics, utils
+from .. import state, config, rag, analytics, utils, ai_guard
 
 logger = logging.getLogger("sentinel.chat")
 
@@ -2067,7 +2067,7 @@ SwaggerUIBundle({
             prompt = (
                 "Jsi expert na log monitoring. Analyzuj tyto opakující se log zprávy "
                 "a navrhni 3 konkrétní regex patterny pro detekci podobných incidentů.\n\n"
-                f"LOG ZPRÁVY:\n{samples}\n\n"
+                f"LOG ZPRÁVY:\n{ai_guard.untrusted(samples, 'log zprávy', max_len=8000)}\n\n"
                 "Pro každý pattern odpověz POUZE ve formátu JSON pole:\n"
                 '[{"name":"...", "plugin":"...", "pattern":"...", "channel":"agent", "reason":"..."}]\n'
                 "Pattern musí být validní Python regex. Žádný jiný text."

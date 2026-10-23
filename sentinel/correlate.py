@@ -127,11 +127,12 @@ def changes_note(changes, limit: int = 5) -> str:
 
 def chain_prompt(issue, changes=None, telemetry_note: str = "") -> str:
     """447: Prompt, který vynutí STROM místo odstavce."""
+    from .ai_guard import untrusted
     return (
         "Jsi zkušený SRE. Sestav řetěz příčin a následků pro tento problém.\n\n"
         f"PROBLÉM: [{(issue or {}).get('plugin_name', '?')}] "
-        f"{(issue or {}).get('host', '?')}: "
-        f"{((issue or {}).get('last_line') or '')[:250]}\n"
+        f"{(issue or {}).get('host', '?')}:\n"
+        f"{untrusted(((issue or {}).get('last_line') or '')[:250])}\n"
         f"{telemetry_note}"
         f"{changes_note(changes)}\n"
         "Vrať řetěz od kořenové příčiny k pozorovanému projevu. Každý článek "
