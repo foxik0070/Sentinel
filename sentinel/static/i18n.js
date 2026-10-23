@@ -191,6 +191,18 @@ const TRANSLATIONS = {
     root_from_detector: 'Záznam z detektoru, ne od agenta na stroji',
     root_audit_stats: '{active} aktivních / {total} celkem',
 
+    // ── AI uživatelé ───────────────────────────────────────────────────────────
+    ai_sessions_title: 'AI uživatelé — kdo a čím na strojích pouští AI',
+    ai_sessions_heading: 'AI uživatelé — zachycená sezení',
+    ai_sessions_stats: '{active} běží / {total} celkem',
+    ai_sessions_none: 'Žádná zachycená AI sezení.',
+    ai_sessions_note: 'Ukončená sezení se drží 30 dní, max. 30 na stroj.',
+    ai_active_only: 'Jen běžící',
+    ai_filter_ph: 'filtr…',
+    ai_running: 'běží',
+    ai_ended: 'ukončeno',
+    ai_started: 'start',
+
     // ── JS dynamic messages ────────────────────────────────────────────────────
     comm_error: '⚠️ Chyba komunikace nebo vypršel časový limit.',
     analyze_error: '⚠️ Chyba při analýze.',
@@ -740,6 +752,18 @@ const TRANSLATIONS = {
     root_detector_label: 'detector',
     root_from_detector: 'Reported by a detector, not by an on-host agent',
     root_audit_stats: '{active} active / {total} total',
+
+    // ── AI users ───────────────────────────────────────────────────────────────
+    ai_sessions_title: 'AI users — who runs which AI on the machines',
+    ai_sessions_heading: 'AI users — captured sessions',
+    ai_sessions_stats: '{active} running / {total} total',
+    ai_sessions_none: 'No AI sessions captured.',
+    ai_sessions_note: 'Finished sessions are kept for 30 days, max 30 per host.',
+    ai_active_only: 'Running only',
+    ai_filter_ph: 'filter…',
+    ai_running: 'running',
+    ai_ended: 'ended',
+    ai_started: 'started',
 
     // ── JS dynamic messages ────────────────────────────────────────────────────
     comm_error: '⚠️ Communication error or request timed out.',

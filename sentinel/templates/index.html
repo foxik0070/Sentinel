@@ -86,6 +86,10 @@
                 <i class="fa-solid fa-shield-halved"></i> <span><i class="fa-solid fa-spinner fa-spin" style="font-size:.8em;opacity:.6;"></i></span>
             </div>
 
+            <div class="badge" id="ai-sessions-indicator" onclick="openAiSessions()" style="cursor:pointer; background:rgba(255,255,255,0.05); color:#aaa; border:1px solid #444;" data-i18n-title="ai_sessions_title" title="AI uživatelé — kdo a čím na strojích pouští AI">
+                <i class="fa-solid fa-robot"></i> <span><i class="fa-solid fa-spinner fa-spin" style="font-size:.8em;opacity:.6;"></i></span>
+            </div>
+
             <button id="lang-btn" onclick="toggleLang()" title="Switch language / Přepnout jazyk" style="background:transparent; border:1px solid var(--border); color:var(--text-muted); border-radius:4px; padding:3px 8px; cursor:pointer; font-size:0.78em; font-weight:bold; letter-spacing:0.5px; line-height:1.6;">EN</button>
             {% if role in ('admin', 'superadmin') %}<i class="fa-solid fa-gear icon-btn-header" onclick="openSettingsModal()" title="Settings"></i>{% endif %}
             <i class="fa-solid fa-moon icon-btn-header" onclick="toggleTheme()" data-i18n-title="toggle_theme" title="Přepnout režim"></i>
@@ -906,6 +910,37 @@
                 <span style="font-size:0.8em; opacity:0.5; margin-right:auto;" data-i18n="showing_max_100">Zobrazeno max. 30 posledních relací na cluster.</span>
                 <button onclick="exportRootAuditCSV()" style="background:transparent; border:1px solid var(--border); color:var(--text-muted); font-size:0.82em;"><i class="fa-solid fa-file-csv"></i> <span data-i18n="root_audit_export_csv">Export CSV</span></button>
                 <button style="background:transparent; border:1px solid #555;" onclick="closeRootAudit()" data-i18n="close">Zavřít</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI uživatelé: zachycená AI sezení z agentů -->
+    <div id="ai-sessions-modal" class="modal-overlay" style="display:none;" onclick="closeAiSessionsOutside(event)">
+        <div class="modal" style="width:95%; max-width:1100px; max-height:92vh; display:flex; flex-direction:column;">
+            <div class="modal-header">
+                <span><i class="fa-solid fa-robot" style="color:var(--accent);"></i> <span data-i18n="ai_sessions_heading">AI uživatelé — zachycená sezení</span></span>
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <span id="ai-sessions-stats" style="font-size:0.8em; color:var(--text-muted);"></span>
+                    <label style="font-size:0.8em; display:flex; align-items:center; gap:4px; cursor:pointer; color:var(--text-muted);">
+                        <input type="checkbox" id="ai-active-only" onchange="_renderAiSessions()"> <span data-i18n="ai_active_only">Jen běžící</span>
+                    </label>
+                    <input id="ai-sessions-filter" oninput="_renderAiSessions()" placeholder="filtr…" data-i18n-placeholder="ai_filter_ph" style="background:var(--input-bg); color:var(--text-main); border:1px solid var(--border); border-radius:3px; padding:3px 8px; font-size:0.8em; width:150px;">
+                    <i title="Obnovit" aria-label="Obnovit" class="fa-solid fa-rotate" style="cursor:pointer" onclick="openAiSessions()"></i>
+                    <i title="Zavřít" aria-label="Zavřít" class="fa-solid fa-times" style="cursor:pointer" onclick="closeAiSessions()"></i>
+                </div>
+            </div>
+            <div class="modal-body" style="padding:0; flex:1; overflow-y:auto;">
+                <div id="ai-sessions-tiles" style="display:flex; flex-wrap:wrap; gap:8px; padding:12px 14px; border-bottom:1px solid var(--border);"></div>
+                <div id="ai-sessions-empty" style="display:none; text-align:center; padding:40px; color:var(--text-muted);">
+                    <i class="fa-solid fa-robot" style="font-size:2em; opacity:.35; display:block; margin-bottom:10px;"></i>
+                    <span data-i18n="ai_sessions_none">Žádná zachycená AI sezení.</span>
+                </div>
+                <div id="ai-sessions-body"></div>
+            </div>
+            <div class="modal-footer">
+                <span style="font-size:0.8em; opacity:0.5; margin-right:auto;" data-i18n="ai_sessions_note">Ukončená sezení se drží 30 dní, max. 30 na stroj.</span>
+                <button onclick="exportAiSessionsCSV()" style="background:transparent; border:1px solid var(--border); color:var(--text-muted); font-size:0.82em;"><i class="fa-solid fa-file-csv"></i> <span data-i18n="root_audit_export_csv">Export CSV</span></button>
+                <button style="background:transparent; border:1px solid #555;" onclick="closeAiSessions()" data-i18n="close">Zavřít</button>
             </div>
         </div>
     </div>

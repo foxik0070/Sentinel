@@ -206,6 +206,36 @@ def create_blueprint(service, socketio):
                 conn.close()
         return jsonify(rows)
 
+    @bp.route('/api/ai_sessions', methods=['GET'])
+    @requires_auth
+    def get_ai_sessions():
+        """Zachycená AI sezení pro modal: aktivní vždy, ukončená po stropu na stroj."""
+        per_host = int(getattr(config, 'AI_SESSIONS_HISTORY_PER_HOST', 30))
+        with state.db_lock:
+            conn = state._get_conn()
+            try:
+                c = conn.execute(
+                    "SELECT host, username, tool, category, model, pid, cwd, cmdline,"
+                    "       remote, started_at, first_seen, last_seen, ended_at, is_active FROM ("
+                    "  SELECT *, ROW_NUMBER() OVER (PARTITION BY host"
+                    "                               ORDER BY is_active DESC, last_seen DESC) AS rn"
+                    "  FROM ai_sessions"
+                    ") WHERE rn <= ? ORDER BY is_active DESC, last_seen DESC",
+                    (per_host,))
+                from .. import api as _api
+                rows = []
+                for r in c.fetchall():
+                    rows.append({
+                        "host": r[0], "user": r[1], "tool": r[2], "category": r[3],
+                        "model": r[4], "pid": r[5], "cwd": r[6], "cmdline": r[7],
+                        "remote": r[8], "started_at": r[9], "first_seen": r[10],
+                        "last_seen": r[11], "ended_at": r[12], "is_active": bool(r[13]),
+                        "cluster": _api.get_cluster_from_host(r[0]),
+                    })
+            finally:
+                conn.close()
+        return jsonify(rows)
+
     @socketio.on('join_private')
     def handle_join_private(data):
         from flask_socketio import join_room

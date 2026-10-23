@@ -1036,6 +1036,15 @@ def create_blueprint(service):
                 except Exception as _me:
                     logger.error(f"agent metrics processing error ({hostname}): {_me}")
 
+            # Zachycená AI sezení. Prázdný seznam je platné tvrzení "nic neběží"
+            # a uzavře evidovaná sezeni, proto se testuje na None, ne na pravdivost.
+            _ai_sessions = data.get("ai_sessions")
+            if isinstance(_ai_sessions, list):
+                try:
+                    state.save_ai_sessions(hostname, _ai_sessions)
+                except Exception as _ae:
+                    logger.error(f"agent ai_sessions processing error ({hostname}): {_ae}")
+
             events_list = data.get("events", []) or data.get("alerts", [])
 
             for alert in events_list:

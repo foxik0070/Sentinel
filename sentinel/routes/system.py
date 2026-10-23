@@ -104,6 +104,20 @@ def create_blueprint(service):
             else:
                 infra_count += 1
 
+        # Pocet bezicich AI sezeni pro badge. Levny dotaz na index
+        # idx_ai_sessions_seen; selhani nesmi shodit cely status.
+        ai_sessions_count = 0
+        try:
+            with state.db_lock:
+                conn = state._get_conn()
+                try:
+                    ai_sessions_count = conn.execute(
+                        "SELECT COUNT(*) FROM ai_sessions WHERE is_active = 1").fetchone()[0]
+                finally:
+                    conn.close()
+        except Exception:
+            pass
+
         rag_ready = False
         if hasattr(rag, 'rag_system'):
             rag_ready = rag.rag_system.is_ready
@@ -113,6 +127,7 @@ def create_blueprint(service):
             "agent_issues": agent_count,
             "root_issues": root_count,
             "security_issues": security_count,
+            "ai_sessions": ai_sessions_count,
             "pending": len(pending),
             "rag_ready": rag_ready,
             "queue_depth": service.chat_queue_depth,

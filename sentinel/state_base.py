@@ -598,6 +598,32 @@ def init_db():
             c.execute('CREATE INDEX IF NOT EXISTS idx_ai_audit_kind ON ai_audit(kind, created_at)')
             c.execute('CREATE INDEX IF NOT EXISTS idx_ai_audit_key ON ai_audit(problem_key)')
 
+            # Zachycena AI sezeni z agentu (agent_ai_session_monitor). Identita
+            # je (host, pid, started_at): samotny pid se po restartu stroje
+            # recykluje, cas startu procesu se mezi polly nemeni. Bez toho by
+            # kazdy poll zalozil novy radek -- presne tak root_audit narostl
+            # na 101 tisic radku (CLAUDE.md 36f).
+            c.execute('''CREATE TABLE IF NOT EXISTS ai_sessions
+                         (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                          host TEXT NOT NULL,
+                          username TEXT DEFAULT '',
+                          tool TEXT DEFAULT '',
+                          category TEXT DEFAULT '',   -- cli|runtime|mcp|api
+                          model TEXT DEFAULT '',
+                          pid INTEGER,
+                          cwd TEXT DEFAULT '',
+                          cmdline TEXT DEFAULT '',
+                          remote TEXT DEFAULT '',     -- u category=api cil spojeni
+                          started_at TEXT,
+                          first_seen TEXT,
+                          last_seen TEXT,
+                          ended_at TEXT,
+                          is_active INTEGER DEFAULT 1)''')
+            c.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_sessions_ident '
+                      'ON ai_sessions(host, pid, started_at)')
+            c.execute('CREATE INDEX IF NOT EXISTS idx_ai_sessions_seen '
+                      'ON ai_sessions(is_active, last_seen)')
+
             # 486: pokusy o opravu — po prodlevě se ověří, jestli zabraly.
             # Bez toho zásah končil tím, že příkaz nespadl, což o vyřešení
             # problému nevypovídá.
