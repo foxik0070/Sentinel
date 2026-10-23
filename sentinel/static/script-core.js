@@ -688,7 +688,7 @@ async function _sendStreaming(text, thinkingEl) {
                     }
                     if (ev.done) {
                         const dur = ev.duration ? ` <span style="font-size:0.72em; color:var(--text-muted);">(${ev.duration}s)</span>` : '';
-                        botDiv.innerHTML = `<b style="color:var(--accent);"><i class="fa-solid fa-shield-halved" style="font-size:0.9em;"></i> Sentinel${dur}:</b><br>${_formatStreamOutput(accumulated)}`;
+                        botDiv.innerHTML = `<b style="color:var(--accent);"><i class="fa-solid fa-shield-halved" style="font-size:0.9em;"></i> Sentinel${dur}:</b><br>${_formatStreamOutput(accumulated)}${ev.warning_html || ''}`;
                         reader.cancel().catch(() => {});
                         return;
                     }

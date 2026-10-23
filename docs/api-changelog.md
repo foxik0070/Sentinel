@@ -2,7 +2,7 @@
 
 Tento dokument zaznamenává breaking changes a nové endpointy mezi verzemi.
 
-## v2026.09.017 (2026-10-23)
+## v2026.10.003 (2026-10-23)
 
 **Bez breaking changes.** Žádný existující endpoint nezměnil tvar odpovědi.
 

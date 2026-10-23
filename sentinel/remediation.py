@@ -112,9 +112,10 @@ def catalog_for_prompt() -> str:
 
 
 def plan_prompt(host: str, plugin: str, message: str) -> str:
+    from .ai_guard import untrusted
     return (
         "Jsi zkušený SRE. Zařaď následující problém do jedné z kategorií.\n\n"
-        f"PROBLÉM:\n[{plugin}] {host}: {message}\n\n"
+        f"PROBLÉM:\n[{plugin}] {host}:\n{untrusted(message)}\n\n"
         f"KATEGORIE:\n{catalog_for_prompt()}\n\n"
         'Odpověz POUZE JSON: {"situation": "<id>", "service": "<jméno služby, '
         'pokud je z problému zřejmé, jinak prázdné>"}'
