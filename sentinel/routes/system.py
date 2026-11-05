@@ -88,6 +88,7 @@ def create_blueprint(service):
         infra_count = 0
         agent_count = 0
         root_count = 0
+        rt_count = 0
         security_count = 0
 
         for i in visible:
@@ -101,6 +102,8 @@ def create_blueprint(service):
                 if is_super: root_count += 1
             elif key.startswith('AGENT|'):
                 agent_count += 1
+            elif key.startswith('RT|'):
+                rt_count += 1
             else:
                 infra_count += 1
 
@@ -127,6 +130,8 @@ def create_blueprint(service):
             "agent_issues": agent_count,
             "root_issues": root_count,
             "security_issues": security_count,
+            "rt_issues": rt_count,
+            "rt_enabled": bool(getattr(config, 'RT_CONFIG', {}).get('enabled')),
             "ai_sessions": ai_sessions_count,
             "pending": len(pending),
             "rag_ready": rag_ready,

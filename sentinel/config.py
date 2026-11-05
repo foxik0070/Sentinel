@@ -446,6 +446,9 @@ GITEA_URL: str = ""
 GITEA_TOKEN: str = ""
 GITEA_REPO: str = ""  # e.g. "owner/repo"
 
+# RT (Request Tracker) integration
+RT_CONFIG: dict = {}
+
 def load_config():
     global OLLAMA_URL, OLLAMA_MODEL, OLLAMA_API_KEY, OLLAMA_NUM_CTX, OLLAMA_EXTRA_BODY, LOG_DIR, DATA_DIR, KB_FILE_PATH, CHROMADB_PATH, PLUGIN_DIR
     global WORKER_THREADS, WEB_HOST, WEB_PORT, WEB_USER, WEB_PASS, WEB_VIEWER_USER, WEB_VIEWER_PASS, SECRET_KEY
@@ -824,6 +827,11 @@ def load_config():
         GITEA_URL = str(gitea_conf.get("url", GITEA_URL))
         GITEA_TOKEN = str(gitea_conf.get("token", GITEA_TOKEN))
         GITEA_REPO = str(gitea_conf.get("repo", GITEA_REPO))
+
+    global RT_CONFIG
+    rt_conf = data.get("rt", {})
+    if isinstance(rt_conf, dict) and rt_conf:
+        RT_CONFIG = rt_conf
 
     # Lifecycle + AI digest + RAG learning
     global STALE_TTL_BY_SEVERITY, STALE_ACK_MULTIPLIER, AI_DIGEST_HOUR, RAG_LEARN_RESOLVED

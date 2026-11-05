@@ -86,6 +86,10 @@
                 <i class="fa-solid fa-shield-halved"></i> <span><i class="fa-solid fa-spinner fa-spin" style="font-size:.8em;opacity:.6;"></i></span>
             </div>
 
+            <div class="badge" id="rt-status-indicator" onclick="openIssuesModal('rt')" style="cursor:pointer; background:rgba(255,255,255,0.05); color:#aaa; border:1px solid #444; display:none;" title="Request Tracker — aktivní tikety">
+                <i class="fa-solid fa-ticket"></i> <span><i class="fa-solid fa-spinner fa-spin" style="font-size:.8em;opacity:.6;"></i></span>
+            </div>
+
             <div class="badge" id="ai-sessions-indicator" onclick="openAiSessions()" style="cursor:pointer; background:rgba(255,255,255,0.05); color:#aaa; border:1px solid #444;" data-i18n-title="ai_sessions_title" title="AI uživatelé — kdo a čím na strojích pouští AI">
                 <i class="fa-solid fa-robot"></i> <span><i class="fa-solid fa-spinner fa-spin" style="font-size:.8em;opacity:.6;"></i></span>
             </div>
@@ -132,6 +136,7 @@
                 <button class="tool-btn" onclick="openIssuesModal('agent')"><i class="fa-solid fa-server"></i> <span data-i18n="agent_records">Záznamy z Agentů</span></button>
                 <button class="tool-btn" onclick="openIssuesModal('security')"><i class="fa-solid fa-shield-halved"></i> <span data-i18n="security_records">Security záznamy</span></button>
                 <button class="tool-btn" onclick="openIssuesModal('root')"><i class="fa-solid fa-user-secret"></i> <span data-i18n="root_records">Root záznamy</span></button>
+                <button class="tool-btn" onclick="openIssuesModal('rt')"><i class="fa-solid fa-ticket"></i> RT Tikety</button>
                 <button class="tool-btn" onclick="openSysInfoModal()"><i class="fa-solid fa-server"></i> <span data-i18n="server_info">Info o serveru</span></button>
                 <button class="tool-btn" id="pending-actions-btn" onclick="openPendingActionsModal()"><i class="fa-solid fa-robot"></i> <span data-i18n="actions_ai">Akce & AI Návrhy</span></button>
                 <button class="tool-btn" onclick="openPredictions()"><i class="fa-solid fa-chart-line"></i> <span data-i18n="predictions_trends">Predikce & Trendy</span></button>

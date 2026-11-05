@@ -32,6 +32,7 @@ async function openIssuesModal(channel) {
     if (channel === 'root') titleEl.innerHTML = `<i class='fa-solid fa-user-secret' style='color:#ffc107'></i> ${t('issues_title_root')}`;
     if (channel === 'security') titleEl.innerHTML = `<i class='fa-solid fa-shield-halved' style='color:var(--error)'></i> ${t('issues_title_security')}`;
     if (channel === 'infra') titleEl.innerHTML = `<i class='fa-solid fa-file-lines' style='color:var(--accent)'></i> ${t('issues_title_infra')}`;
+    if (channel === 'rt') titleEl.innerHTML = `<i class='fa-solid fa-ticket' style='color:#0078d4'></i> Request Tracker — Tikety`;
 
     // Sync notify bell button
     _syncChannelNotifyBtn(channel);
@@ -62,6 +63,7 @@ function closeIssuesModal() {
     currentOpenChannel = null;
     if (_bulkMode) { _bulkMode = false; _bulkSelected.clear(); }
     _showSnoozed = false;
+    _rtActiveQueue = 'all';
     const fi = document.getElementById('issues-filter-input');
     if (fi) fi.value = '';
     const bar = document.getElementById('bulk-action-bar');
@@ -115,6 +117,14 @@ async function refreshModalIssuesContent(isAuto = false) {
                 if (d.open) openGroups.add(key);
                 else        closedGroups.add(key);
             });
+            const prevScroll = bodyEl.scrollTop;
+            const scrollables = [];
+            bodyEl.querySelectorAll('[style*="overflow-y"]').forEach(el => {
+                if (el.scrollTop > 0) {
+                    const gk = el.closest('[data-group-key]');
+                    if (gk) scrollables.push({key: gk.dataset.groupKey, top: el.scrollTop});
+                }
+            });
             bodyEl.innerHTML = data.html;
             // Obnovit stav: explicitně otevřené → open, explicitně zavřené → closed
             // (nové elementy ponechají HTML default)
@@ -126,9 +136,15 @@ async function refreshModalIssuesContent(isAuto = false) {
                     else if (closedGroups.has(key)) d.open = false;
                 });
             }
+            bodyEl.scrollTop = prevScroll;
+            scrollables.forEach(s => {
+                const grp = bodyEl.querySelector(`[data-group-key="${s.key}"] [style*="overflow-y"]`);
+                if (grp) grp.scrollTop = s.top;
+            });
             // Re-apply filter if active
             const filterVal = document.getElementById('issues-filter-input')?.value || '';
             if (filterVal) filterIssueCards(filterVal);
+            if (currentOpenChannel === 'rt' && _rtActiveQueue !== 'all') _rtApplyFilter();
             // Re-inject checkboxes if bulk mode is on
             if (_bulkMode) {
                 _injectBulkCheckboxes();
@@ -2624,6 +2640,110 @@ async function _actionAddToAllowed(actionId, autoExec) {
         if (d.status === 'ok') { alert('Pravidlo přidáno.'); }
         else alert('Chyba: ' + (d.reply || d.message || '?'));
     } catch(e) { alert('Chyba: ' + e); }
+}
+
+// --- RT (Request Tracker) integration ----------------------------------------
+const _rtTicketMap = {};
+
+function _rtCommentToggle(kb64, ticketId) {
+    _rtTicketMap[kb64] = ticketId;
+    const el = document.getElementById('rtc-' + kb64);
+    if (!el) return;
+    el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    if (el.style.display === 'block') {
+        const inp = document.getElementById('rtc-inp-' + kb64);
+        if (inp) inp.focus();
+    }
+}
+
+async function _rtCommentSubmit(kb64) {
+    const ticketId = _rtTicketMap[kb64];
+    const inp = document.getElementById('rtc-inp-' + kb64);
+    const msg = document.getElementById('rtc-msg-' + kb64);
+    if (!inp || !ticketId) return;
+    const text = inp.value.trim();
+    if (!text) { if (msg) msg.innerHTML = '<span style="color:var(--error)">Prázdný komentář</span>'; return; }
+    if (msg) msg.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+    try {
+        const r = await fetch('/api/rt/comment', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ticket_id: ticketId, text: text})
+        });
+        const d = await r.json();
+        if (d.ok) {
+            if (msg) msg.innerHTML = '<span style="color:var(--success)">Komentář odeslán do RT #' + ticketId + '</span>';
+            inp.value = '';
+        } else {
+            if (msg) msg.innerHTML = '<span style="color:var(--error)">' + (d.error || 'Chyba') + '</span>';
+        }
+    } catch(e) {
+        if (msg) msg.innerHTML = '<span style="color:var(--error)">Síťová chyba: ' + e + '</span>';
+    }
+}
+
+let _rtActiveQueue = 'all';
+
+function _rtFilterQueue(queue, btn) {
+    _rtActiveQueue = queue;
+    _rtApplyFilter();
+}
+
+function _rtApplyFilter() {
+    const queue = _rtActiveQueue;
+    document.querySelectorAll('.rt-q-tab').forEach(b => {
+        const bq = b.dataset.rtQueue;
+        if (bq === queue) {
+            b.style.background = queue === 'all' ? 'var(--accent)' : b.style.borderColor;
+            b.style.color = '#fff';
+            b.classList.add('active');
+        } else {
+            b.style.background = 'rgba(255,255,255,.05)';
+            b.style.color = b.style.borderColor || 'var(--text-muted)';
+            b.classList.remove('active');
+        }
+    });
+    document.querySelectorAll('.rt-queue-group').forEach(g => {
+        if (queue === 'all') { g.style.display = ''; }
+        else { g.style.display = g.dataset.rtQueue === queue ? '' : 'none'; }
+    });
+}
+
+async function _rtTake(kb64, ticketId) {
+    if (!confirm('Převzít tiket RT #' + ticketId + '?')) return;
+    try {
+        const r = await fetch('/api/rt/take', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ticket_id: ticketId})
+        });
+        const d = await r.json();
+        if (d.ok) {
+            _showToast(d.message || 'Tiket převzat', 'success');
+            setTimeout(() => refreshModalIssuesContent(false), 1500);
+        } else {
+            _showToast(d.error || 'Chyba', 'error');
+        }
+    } catch(e) { _showToast('Síťová chyba: ' + e, 'error'); }
+}
+
+async function _rtStatus(kb64, ticketId, newStatus) {
+    if (!newStatus) return;
+    if (!confirm('Změnit stav tiketu RT #' + ticketId + ' na "' + newStatus + '"?')) return;
+    try {
+        const r = await fetch('/api/rt/status', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ticket_id: ticketId, status: newStatus})
+        });
+        const d = await r.json();
+        if (d.ok) {
+            _showToast(d.message || 'Stav změněn', 'success');
+            setTimeout(() => refreshModalIssuesContent(false), 1500);
+        } else {
+            _showToast(d.error || 'Chyba', 'error');
+        }
+    } catch(e) { _showToast('Síťová chyba: ' + e, 'error'); }
 }
 
 // --- AI UŽIVATELÉ: zachycená AI sezení z agentů -----------------------------

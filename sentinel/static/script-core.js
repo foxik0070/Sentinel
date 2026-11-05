@@ -1881,7 +1881,28 @@ async function updateStatus() {
             }
         }
 
-        // 5. BĚŽÍCÍ AI SEZENÍ — informativní, ne alert: nebliká a nebarví se červeně.
+        // 5. RT TICKETS
+        const rtInd = document.getElementById('rt-status-indicator');
+        if(rtInd) {
+            if (d.rt_enabled) {
+                rtInd.style.display = 'flex';
+                if (d.rt_issues > 0) {
+                    rtInd.style.background = '#0078d4';
+                    rtInd.style.color = 'white';
+                    rtInd.style.border = 'none';
+                    rtInd.querySelector('span').innerText = ` ${d.rt_issues}`;
+                } else {
+                    rtInd.style.background = 'rgba(255,255,255,0.05)';
+                    rtInd.style.color = 'var(--success)';
+                    rtInd.style.border = '1px solid #444';
+                    rtInd.querySelector('span').innerText = ' OK';
+                }
+            } else {
+                rtInd.style.display = 'none';
+            }
+        }
+
+        // 6. BĚŽÍCÍ AI SEZENÍ — informativní, ne alert: nebliká a nebarví se červeně.
         const aiInd = document.getElementById('ai-sessions-indicator');
         if (aiInd) {
             const n = d.ai_sessions || 0;
@@ -1896,14 +1917,14 @@ async function updateStatus() {
         }
 
         // Favicon badge s počtem kritických alertů
-        const _totalAlerts = (d.issues||0) + (d.agent_issues||0) + (d.security_issues||0);
+        const _totalAlerts = (d.issues||0) + (d.agent_issues||0) + (d.security_issues||0) + (d.rt_issues||0);
         _updateFaviconBadge(_totalAlerts);
         _checkPushNotification(d);  // 007: browser push
 
         updateSentinelAlertBadge();
 
         // Accumulate count for Toast alert
-        const totalIssues = d.issues + d.agent_issues + d.root_issues + d.security_issues;
+        const totalIssues = d.issues + d.agent_issues + d.root_issues + d.security_issues + (d.rt_issues||0);
         checkNewIssues(totalIssues);
 
         if (d.pending > 0) {

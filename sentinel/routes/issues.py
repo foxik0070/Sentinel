@@ -39,9 +39,15 @@ def create_blueprint(service):
                 elif any(x in key_str for x in ['agent_port_security', 'agent_vulnerability_scan', 'agent_fail2ban']): ch = 'security'
                 else: ch = 'agent'
 
-            if ch == target_channel:
-                filtered.append(i)
-            elif target_channel == 'infra' and not is_agent and ch not in ['security', 'root', 'agent']:
+            is_rt = key_str.startswith('RT|')
+
+            if target_channel == 'rt':
+                if is_rt:
+                    filtered.append(i)
+            elif ch == target_channel:
+                if not (target_channel == 'infra' and is_rt):
+                    filtered.append(i)
+            elif target_channel == 'infra' and not is_agent and not is_rt and ch not in ['security', 'root', 'agent']:
                 filtered.append(i)
 
         # Apply user's saved drag order
@@ -60,7 +66,180 @@ def create_blueprint(service):
         import json as _json
         _LABEL_COLORS = ['', '#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#a855f7', '#ec4899']
 
+        _SRC_ICONS = {
+            "agent": ("fa-solid fa-server", "#4da6ff"),
+            "infra": ("fa-solid fa-file-lines", "var(--accent)"),
+            "security": ("fa-solid fa-shield-halved", "var(--error)"),
+            "clusters": ("fa-solid fa-cubes", "#10b981"),
+            "icinga": ("fa-solid fa-heartbeat", "#fd7e14"),
+            "ecc": ("fa-solid fa-memory", "#a855f7"),
+            "root": ("fa-solid fa-user-secret", "#ffc107"),
+        }
+
+        def _render_correlated(issue):
+            raw = issue.get("correlated_issues")
+            if not raw:
+                return ""
+            try:
+                items = _json.loads(raw) if isinstance(raw, str) else raw
+            except (ValueError, TypeError):
+                return ""
+            if not items:
+                return ""
+            rows = ""
+            for c in items[:6]:
+                src = (c.get("source") or "?").lower()
+                icon_cls, icon_color = _SRC_ICONS.get(src, ("fa-solid fa-circle-info", "var(--text-muted)"))
+                safe_host = html.escape(str(c.get("host", "?")))
+                safe_msg = html.escape(str(c.get("msg", ""))[:100])
+                reason_tags = " ".join(
+                    f"<span style='background:rgba(0,120,212,.15);color:#4da6ff;border-radius:3px;padding:1px 5px;font-size:.7em;'>{html.escape(r)}</span>"
+                    for r in (c.get("reason") or [])[:3]
+                )
+                rows += (
+                    f"<div style='display:flex;align-items:flex-start;gap:6px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04);'>"
+                    f"<i class='{icon_cls}' style='color:{icon_color};font-size:.85em;margin-top:2px;flex-shrink:0;' title='{html.escape(src)}'></i>"
+                    f"<div style='flex:1;min-width:0;'>"
+                    f"<b style='font-size:.8em;'>{safe_host}</b> "
+                    f"<span style='color:var(--text-muted);font-size:.78em;'>{safe_msg}</span>"
+                    f"<div style='margin-top:2px;display:flex;gap:3px;flex-wrap:wrap;'>{reason_tags}</div>"
+                    f"</div></div>"
+                )
+            return (
+                f"<div style='margin-top:8px;padding:8px 10px;background:rgba(0,120,212,.06);border:1px solid rgba(0,120,212,.2);border-radius:5px;'>"
+                f"<div style='font-size:.78em;color:#4da6ff;font-weight:bold;margin-bottom:4px;'>"
+                f"<i class='fa-solid fa-link' style='margin-right:4px;'></i>Související hlášení ({len(items)})</div>"
+                f"{rows}</div>"
+            )
+
+        def _render_rt_card(i):
+            """Dedicated renderer for RT ticket cards."""
+            kb64 = base64.b64encode(i['key'].encode()).decode()
+            _key = i.get('key', '')
+            _rt_parts = _key.split('|')
+            _rt_queue = html.escape(_rt_parts[1]) if len(_rt_parts) >= 2 else '?'
+            _rt_tid = _rt_parts[2] if len(_rt_parts) >= 3 else ''
+            _rt_cfg = getattr(config, 'RT_CONFIG', {})
+            _rt_base = (_rt_cfg.get('url') or '').rstrip('/')
+
+            raw_msg = i.get('last_line') or ''
+            import re as _re_rt
+            _subj_m = _re_rt.match(r'RT #\d+ \[[^\]]+\] \w+:\s*(.+?)(?:\s*\|)', raw_msg)
+            subject = html.escape(_subj_m.group(1).strip() if _subj_m else raw_msg[:120])
+
+            owner = "Nobody"
+            age_h = ""
+            sla_info = ""
+            status_raw = "new"
+            for part in raw_msg.split('|'):
+                p = part.strip()
+                if p.startswith('Owner:'):
+                    owner = html.escape(p[6:].strip())
+                elif p.startswith('Age:'):
+                    age_h = html.escape(p[4:].strip())
+                elif 'SLA' in p:
+                    sla_info = html.escape(p.strip())
+            _st_m = _re_rt.match(r'RT #\d+ \[[^\]]+\] (\w+):', raw_msg)
+            if _st_m:
+                status_raw = _st_m.group(1).lower()
+
+            _st_colors = {
+                'new': ('#ffc107', '#111'), 'open': ('#0078d4', '#fff'),
+                'stalled': ('#6c757d', '#fff'), 'waiting': ('#fd7e14', '#fff'),
+            }
+            _bg, _fg = _st_colors.get(status_raw, ('#555', '#fff'))
+            status_badge = (
+                f"<span style='background:{_bg};color:{_fg};border-radius:3px;padding:1px 8px;"
+                f"font-size:.75em;font-weight:bold;text-transform:uppercase;'>{html.escape(status_raw)}</span>"
+            )
+
+            sla_badge = ""
+            if sla_info:
+                if 'BREACH' in sla_info.upper():
+                    sla_badge = f"<span style='background:rgba(197,15,31,.2);color:#ff4444;border:1px solid rgba(197,15,31,.4);border-radius:3px;padding:1px 6px;font-size:.72em;font-weight:bold;'><i class='fa-solid fa-clock' style='margin-right:3px;'></i>{sla_info}</span>"
+                else:
+                    sla_badge = f"<span style='background:rgba(16,185,129,.15);color:#10b981;border:1px solid rgba(16,185,129,.3);border-radius:3px;padding:1px 6px;font-size:.72em;'><i class='fa-regular fa-clock' style='margin-right:3px;'></i>{sla_info}</span>"
+
+            severity = (i.get('severity') or 'low').lower()
+            _sev_colors = {'critical': '#ef4444', 'high': '#f97316', 'medium': '#eab308', 'low': '#6c757d'}
+            _sev_c = _sev_colors.get(severity, '#6c757d')
+
+            rt_link = ""
+            if _rt_tid and _rt_base:
+                _rt_url = html.escape(f"{_rt_base}/Ticket/Display.html?id={_rt_tid}")
+                rt_link = _rt_url
+
+            is_priv = g.user_role in ('admin', 'superadmin', 'operator')
+            actions_html = ""
+            if rt_link:
+                actions_html += (
+                    f"<a href='{rt_link}' target='_blank' rel='noopener' title='Otevřít v RT' "
+                    f"style='display:inline-flex;align-items:center;gap:4px;padding:3px 10px;background:rgba(253,126,20,.12);border:1px solid rgba(253,126,20,.3);color:#fd7e14;border-radius:4px;font-size:.78em;text-decoration:none;cursor:pointer;'>"
+                    f"<i class='fa-solid fa-up-right-from-square'></i> RT #{html.escape(_rt_tid)}</a> "
+                )
+            if is_priv and _rt_tid:
+                actions_html += (
+                    f"<button onclick=\"_rtCommentToggle('{kb64}','{html.escape(_rt_tid)}')\" title='Komentovat v RT' "
+                    f"style='padding:3px 10px;background:rgba(0,120,212,.12);border:1px solid rgba(0,120,212,.3);color:#4da6ff;border-radius:4px;font-size:.78em;cursor:pointer;'>"
+                    f"<i class='fa-solid fa-comment-medical'></i> Komentovat</button> "
+                )
+                actions_html += (
+                    f"<button onclick=\"_rtTake('{kb64}','{html.escape(_rt_tid)}')\" title='Převzít tiket' "
+                    f"style='padding:3px 10px;background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.3);color:#10b981;border-radius:4px;font-size:.78em;cursor:pointer;'>"
+                    f"<i class='fa-solid fa-hand'></i> Převzít</button> "
+                )
+                actions_html += (
+                    f"<select onchange=\"_rtStatus('{kb64}','{html.escape(_rt_tid)}',this.value);this.selectedIndex=0\" "
+                    f"style='padding:3px 8px;background:var(--input-bg);color:var(--text-muted);border:1px solid var(--border);border-radius:4px;font-size:.78em;cursor:pointer;'>"
+                    f"<option value=''>Stav…</option>"
+                    f"<option value='open'>Open</option>"
+                    f"<option value='stalled'>Stalled</option>"
+                    f"<option value='resolved'>Resolved</option>"
+                    f"</select> "
+                )
+            if g.user_role in ('admin', 'superadmin'):
+                actions_html += (
+                    f"<i class='fa-solid fa-eye-slash' title='Skrýt ze Sentinel' style='cursor:pointer;color:var(--text-muted);font-size:.95em;margin-left:8px;transition:color .2s;' "
+                    f"onmouseover=\"this.style.color='#ffc107'\" onmouseout=\"this.style.color='var(--text-muted)'\" "
+                    f"onclick=\"fetch('/api/issues/{kb64}/ignore',{{method:'POST'}}).then(()=>refreshModalIssuesContent(false));\"></i> "
+                )
+                actions_html += (
+                    f"<i class='fa-solid fa-trash' title='Smazat' style='cursor:pointer;color:var(--text-muted);font-size:.95em;margin-left:4px;transition:color .2s;' "
+                    f"onmouseover=\"this.style.color='var(--error)'\" onmouseout=\"this.style.color='var(--text-muted)'\" "
+                    f"onclick=\"fetch('/api/issues/{kb64}/delete',{{method:'POST'}}).then(()=>setTimeout(()=>refreshModalIssuesContent(false),300));\"></i>"
+                )
+
+            return f"""<div class="modal-content" data-issue-card="1" data-issue-key="{kb64}" style='background:rgba(255,255,255,0.02);border:1px solid var(--border);border-left:4px solid {_sev_c};padding:10px 12px;margin-bottom:6px;border-radius:4px;'>
+                <div style='display:flex;align-items:center;gap:8px;flex-wrap:wrap;'>
+                    <span style='font-weight:bold;font-size:.95em;color:var(--text-main);'><i class='fa-solid fa-ticket' style='color:#fd7e14;margin-right:4px;'></i>#{html.escape(_rt_tid)}</span>
+                    <span style='color:var(--text-muted);font-size:.82em;'>{_rt_queue}</span>
+                    {status_badge}
+                    {sla_badge}
+                    <span style='color:var(--text-muted);font-size:.78em;margin-left:auto;'><i class='fa-regular fa-clock'></i> {age_h}</span>
+                </div>
+                <div style='margin-top:6px;font-size:.9em;color:var(--text-main);'>{subject}</div>
+                <div style='margin-top:4px;display:flex;align-items:center;gap:12px;font-size:.8em;color:var(--text-muted);'>
+                    <span><i class='fa-solid fa-user' style='margin-right:3px;'></i>{owner}</span>
+                </div>
+                <div style='margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;'>
+                    {actions_html}
+                </div>
+                <div id='rtc-{kb64}' style='display:none;margin-top:6px;'>
+                    <div style='display:flex;gap:6px;'>
+                        <input type='text' id='rtc-inp-{kb64}' placeholder='RT komentář…' autocomplete='off'
+                          style='flex:1;padding:5px 8px;background:var(--input-bg);color:var(--text-main);border:1px solid var(--border);border-radius:4px;font-size:.82em;'
+                          onkeydown="if(event.key==='Enter')_rtCommentSubmit('{kb64}');if(event.key==='Escape')document.getElementById('rtc-{kb64}').style.display='none'">
+                        <button onclick="_rtCommentSubmit('{kb64}')" style='padding:4px 10px;background:#fd7e14;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:.82em;'>Odeslat</button>
+                        <button onclick="document.getElementById('rtc-{kb64}').style.display='none'" style='padding:4px 8px;background:transparent;border:1px solid var(--border);color:var(--text-muted);border-radius:4px;cursor:pointer;font-size:.82em;'>&#10005;</button>
+                    </div>
+                    <div id='rtc-msg-{kb64}' style='font-size:.75em;min-height:14px;margin-top:3px;'></div>
+                </div>
+                {_render_correlated(i)}
+            </div>"""
+
         def _render_issue_card(i):
+            if i.get('key', '').startswith('RT|'):
+                return _render_rt_card(i)
             kb64 = base64.b64encode(i['key'].encode()).decode()
             ts = (i.get('last_seen') or 'N/A').replace('T', ' ').split('.')[0]
             # escape — plugin_name jde z agent reportů/syslogu (stored XSS)
@@ -227,6 +406,101 @@ def create_blueprint(service):
                 if s.startswith(pfx): s = s[len(pfx):]
             return s
 
+        # --- RT channel: group by queue with filter tabs ---
+        if target_channel == 'rt':
+            _sev_order = {'critical': 0, 'high': 1, 'medium': 2, 'low': 3}
+
+            def _rt_sort_key(i):
+                sev = (i.get('severity') or 'low').lower()
+                msg = i.get('last_line', '')
+                age = 0
+                for part in msg.split('|'):
+                    p = part.strip()
+                    if p.startswith('Age:'):
+                        try:
+                            age = float(p.split(':')[1].strip().rstrip('h'))
+                        except (ValueError, IndexError):
+                            pass
+                return (_sev_order.get(sev, 9), -age)
+
+            _HIDDEN_QUEUES = {'IT', 'Media'}
+            queues_map = _dd(list)
+            for i in filtered:
+                parts = i.get('key', '').split('|')
+                q = parts[1] if len(parts) >= 2 else 'Other'
+                if q in _HIDDEN_QUEUES:
+                    continue
+                queues_map[q].append(i)
+
+            for q in queues_map:
+                queues_map[q].sort(key=_rt_sort_key)
+
+            _q_colors = {
+                'Infrastruktura': '#ef4444', 'Support': '#0078d4', 'IT': '#fd7e14',
+                'Compilations': '#a855f7', 'Media': '#10b981', 'Datera': '#eab308', 'Spam': '#6c757d',
+            }
+
+            def _q_status_counts(items):
+                c = {}
+                for i in items:
+                    msg = i.get('last_line', '')
+                    import re as _re_st
+                    m = _re_st.match(r'RT #\d+ \[[^\]]+\] (\w+):', msg)
+                    s = m.group(1).lower() if m else '?'
+                    c[s] = c.get(s, 0) + 1
+                return c
+
+            _visible_total = sum(len(v) for v in queues_map.values())
+            tabs = (
+                "<button class='rt-q-tab active' data-rt-queue='all' onclick=\"_rtFilterQueue('all',this)\" "
+                "style='padding:4px 12px;background:var(--accent);color:#fff;border:none;border-radius:4px;"
+                f"cursor:pointer;font-size:.8em;font-weight:bold;'>Vše ({_visible_total})</button> "
+            )
+            for q in sorted(queues_map.keys()):
+                qc = _q_colors.get(q, '#888')
+                tabs += (
+                    f"<button class='rt-q-tab' data-rt-queue='{html.escape(q)}' onclick=\"_rtFilterQueue('{html.escape(q)}',this)\" "
+                    f"style='padding:4px 12px;background:rgba(255,255,255,.05);color:{qc};border:1px solid {qc};"
+                    f"border-radius:4px;cursor:pointer;font-size:.8em;'>"
+                    f"{html.escape(q)} ({len(queues_map[q])})</button> "
+                )
+            html_out = (
+                f"<div style='display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;padding:4px 0;'>{tabs}</div>"
+            )
+
+            for q in sorted(queues_map.keys(), key=lambda x: -len(queues_map[x])):
+                items = queues_map[q]
+                qc = _q_colors.get(q, '#888')
+                sc = _q_status_counts(items)
+                status_pills = " ".join(
+                    f"<span style='font-size:.72em;color:var(--text-muted);'>{s}: {n}</span>"
+                    for s, n in sorted(sc.items())
+                )
+                top5 = "".join(_render_issue_card(i) for i in items[:5])
+                rest_count = len(items) - 5
+                if rest_count > 0:
+                    rest_cards = "".join(_render_issue_card(i) for i in items[5:])
+                    rest_html = (
+                        f"<div style='max-height:300px;overflow-y:auto;border-top:1px solid var(--border);"
+                        f"margin-top:4px;padding-top:4px;'>{rest_cards}</div>"
+                    )
+                else:
+                    rest_html = ""
+                html_out += (
+                    f"<details open class='rt-queue-group' data-rt-queue='{html.escape(q)}' data-group-key='RT|{html.escape(q)}' style='margin-bottom:8px;'>"
+                    f"<summary style='cursor:pointer;padding:8px 12px;background:rgba(255,255,255,.03);"
+                    f"border:1px solid var(--border);border-left:4px solid {qc};border-radius:4px;"
+                    f"font-size:.88em;color:{qc};font-weight:700;user-select:none;list-style:none;"
+                    f"display:flex;justify-content:space-between;align-items:center;'>"
+                    f"<span><i class='fa-solid fa-inbox' style='margin-right:6px;'></i>{html.escape(q)} "
+                    f"<span style='color:var(--text-muted);font-weight:400;'>({len(items)})</span></span>"
+                    f"<span>{status_pills}</span></summary>"
+                    f"<div style='padding:6px 0 0 6px;'>{top5}{rest_html}</div></details>"
+                )
+
+            return html_out
+
+        # --- Standard channels: group by CLUSTER → PLUGIN ---
         tree = _dd(lambda: _dd(list))
         for i in filtered:
             tree[_issue_cluster(i)][_plugin_label(i.get('plugin_name') or i.get('channel_type') or '')].append(i)
@@ -275,7 +549,7 @@ def create_blueprint(service):
     @bp.route('/api/modal_issues/<channel>')
     @requires_auth
     def get_modal_issues_html(channel):
-        if channel not in ['agent', 'root', 'security', 'infra']:
+        if channel not in ['agent', 'root', 'security', 'infra', 'rt']:
             return jsonify({"html": "Invalid channel"}), 400
         include_snoozed = request.args.get('snoozed', '0') == '1'
         snoozed_count = state.get_snoozed_count()
