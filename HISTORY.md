@@ -1,5 +1,50 @@
 # Historie změn
 
+## [2026.11.001] - 2026-11-06
+
+**Souhrn:** RT integrace, self-service API klíče, oprava výchozí LDAP role.
+
+### RT integrace (Request Tracker)
+
+Sentinel nově sleduje tikety z Request Trackeru. Detektor `detector_rt_hpc` periodicky dotahuje tikety z nakonfigurovaných front přes RT REST 1.0 API a hlásí je jako issues s kanálem `rt`.
+
+- **Dedikované karty** — RT tikety mají vlastní renderer se statusem, SLA badge, vlastníkem a stářím
+- **Queue grouping** — tikety se seskupují podle fronty s filtrovacími taby (Vše / Infrastruktura / Support / …)
+- **Top 5 + scroll** — v každé frontě je vidět prvních 5 tiketů, zbytek ve scrollovatelném bloku
+- **Skryté fronty** — fronty IT a Media se v UI nezobrazují
+- **Inline akce** — převzetí tiketu, změna stavu (open/stalled/resolved), komentář přímo ze Sentinel
+- **RT badge** — v hlavičce se zobrazuje jen pokud je RT povoleno v `config.yaml`
+- **Waiting4reply** — tikety ve stavu waiting nedostávají notifikaci
+- **Scroll preserve** — pozice scrollu a stav `<details>` přežívá 3s auto-refresh
+
+### Nové RT API endpointy
+- `GET /api/rt/tickets`, `POST /api/rt/take`, `POST /api/rt/status`, `POST /api/rt/comment`
+
+### Nová sekce v `config.yaml`
+```yaml
+rt:
+  enabled: true
+  url: https://support.example.com
+  api_path: /REST/1.0
+  user: sentinel
+  pass: ...
+  queues: [Infrastruktura, Support, Compilations]
+  sla_hours: {Infrastruktura: 8, Support: 48}
+  channel: infra
+```
+
+### Self-service API klíče
+
+Admin a superadmin si mohou vytvořit vlastní API klíč přímo v UI (klik na role badge v hlavičce). Panel zobrazuje přehled vlastních klíčů s datem vytvoření, posledním použitím a možností revokace. Admin smí vytvořit klíč se scope `read` nebo `read:issues`, superadmin libovolný scope. Superadmin vidí u každého klíče vlastníka.
+
+### Bezpečnost: výchozí LDAP role
+
+**Breaking change.** LDAP uživatel, který není v žádném seznamu (`LDAP_SUPERADMINS`, `LDAP_ADMINS`, `LDAP_OPERATORS`, `LDAP_VIEWERS`) ani v DB rolích, nově dostává roli `viewer` místo `admin`. Stávající uživatelé s DB rolí nejsou ovlivněni.
+
+### Remediation plan
+
+`POST /api/issues/<key>/remediation_plan` je nově přístupný všem přihlášeným uživatelům (dříve jen admin/superadmin). Generuje plán zásahů, ale neprovádí žádné akce.
+
 ## [2026.10.005] - 2026-10-23
 
 **Souhrn:** Počet AI sezení v hlavičce neodpovídal ničemu, co šlo v modalu najít.
