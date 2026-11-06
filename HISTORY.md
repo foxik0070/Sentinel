@@ -1,5 +1,20 @@
 # Historie změn
 
+## [2026.11.002] - 2026-11-06
+
+**Souhrn:** Opravy SQL chyb, přístupů a logs endpointů.
+
+### Opravy
+- **markdown/postmortem 500** — oprava SQL dotazů (špatné názvy sloupců)
+- **logs/view** — podpora GET metody (nejen POST)
+- **API klíč přes query string** — fallback `?api_key=` pro SSE EventSource, který nemůže posílat custom headers
+
+### Přístupy — viewer role
+Následující read-only endpointy jsou nově přístupné všem přihlášeným uživatelům:
+- dependencies, blast_radius, health_forecast, playbooks, kb/files, capacity_plan
+
+---
+
 ## [2026.11.001] - 2026-11-06
 
 **Souhrn:** RT integrace, self-service API klíče, oprava výchozí LDAP role.

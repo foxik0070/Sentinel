@@ -2,6 +2,25 @@
 
 Tento dokument zaznamenává breaking changes a nové endpointy mezi verzemi.
 
+## v2026.11.002 (2026-11-06)
+
+### Opravy
+- `GET /api/issues/<key_b64>/markdown` — oprava SQL (sloupce `author`, `problem_key`)
+- `GET /api/issues/<key_b64>/postmortem` — stejná oprava SQL
+- `GET /api/logs/view` — nově akceptuje GET (dříve jen POST), `?filename=`
+- Auth: API klíč lze předat i přes `?api_key=` (fallback pro SSE/EventSource)
+
+### Změny přístupů — viewer role
+Následující endpointy jsou nově přístupné všem přihlášeným (dříve admin/superadmin):
+- `GET /api/analytics/dependencies`
+- `GET /api/hosts/<host>/blast_radius`
+- `GET /api/analytics/health_forecast`
+- `GET /api/analytics/playbooks`
+- `GET /api/kb/files`
+- `POST /api/capacity_plan`
+
+---
+
 ## v2026.11.001 (2026-11-06)
 
 **Breaking change:** LDAP uživatelé bez explicitního přiřazení role nově dostávají
