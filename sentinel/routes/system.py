@@ -1632,8 +1632,6 @@ def create_blueprint(service):
     @bp.route('/api/kb/files', methods=['GET'])
     @requires_auth
     def api_kb_files():
-        if g.user_role not in ('admin', 'superadmin'):
-            return jsonify({"status": "error"}), 403
         base = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
         source_dirs = [
             ('docs', os.path.join(base, 'docs')),
@@ -2495,8 +2493,6 @@ SwaggerUIBundle({
     @requires_auth
     def api_capacity_plan():
         """163: AI interpretuje telemetrii a navrhne upgrade/resize doporučení."""
-        if g.user_role not in ('admin', 'superadmin'):
-            return jsonify({"error": "Forbidden"}), 403
         d = request.json or {}
         days = min(int(d.get('days', 7)), 30)
         limit = days * 24 * 12  # 5min samples

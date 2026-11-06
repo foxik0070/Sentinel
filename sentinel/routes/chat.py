@@ -245,10 +245,10 @@ def create_blueprint(service):
             return jsonify({"files": files})
         except Exception as e: return jsonify({"error": str(e)}), 500
 
-    @bp.route('/api/logs/view', methods=['POST'])
+    @bp.route('/api/logs/view', methods=['GET', 'POST'])
     @requires_auth
     def view_log():
-        fname = (request.get_json(silent=True) or {}).get('filename')
+        fname = request.args.get('filename') if request.method == 'GET' else (request.get_json(silent=True) or {}).get('filename')
         path = service._safe_log_path(fname)
         if path and os.path.exists(path):
             return jsonify({"content": html.escape(utils.read_file_mmap(path))})

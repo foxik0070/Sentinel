@@ -1472,8 +1472,6 @@ def create_blueprint(service):
 
         Odvozená závislost NENÍ fakt; u každé je vidět, odkud pochází.
         """
-        if g.user_role not in ('admin', 'superadmin'):
-            return jsonify({"error": "Forbidden"}), 403
         from .. import dependencies as dp
         hosts = [h for h in (request.args.get('hosts') or '').split(',') if h.strip()]
         graph, facts = _dependency_graph(hosts)
@@ -1485,8 +1483,6 @@ def create_blueprint(service):
     @requires_auth
     def api_blast_radius(host):
         """458/504: Koho problém zasáhne a co spadne při vypnutí."""
-        if g.user_role not in ('admin', 'superadmin'):
-            return jsonify({"error": "Forbidden"}), 403
         from .. import dependencies as dp
         hosts = [h for h in (request.args.get('hosts') or '').split(',') if h.strip()]
         graph, _ = _dependency_graph(hosts)
@@ -1788,8 +1784,6 @@ def create_blueprint(service):
     @requires_auth
     def api_health_forecast():
         """474: Týdenní přehled — co se pravděpodobně pokazí příště."""
-        if g.user_role not in ('admin', 'superadmin'):
-            return jsonify({"error": "Forbidden"}), 403
         from .. import trend_detect, foresight, ai_profiles
         snapshot = foresight.build_snapshot(state, trend_detect)
         outlook = None
@@ -1843,8 +1837,6 @@ def create_blueprint(service):
 
         Návrhy pro člověka — nic se nespouští samo.
         """
-        if g.user_role not in ('admin', 'superadmin'):
-            return jsonify({"error": "Forbidden"}), 403
         from .. import playbooks
         history = state.get_issue_history_rows(days=int_param('days', 90, 1, 365))
         try:
@@ -2820,7 +2812,7 @@ def create_blueprint(service):
                 (key,)
             ).fetchone()
             comments = conn.execute(
-                "SELECT username, created_at, text FROM issue_comments WHERE issue_key=? ORDER BY created_at ASC LIMIT 20",
+                "SELECT author, created_at, text FROM issue_comments WHERE problem_key=? ORDER BY created_at ASC LIMIT 20",
                 (key,)
             ).fetchall()
             conn.close()
@@ -2944,7 +2936,7 @@ def create_blueprint(service):
                     (key,)
                 ).fetchone()
             comments = conn.execute(
-                "SELECT username, created_at, text FROM issue_comments WHERE issue_key=? ORDER BY created_at ASC LIMIT 10",
+                "SELECT author, created_at, text FROM issue_comments WHERE problem_key=? ORDER BY created_at ASC LIMIT 10",
                 (key,)
             ).fetchall()
             conn.close()
