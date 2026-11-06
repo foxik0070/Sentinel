@@ -1334,8 +1334,6 @@ def create_blueprint(service):
         Vrací celý žebřík i doporučený další krok podle toho, co už bylo
         zkoušeno a ověřeně selhalo.
         """
-        if g.user_role not in ('admin', 'superadmin'):
-            return jsonify({"error": "Forbidden"}), 403
         try:
             key = base64.b64decode(key_b64).decode()
         except Exception:

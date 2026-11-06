@@ -1564,14 +1564,17 @@ def create_blueprint(service):
     @bp.route('/api/apikeys', methods=['GET'])
     @requires_auth
     def api_keys_list():
-        if g.user_role != 'superadmin':
+        if g.user_role not in ('admin', 'superadmin'):
             return jsonify({"error": "Forbidden"}), 403
-        return jsonify({"keys": state.list_api_keys()})
+        all_keys = state.list_api_keys()
+        if g.user_role == 'superadmin':
+            return jsonify({"keys": all_keys})
+        return jsonify({"keys": [k for k in all_keys if k.get('created_by') == g.username]})
 
     @bp.route('/api/apikeys', methods=['POST'])
     @requires_auth
     def api_keys_create():
-        if g.user_role != 'superadmin':
+        if g.user_role not in ('admin', 'superadmin'):
             return jsonify({"error": "Forbidden"}), 403
         d = request.json or {}
         name = d.get('name', '').strip()
@@ -1579,8 +1582,11 @@ def create_blueprint(service):
         expires_at = d.get('expires_at') or None
         if not name:
             return jsonify({"error": "Název nesmí být prázdný"}), 400
-        if scope not in ('read', 'write', 'admin'):
-            return jsonify({"error": "Neplatný scope"}), 400
+        _admin_scopes = ('read', 'read:issues')
+        _super_scopes = ('read', 'read:issues', 'write', 'write:actions', 'admin', 'admin:users')
+        allowed_scopes = _super_scopes if g.user_role == 'superadmin' else _admin_scopes
+        if scope not in allowed_scopes:
+            return jsonify({"error": "Neplatný scope — nemáte oprávnění"}), 403
         raw = state.create_api_key(name, scope, expires_at, g.username)
         if not raw:
             return jsonify({"error": "Chyba vytváření klíče"}), 500
@@ -1589,8 +1595,13 @@ def create_blueprint(service):
     @bp.route('/api/apikeys/<int:key_id>', methods=['DELETE'])
     @requires_auth
     def api_keys_delete(key_id):
-        if g.user_role != 'superadmin':
+        if g.user_role not in ('admin', 'superadmin'):
             return jsonify({"error": "Forbidden"}), 403
+        if g.user_role != 'superadmin':
+            all_keys = state.list_api_keys()
+            own = [k for k in all_keys if k.get('id') == key_id and k.get('created_by') == g.username]
+            if not own:
+                return jsonify({"error": "Forbidden"}), 403
         ok = state.delete_api_key(key_id)
         return jsonify({"status": "ok" if ok else "error"})
 

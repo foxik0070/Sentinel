@@ -2,6 +2,31 @@
 
 Tento dokument zaznamenává breaking changes a nové endpointy mezi verzemi.
 
+## v2026.11.001 (2026-11-06)
+
+**Breaking change:** LDAP uživatelé bez explicitního přiřazení role nově dostávají
+`viewer` místo `admin`. Stávající uživatelé s DB rolí nejsou ovlivněni.
+
+### Nové endpointy — RT integrace
+- `GET /api/rt/tickets` — seznam RT tiketů z nakonfigurovaných front
+- `POST /api/rt/take` — převzetí tiketu (`{ticket_id}`)
+- `POST /api/rt/status` — změna stavu tiketu (`{ticket_id, status}`)
+- `POST /api/rt/comment` — komentář k tiketu (`{ticket_id, text}`)
+
+### Změny existujících endpointů
+- `GET /api/status_check` nově vrací `rt_issues` (počet) a `rt_enabled` (bool)
+- `GET /api/modal_issues/rt` — nový kanál pro RT tikety s queue groupingem
+- `POST /api/issues/<key_b64>/remediation_plan` — přístupný pro všechny
+  přihlášené uživatele (dříve jen admin/superadmin)
+- `GET /api/apikeys` — admin vidí vlastní klíče, superadmin všechny
+- `POST /api/apikeys` — admin smí vytvořit klíč se scope `read`/`read:issues`,
+  superadmin libovolný scope
+- `DELETE /api/apikeys/<id>` — admin smaže jen vlastní, superadmin libovolný
+
+### Nové volby v `config.yaml`
+- Sekce `rt` — `enabled`, `url`, `api_path`, `user`, `pass`, `queues`,
+  `sla_hours`, `channel`
+
 ## v2026.10.003 (2026-10-23)
 
 **Bez breaking changes.** Žádný existující endpoint nezměnil tvar odpovědi.

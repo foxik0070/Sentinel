@@ -133,7 +133,7 @@ def check_auth(username: str, password: str) -> str | None:
                 return 'operator'
             if username in config.LDAP_VIEWERS:
                 return 'viewer'
-            return 'admin'
+            return 'viewer'
 
     return None
 

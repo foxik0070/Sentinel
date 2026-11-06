@@ -5,7 +5,7 @@ import secrets
 from pathlib import Path
 
 # --- Technical Config ---
-VERSION = "2026.10.005"
+VERSION = "2026.11.001"
 
 def get_git_commit():
     try:
@@ -958,6 +958,7 @@ _KNOWN_KEYS = {
     'auto_severity_enabled', 'auto_duplicate_enabled', 'fim', 'trusted_proxies',
     'documentation_url',
     'host_cluster_rules', 'default_cluster',
+    'rt', 'analytics_noise_gate_abs', 'analytics_noise_gate_pct', 'correlation_map', 'poll_interval',
 }
 
 VALIDATION_WARNINGS: list = []   # populated by _validate_config(), readable via API

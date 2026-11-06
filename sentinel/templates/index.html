@@ -2184,25 +2184,30 @@
                 </div>
                 <div id="settings-msg" style="display:none; margin-top:12px; padding:8px 12px; border-radius:4px; font-size:0.87em;"></div>
             </div>
-            {% if role == 'superadmin' %}
+            {% if role in ('admin', 'superadmin') %}
             <div style="padding:14px 20px; border-top:1px solid var(--border); background:var(--bg);">
-                <div style="font-size:.78em; text-transform:uppercase; letter-spacing:.07em; color:var(--text-muted); margin-bottom:10px;">REST API klíče (superadmin)</div>
+                <div style="font-size:.78em; text-transform:uppercase; letter-spacing:.07em; color:var(--text-muted); margin-bottom:10px;">REST API klíče</div>
                 <div id="apikeys-list" style="margin-bottom:10px; max-height:140px; overflow-y:auto;"></div>
                 <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                     <input id="apikey-name" type="text" placeholder="Název klíče" style="flex:1; min-width:120px; padding:5px 9px; background:var(--input-bg); color:var(--text-main); border:1px solid var(--border); border-radius:4px; font-size:.85em;">
                     <select id="apikey-scope" style="padding:5px; background:var(--input-bg); color:var(--text-main); border:1px solid var(--border); border-radius:4px; font-size:.85em;">
+                        <option value="read">read — čtení issues, runbooků, stavu</option>
                         <option value="read:issues">read:issues — čtení issues/agentů</option>
+                        {% if role == 'superadmin' %}
                         <option value="write:actions">write:actions — schvalování akcí</option>
                         <option value="admin:users">admin:users — správa uživatelů</option>
-                        <option value="read">read (legacy)</option>
                         <option value="write">write (legacy)</option>
                         <option value="admin">admin (legacy)</option>
+                        {% endif %}
                     </select>
                     <button onclick="_apikeyCreate()" style="padding:5px 12px; background:var(--accent); color:#fff; border:none; border-radius:4px; cursor:pointer; font-size:.85em;">Vytvořit</button>
+                    {% if role == 'superadmin' %}
                     <button onclick="reloadPlugins()" style="padding:5px 12px; background:transparent; border:1px solid var(--border); color:var(--text-muted); border-radius:4px; cursor:pointer; font-size:.85em;" title="Znovu načíst pluginy bez restartu"><i title="Obnovit" aria-label="Obnovit" class="fa-solid fa-rotate"></i> Reload pluginů</button>
                     <button onclick="reindexRag()" id="rag-reindex-btn" style="padding:5px 12px; background:transparent; border:1px solid var(--border); color:var(--text-muted); border-radius:4px; cursor:pointer; font-size:.85em;" title="Znovu indexovat RAG knowledge base"><i class="fa-solid fa-brain"></i> Re-index KB</button>
+                    {% endif %}
                 </div>
                 <div id="apikey-new-token" style="display:none; margin-top:8px; padding:8px 10px; background:rgba(0,200,0,.08); border:1px solid #2a2; border-radius:4px; font-family:monospace; font-size:.82em; word-break:break-all;"></div>
+                {% if role == 'superadmin' %}
                 <div style="margin-top:10px; padding-top:10px; border-top:1px solid var(--border); display:flex; gap:8px; flex-wrap:wrap;">
                     <button onclick="_openAuditTrailPanel()" style="padding:5px 12px; background:transparent; border:1px solid var(--border); border-radius:4px; cursor:pointer; font-size:.85em; color:var(--text-muted);"><i class="fa-solid fa-clipboard-list"></i> Audit trail</button>
                     <button onclick="openSessionsModal()" style="padding:5px 12px; background:transparent; border:1px solid var(--border); border-radius:4px; cursor:pointer; font-size:.85em; color:var(--text-muted);"><i class="fa-solid fa-users-gear"></i> Aktivní sessions</button>
@@ -2211,6 +2216,7 @@
                     <button onclick="_open2faModal()" style="padding:5px 12px; background:transparent; border:1px solid var(--border); border-radius:4px; cursor:pointer; font-size:.85em; color:var(--text-muted);"><i class="fa-solid fa-mobile-screen-button"></i> 2FA</button>
                     <button onclick="_openHashPwModal()" style="padding:5px 12px; background:transparent; border:1px solid var(--border); border-radius:4px; cursor:pointer; font-size:.85em; color:var(--text-muted);"><i class="fa-solid fa-lock"></i> Hash hesla</button>
                 </div>
+                {% endif %}
                 <!-- 347: Hash hesla (inline) -->
                 <div id="hash-pw-panel" style="display:none; margin-top:12px; padding:14px; border:1px solid var(--border); border-radius:6px; background:var(--bg);">
                     <div style="font-size:.78em; text-transform:uppercase; letter-spacing:.07em; color:var(--accent); margin-bottom:10px;"><i class="fa-solid fa-lock"></i> Generátor bcrypt hashe</div>

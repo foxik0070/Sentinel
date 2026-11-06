@@ -2,7 +2,7 @@
 
 ![Sentinel Commander](sentinel_master.png)
 
-![Version](https://img.shields.io/badge/version-v2026.08.003-blue)
+![Version](https://img.shields.io/badge/version-v2026.11.001-blue)
 ![License: MIT](https://img.shields.io/badge/License-MIT-cyan.svg)
 ![Python](https://img.shields.io/badge/python-3.13%2B-blue)
 ![Tests](https://img.shields.io/badge/tests-1087%20passing-green)
@@ -28,7 +28,8 @@ Sentinel Commander is an advanced AI-powered monitoring system for Linux and ent
 | **Sub-threshold detection** | Silent degradation (regression + r²), missing signals, per-host baselines, distributed brute-force, false-alarm mining |
 | **Push agents** | REST ingest: sentinel-agent nodes (`/api/v1/agent/ingest`), Windows agents (`/api/ingest/windows`) |
 | **Alerts** | 13 channels — Teams, Slack, ntfy, SMTP, Telegram, Matrix, HA, Gotify, PagerDuty, MQTT, Syslog, Webhook, SMS |
-| **Security** | LDAP/AD auth, 2FA TOTP, bcrypt passwords, CSRF, API keys, audit trail, **least-privilege SSH remediation** (dedicated `sentinel` user + sudo whitelist) |
+| **RT integration** | Request Tracker ticket detection, queue grouping, SLA tracking, inline actions (take, comment, status change) |
+| **Security** | LDAP/AD auth, 2FA TOTP, bcrypt passwords, CSRF, API keys (self-service), audit trail, **least-privilege SSH remediation** (dedicated `sentinel` user + sudo whitelist), default `viewer` for unknown LDAP users |
 | **Observability** | Prometheus `/metrics`, Swagger UI `/api/docs`, health `/api/status_check`, SLO error budgets, DNS/webhook delivery monitoring |
 | **Dashboard** | Real-time Socket.IO web UI, topology map, analytics, runbooks, drag-drop widgets |
 | **CLI** | `sentinel-cli` — stdlib-only client (status, issues, ack/resolve, agents, digest, slo) via REST API |
@@ -152,7 +153,7 @@ sentinel/
 ├── dependencies.py      # Inferred host dependencies, blast radius, shutdown sim
 │
 ├── plugins/             # Detector plugins
-├── routes/              # Flask blueprints (issues, agents, chat, ...)
+├── routes/              # Flask blueprints (issues, agents, chat, rt, ...)
 ├── static/              # JS, CSS
 └── templates/           # Jinja2 templates
 ```

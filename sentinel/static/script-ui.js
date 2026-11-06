@@ -4069,6 +4069,10 @@ async function openRoleModal() {
                 <i class="fa-solid fa-lock" style="font-size:2em; margin-bottom:12px; display:block; color:var(--warning);"></i>
                 <p style="font-size:0.95em;">${t('role_contact_admin')}</p>
             </div>`;
+            if (['admin','superadmin'].includes(window.currentRole)) {
+                el.innerHTML += _renderApiKeysSection();
+                _roleModalLoadKeys();
+            }
             return;
         }
         const d = await r.json();
@@ -4112,9 +4116,87 @@ async function openRoleModal() {
                     </div>`;
                 }).join('')}
             </div>`;
+        if (['admin','superadmin'].includes(window.currentRole)) {
+            el.innerHTML += _renderApiKeysSection();
+            _roleModalLoadKeys();
+        }
     } catch(e) {
         el.innerHTML = `<div style="color:var(--error); padding:16px;">${t('data_load_failed')}</div>`;
     }
+}
+
+function _renderApiKeysSection() {
+    const isSuperadmin = window.currentRole === 'superadmin';
+    const scopeOptions = isSuperadmin
+        ? `<option value="read">read</option><option value="read:issues">read:issues</option><option value="write:actions">write:actions</option><option value="admin:users">admin:users</option>`
+        : `<option value="read">read</option><option value="read:issues">read:issues</option>`;
+    return `
+    <div style="margin-top:20px; padding:14px; background:var(--panel); border:1px solid var(--border); border-radius:6px;">
+        <div style="font-size:.78em; text-transform:uppercase; letter-spacing:.07em; color:var(--accent); margin-bottom:10px;">
+            <i class="fa-solid fa-key" style="margin-right:4px;"></i> Moje API klíče
+        </div>
+        <div id="role-apikeys-list" style="margin-bottom:10px; max-height:180px; overflow-y:auto;"></div>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <input type="text" id="role-apikey-name" placeholder="Název klíče" style="flex:1; min-width:120px; padding:5px 9px; background:var(--input-bg); color:var(--text-main); border:1px solid var(--border); border-radius:4px; font-size:.85em;">
+            <select id="role-apikey-scope" style="padding:5px; background:var(--input-bg); color:var(--text-main); border:1px solid var(--border); border-radius:4px; font-size:.85em;">
+                ${scopeOptions}
+            </select>
+            <button onclick="_roleModalCreateKey()" style="padding:5px 12px; background:var(--accent); color:#fff; border:none; border-radius:4px; cursor:pointer; font-size:.85em;"><i class="fa-solid fa-plus"></i> Vytvořit</button>
+        </div>
+        <div id="role-apikey-token" style="display:none; margin-top:8px; padding:8px 10px; background:rgba(0,200,0,.08); border:1px solid #2a2; border-radius:4px; font-family:monospace; font-size:.82em; word-break:break-all;"></div>
+    </div>`;
+}
+
+async function _roleModalLoadKeys() {
+    const el = document.getElementById('role-apikeys-list');
+    if (!el) return;
+    try {
+        const r = await fetch('/api/apikeys');
+        if (r.status === 403) { el.innerHTML = '<div style="color:var(--text-muted);font-size:.82em;">Nemáte oprávnění.</div>'; return; }
+        const d = await r.json();
+        const keys = d.keys || [];
+        if (!keys.length) { el.innerHTML = '<div style="color:var(--text-muted);font-size:.82em;">Žádné API klíče.</div>'; return; }
+        const isSuperadmin = window.currentRole === 'superadmin';
+        el.innerHTML = keys.map(k => {
+            const lastUsed = k.last_used ? k.last_used.slice(0,16).replace('T',' ') : 'nikdy';
+            const created = k.created_at ? k.created_at.slice(0,10) : '?';
+            const expiry = k.expires_at ? k.expires_at.slice(0,10) : '∞';
+            const owner = isSuperadmin && k.created_by ? `<span style="color:var(--accent);font-size:.75em;" title="Vlastník"><i class="fa-solid fa-user"></i> ${_escape(k.created_by)}</span>` : '';
+            return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:.82em;border-bottom:1px solid var(--border);">
+                <b style="min-width:80px;">${_escape(k.name)}</b>
+                ${owner}
+                <span style="background:rgba(0,120,212,.15);color:#a3cfff;border-radius:8px;padding:1px 6px;font-size:.78em;">${_escape(k.scope)}</span>
+                <span style="color:var(--text-muted);font-size:.75em;" title="Vytvořen"><i class="fa-regular fa-calendar"></i> ${created}</span>
+                <span style="color:var(--text-muted);font-size:.75em;" title="Poslední použití"><i class="fa-regular fa-clock"></i> ${lastUsed}</span>
+                <span style="color:var(--text-muted);font-size:.75em;" title="Expirace">exp: ${expiry}</span>
+                <span style="flex:1;"></span>
+                <button onclick="_roleModalRevokeKey(${k.id},'${_escape(k.name)}')" style="padding:2px 8px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#ef4444;border-radius:4px;cursor:pointer;font-size:.78em;" title="Revokovat klíč"><i class="fa-solid fa-ban"></i> Revokovat</button>
+            </div>`;
+        }).join('');
+    } catch { el.innerHTML = '<div style="color:var(--error);font-size:.82em;">Chyba načítání.</div>'; }
+}
+
+async function _roleModalCreateKey() {
+    const name = document.getElementById('role-apikey-name')?.value.trim();
+    const scope = document.getElementById('role-apikey-scope')?.value || 'read';
+    const tok = document.getElementById('role-apikey-token');
+    if (!name) { alert('Zadejte název klíče'); return; }
+    try {
+        const r = await fetch('/api/apikeys', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name, scope})});
+        const d = await r.json();
+        if (d.token) {
+            tok.style.display = 'block';
+            tok.innerHTML = `<b>Token (zkopírujte — zobrazí se jen jednou!):</b><br><code>${_escape(d.token)}</code>`;
+            document.getElementById('role-apikey-name').value = '';
+            await _roleModalLoadKeys();
+        } else alert(d.error || 'Chyba');
+    } catch(e) { alert('Chyba: ' + e); }
+}
+
+async function _roleModalRevokeKey(id, name) {
+    if (!confirm(`Revokovat API klíč "${name}"? Tuto akci nelze vrátit.`)) return;
+    await fetch(`/api/apikeys/${id}`, {method:'DELETE'});
+    await _roleModalLoadKeys();
 }
 
 function _fmtUserTime(iso) {
