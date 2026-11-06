@@ -87,7 +87,8 @@ async function refreshModalIssuesContent(isAuto = false) {
         // desítky sekund až minuty — bez tohohle je auto-refresh po 3 s smazal
         // dřív, než se stihly zobrazit.
         const aiResult = bodyEl && bodyEl.querySelector('#batch-ai-result, #correlate-ai-result, #auto-cluster-result');
-        if (focusedInput || anyInputWithText || openPicker || openDetail || aiResult) return;
+        const openSelect = bodyEl && bodyEl.contains(document.activeElement) && document.activeElement.tagName === 'SELECT';
+        if (focusedInput || anyInputWithText || openPicker || openDetail || aiResult || openSelect) return;
     }
 
     if (!isAuto) {
