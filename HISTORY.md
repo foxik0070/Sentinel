@@ -6,12 +6,12 @@
 
 ### RT integrace (Request Tracker)
 
-Sentinel nově sleduje tikety z Request Trackeru. Detektor `detector_rt_hpc` periodicky dotahuje tikety z nakonfigurovaných front přes RT REST 1.0 API a hlásí je jako issues s kanálem `rt`.
+Sentinel nově sleduje tikety z Request Trackeru. RT detektor periodicky dotahuje tikety z nakonfigurovaných front přes RT REST 1.0 API a hlásí je jako issues s kanálem `rt`.
 
 - **Dedikované karty** — RT tikety mají vlastní renderer se statusem, SLA badge, vlastníkem a stářím
-- **Queue grouping** — tikety se seskupují podle fronty s filtrovacími taby (Vše / Infrastruktura / Support / …)
+- **Queue grouping** — tikety se seskupují podle fronty s filtrovacími taby
 - **Top 5 + scroll** — v každé frontě je vidět prvních 5 tiketů, zbytek ve scrollovatelném bloku
-- **Skryté fronty** — fronty IT a Media se v UI nezobrazují
+- **Skryté fronty** — možnost skrýt vybrané fronty z UI přes konfiguraci
 - **Inline akce** — převzetí tiketu, změna stavu (open/stalled/resolved), komentář přímo ze Sentinel
 - **RT badge** — v hlavičce se zobrazuje jen pokud je RT povoleno v `config.yaml`
 - **Waiting4reply** — tikety ve stavu waiting nedostávají notifikaci
@@ -24,12 +24,12 @@ Sentinel nově sleduje tikety z Request Trackeru. Detektor `detector_rt_hpc` per
 ```yaml
 rt:
   enabled: true
-  url: https://support.example.com
+  url: https://rt.example.com
   api_path: /REST/1.0
   user: sentinel
   pass: ...
-  queues: [Infrastruktura, Support, Compilations]
-  sla_hours: {Infrastruktura: 8, Support: 48}
+  queues: [QueueA, QueueB]
+  sla_hours: {QueueA: 8, QueueB: 24}
   channel: infra
 ```
 
