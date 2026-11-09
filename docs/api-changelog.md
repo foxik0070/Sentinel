@@ -2,6 +2,19 @@
 
 Tento dokument zaznamenává breaking changes a nové endpointy mezi verzemi.
 
+## v2026.11.003 (2026-11-09)
+
+### Nové endpointy
+- `POST /api/issues/<key_b64>/remediation_plan` — nově přístupný všem přihlášeným
+  uživatelům (dříve chybělo UI tlačítko pro viewer roli)
+
+### Opravy
+- `GET /api/logs/view` — bez parametru `filename` vrací 400 místo 500
+- Auth: `?api_key=` v query stringu povoleno pouze pro `/api/logs/tail` (SSE),
+  ostatní endpointy akceptují jen hlavičku `X-API-Key`
+
+---
+
 ## v2026.11.002 (2026-11-06)
 
 ### Opravy

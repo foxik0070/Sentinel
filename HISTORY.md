@@ -1,5 +1,20 @@
 # Historie změn
 
+## [2026.11.003] - 2026-11-09
+
+**Souhrn:** Remediation plan pro viewer, validace parametrů, omezení API key v URL.
+
+### Nové
+- **Žebřík zásahů** — nové tlačítko v issue kartách pro všechny role (viewer, operator, admin, superadmin) s modalem zobrazujícím doporučený další krok a celý žebřík zásahů
+
+### Opravy
+- **logs/view** — chybějící parametr `filename` vrací 400 místo 500
+- **API klíč v URL** — `?api_key=` povoleno pouze pro SSE endpoint `/api/logs/tail`, ostatní endpointy akceptují jen hlavičku `X-API-Key`
+- **RT select auto-refresh** — auto-refresh nepřekreslí modal při otevřeném `<select>` (změna stavu tiketu)
+- **AI uživatelé** — tlačítko v rychlých akcích
+
+---
+
 ## [2026.11.002] - 2026-11-06
 
 **Souhrn:** Opravy SQL chyb, přístupů a logs endpointů.
