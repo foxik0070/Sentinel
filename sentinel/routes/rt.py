@@ -81,7 +81,8 @@ def create_blueprint(service):
         if not rt_cfg.get("enabled"):
             return jsonify({"error": "RT integration not enabled"}), 503
 
-        ok = _rt_comment_direct(rt_cfg, ticket_id, text)
+        tagged_text = f"[Sentinel – {g.username}] {text}"
+        ok = _rt_comment_direct(rt_cfg, ticket_id, tagged_text)
         if ok:
             logger.info(f"RT comment on #{ticket_id} by {g.username}")
             return jsonify({"ok": True,
