@@ -2643,6 +2643,48 @@ async function _actionAddToAllowed(actionId, autoExec) {
     } catch(e) { alert('Chyba: ' + e); }
 }
 
+// --- Remediation Plan (žebřík zásahů) ----------------------------------------
+async function _openRemediationPlan(kb64) {
+    const modal = document.getElementById('remediation-modal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    const body = document.getElementById('remediation-body');
+    body.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-muted);"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>';
+    try {
+        const r = await fetch(`/api/issues/${kb64}/remediation_plan`, {method:'POST', headers:{'Content-Type':'application/json'}});
+        if (!r.ok) { body.innerHTML = `<div style="color:var(--error);padding:20px;">HTTP ${r.status}</div>`; return; }
+        const d = await r.json();
+        const ladder = d.ladder || [];
+        const next = d.next_step;
+        let html = '';
+        if (next) {
+            html += `<div style="background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3);border-radius:6px;padding:10px 14px;margin-bottom:14px;">
+                <div style="font-weight:600;color:#10b981;margin-bottom:4px;"><i class="fa-solid fa-arrow-right"></i> Doporučený další krok</div>
+                <code style="font-size:.85em;">${_escape(next.command || '')}</code>
+                <div style="font-size:.82em;color:var(--text-muted);margin-top:4px;">${_escape(next.desc || '')}</div>
+            </div>`;
+        }
+        if (ladder.length) {
+            html += '<div style="font-size:.82em;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:6px;">Žebřík zásahů</div>';
+            ladder.forEach(s => {
+                const ro = s.readonly ? '<span style="color:var(--success);font-size:.7em;margin-left:6px;">read-only</span>' : '';
+                const isNext = next && s.command === next.command;
+                const bg = isNext ? 'rgba(16,185,129,.08)' : 'transparent';
+                html += `<div style="display:flex;gap:10px;padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.04);background:${bg};border-radius:3px;">
+                    <span style="color:var(--accent);font-weight:700;min-width:22px;">${s.level}.</span>
+                    <div><code style="font-size:.83em;">${_escape(s.command || '')}</code>${ro}
+                        <div style="font-size:.8em;color:var(--text-muted);margin-top:2px;">${_escape(s.desc || '')}</div>
+                    </div>
+                </div>`;
+            });
+        }
+        if (!ladder.length && !next) html = '<div style="color:var(--text-muted);text-align:center;padding:20px;">Žádné kroky k dispozici.</div>';
+        body.innerHTML = html;
+    } catch(e) {
+        body.innerHTML = `<div style="color:var(--error);padding:20px;">${_escape(e.message)}</div>`;
+    }
+}
+
 // --- RT (Request Tracker) integration ----------------------------------------
 const _rtTicketMap = {};
 

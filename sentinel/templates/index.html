@@ -1190,6 +1190,16 @@
         </div>
     </div>
 
+    <!-- Remediation Plan Modal -->
+    <div class="modal-overlay" role="dialog" aria-modal="true" id="remediation-modal" style="display:none;" onclick="if(event.target===this)document.getElementById('remediation-modal').style.display='none'">
+        <div class="modal" style="width:700px; max-width:95%; display:flex; flex-direction:column; max-height:90vh;">
+            <div class="modal-header">
+                <span><i class="fa-solid fa-list-ol" style="color:#10b981;"></i> Žebřík zásahů</span>
+                <i title="Zavřít" aria-label="Zavřít" class="fa-solid fa-times" style="cursor:pointer" onclick="document.getElementById('remediation-modal').style.display='none'"></i>
+            </div>
+            <div id="remediation-body" style="flex:1; overflow-y:auto; padding:14px; font-size:.88em; line-height:1.6;"></div>
+        </div>
+    </div>
     <!-- Agent Detail Modal -->
     <!-- Runbook Modal (060) -->
     <div class="modal-overlay" role="dialog" aria-modal="true" id="runbook-modal" style="display:none;" onclick="if(event.target===this)document.getElementById('runbook-modal').style.display='none'">

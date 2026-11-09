@@ -240,8 +240,9 @@ def requires_auth(f):
             is_mobile = True
 
         # 1. KONTROLA PREZENCE X-API-KEY (mobilní aplikace nebo REST API klíče)
-        # SSE (EventSource) nemůže posílat custom headers — fallback na ?api_key=
-        api_key = request.headers.get('X-API-Key') or request.args.get('api_key')
+        api_key = request.headers.get('X-API-Key')
+        if not api_key and request.path.startswith('/api/logs/tail'):
+            api_key = request.args.get('api_key')
         secure_token = getattr(config, 'CLIENT_API_KEY', '')
 
         if api_key and api_key == secure_token:

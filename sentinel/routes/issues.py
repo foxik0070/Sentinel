@@ -273,10 +273,12 @@ def create_blueprint(service):
                     for t in issue_tags
                 ) + "</div>"
             fix_btn = ""
+            remediation_btn = ""
             ssh_btn_modal = ""
             if g.user_role in ['admin', 'superadmin', 'viewer']:
                 b64_payload2 = base64.b64encode(f"{i.get('host','?')}: {i.get('last_line','')}".encode()).decode()
                 fix_btn = f"<i class='fa-solid fa-wand-magic-sparkles' title='Autofix' style='cursor:pointer; color:#a855f7; font-size:1.1em; margin-right:12px;' onclick=\"_navPushIssues(); openAutofixModal('{b64_payload2}'); closeIssuesModal();\"></i>"
+                remediation_btn = f"<i class='fa-solid fa-list-ol issue-action-secondary' title='Žebřík zásahů' style='cursor:pointer; color:var(--text-muted); font-size:1.05em; margin-right:12px; transition:color .2s;' onmouseover=\"this.style.color='#10b981'\" onmouseout=\"this.style.color='var(--text-muted)'\" onclick=\"_openRemediationPlan('{kb64}')\"></i>"
             if g.user_role in ['admin', 'superadmin']:
                 _host = html.escape(i.get('host', ''))
                 if _host:
@@ -369,7 +371,7 @@ def create_blueprint(service):
                             <div id='inline-detail-{kb64}' data-full-msg='{safe_msg_title}' data-first-seen='{html.escape(i.get('first_seen') or '')}' data-occ='{occ}' style='display:none; margin-top:8px; padding:10px; background:rgba(0,0,0,.15); border:1px solid var(--border); border-radius:5px; font-size:.85em;'></div>
                         </div>
                         <div class='issue-actions'>
-                            {comment_btn}{dep_btn}{fix_btn}{recheck_btn}{ssh_btn_modal}{tag_btn}{fp_btn}{similar_btn}<i class='fa-solid fa-share-nodes issue-action-secondary' title='Sdílet' style='cursor:pointer; color:var(--text-muted); font-size:1.1em; margin-right:12px;' onclick="shareIssue({share_arg}, this)"></i>
+                            {comment_btn}{dep_btn}{fix_btn}{remediation_btn}{recheck_btn}{ssh_btn_modal}{tag_btn}{fp_btn}{similar_btn}<i class='fa-solid fa-share-nodes issue-action-secondary' title='Sdílet' style='cursor:pointer; color:var(--text-muted); font-size:1.1em; margin-right:12px;' onclick="shareIssue({share_arg}, this)"></i>
                             {ignore_btn}{delete_btn}
                         </div>
                     </div>

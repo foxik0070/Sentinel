@@ -249,6 +249,8 @@ def create_blueprint(service):
     @requires_auth
     def view_log():
         fname = request.args.get('filename') if request.method == 'GET' else (request.get_json(silent=True) or {}).get('filename')
+        if not fname:
+            return jsonify({"error": "Missing filename parameter"}), 400
         path = service._safe_log_path(fname)
         if path and os.path.exists(path):
             return jsonify({"content": html.escape(utils.read_file_mmap(path))})
