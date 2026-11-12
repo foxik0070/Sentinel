@@ -24,6 +24,11 @@ if _ROOT not in sys.path:
 class TestDbLocation(unittest.TestCase):
     def test_db_dir_env_respected_and_outside_logdir(self):
         tmp = tempfile.mkdtemp()
+        # Puvodni hodnotu je nutne vratit, ne zahodit: v CI SENTINEL_DB_DIR
+        # nastavuje workflow. Po pop() + reload() se prepocetl _DEFAULT_DB_FILE
+        # na jinou cestu nez drzela fasada, _db_file() pak vracel fasadu a
+        # prepis state_base.DB_FILE v dalsich testech tise nic nedelal.
+        prev = os.environ.get("SENTINEL_DB_DIR")
         os.environ["SENTINEL_DB_DIR"] = tmp
         from sentinel import state_base
         importlib.reload(state_base)
@@ -33,8 +38,16 @@ class TestDbLocation(unittest.TestCase):
             self.assertNotIn("/var/log/sentinel/logs", state_base.DB_FILE,
                              "DB nesmí být v inotify-sledovaném LOG_DIR")
         finally:
-            os.environ.pop("SENTINEL_DB_DIR", None)
+            if prev is None:
+                os.environ.pop("SENTINEL_DB_DIR", None)
+            else:
+                os.environ["SENTINEL_DB_DIR"] = prev
             importlib.reload(state_base)
+            # Fasada si DB_FILE kopiruje pri importu — po reloadu ji srovnat,
+            # jinak zustane stinit novou vychozi hodnotu.
+            import sentinel.state as _st
+            _st.DB_FILE = state_base.DB_FILE
+            shutil.rmtree(tmp, ignore_errors=True)
 
 
 class TestRootAuditDedup(unittest.TestCase):
