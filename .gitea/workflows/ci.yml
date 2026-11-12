@@ -36,7 +36,13 @@ jobs:
           pip-audit -r requirements.txt --desc || echo "⚠ Dependency audit warnings (non-blocking)"
 
       - name: Python tests
-        run: python -m pytest tests/ -q --tb=short
+        env:
+          # Bez zapisovatelne cesty k DB spadne uz import sentinel.state
+          # a vsechny testy skonci chybou pri sberu.
+          SENTINEL_DB_DIR: ${{ github.workspace }}/.ci-db
+        run: |
+          mkdir -p "$SENTINEL_DB_DIR"
+          python -m pytest tests/ -q --tb=short
 
       - name: Build minified assets
         run: |

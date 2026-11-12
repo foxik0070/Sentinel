@@ -673,7 +673,14 @@ def init_db():
         logger.error(f"Failed to init DB: {e}")
 
 init_db()
-_ensure_keeper()
+try:
+    _ensure_keeper()
+except Exception as _keeper_err:
+    # Keeper je optimalizace, ne podminka funkcnosti. Bez osetreni shodil
+    # uz IMPORT modulu vsude, kde adresar DB nejde zapsat — tedy i v CI,
+    # kde pak kazdy test spadl pri sberu, protoze sentinel.state nesel
+    # naimportovat. Cestu lze ridit pres SENTINEL_DB_DIR.
+    logger.warning(f"DB keeper nezalozen ({_keeper_err}); beh pokracuje bez nej")
 
 MAX_QUEUE_DEPTH = 50  # Maximální pending tasků — nejstarší s nízkou prioritou se zahazují
 
