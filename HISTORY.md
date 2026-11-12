@@ -1,5 +1,20 @@
 # Historie změn
 
+## [2026.11.004] - 2026-11-12
+
+**Souhrn:** Méně šumu z detektorů — vyřešené záchyty disku mizí, loopback porty, teplota kontejnerů a známé hlášky už nedělají issues.
+
+### Opravy
+- **Disk (`capacity_detector`)** — záchyt `DISK_FULL` visel i po uvolnění místa. Detektor uzavíral jen u hostů, které měly v dávce aspoň jeden mount přes práh; host, kde se místo uvolnilo, se v ní vůbec neobjevil. Hlavička `SERVER:` bez řádků pod ní teď znamená „nic není přes práh" a záchyt se po několika sweepech uzavře. Sběrač musí hlavičku posílat i pro hosty bez plného disku.
+- **Porty (`port_detector`)** — loopback (`127.0.0.0/8`, `::1`) se nepočítá a port se bere jen z lokální adresy, ne z celého řádku `ss`. Vývojové nástroje a IDE otevírají na loopbacku náhodný port pro každou session a každá dělala „Port list changed". Starý formát `ports_baseline.json` se při prvním sweepu tiše založí znovu.
+- **PBS TLS šum (`system_detector`)** — `failed to check for TLS handshake: couldn't peek into incoming TCP stream` od `proxmox-backup-proxy` je ve výchozím ignore-listu. Vzniká TCP kontrolou portu každých pár minut, nejde o poruchu.
+
+### Nové volby
+- **`temperature_hosts`** — hosté (fnmatch), jejichž teplotu sledovat. LXC kontejnery a VM čtou čidlo hypervizoru, takže jedna horká noc na hypervizoru dělala anomálii za každého hosta. Hosté mimo seznam se nesbírají a jejich staré teplotní záchyty se uzavřou. Prázdný seznam = všichni (původní chování).
+- **`telemetry_anomaly_ignore`** — metriky (fnmatch) bez σ-detekce anomálií, výchozí `["ai_sessions"]`. Počet AI sezení kolísá podle toho, kdo zrovna pracuje, a jeho pokles dělal HIGH issue.
+
+---
+
 ## [2026.11.003] - 2026-11-09
 
 **Souhrn:** Remediation plan pro viewer, validace parametrů, omezení API key v URL.

@@ -2,6 +2,23 @@
 
 Tento dokument zaznamenává breaking changes a nové endpointy mezi verzemi.
 
+## v2026.11.004 (2026-11-12)
+
+**Bez breaking changes.** Žádný endpoint nezměnil tvar odpovědi ani nepřibyl.
+
+### Změny chování
+- Méně aktivních issues: `DISK_FULL` se uzavře i u hosta, kde v posledním
+  sweepu nic není přes práh; `PORTS|*` ignoruje loopback; teplotní issues
+  hostů mimo `temperature_hosts` se uzavírají (`resolve_reason` `detector_state_ok`
+  / `detector_ok`).
+- `telemetry_anomaly` už nevzniká pro metriky z `telemetry_anomaly_ignore`.
+
+### Nové volby v `config.yaml`
+- `telemetry_anomaly_ignore` (výchozí `["ai_sessions"]`)
+- `temperature_hosts` (výchozí `[]` = všichni hosté)
+
+---
+
 ## v2026.11.003 (2026-11-09)
 
 ### Nové endpointy
