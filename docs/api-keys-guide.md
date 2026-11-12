@@ -40,6 +40,24 @@ curl -sk https://sentinel.example.com/api/status_check \
 Admin může vytvořit klíč se scope `read` nebo `read:issues`.
 Superadmin může vytvořit klíč s libovolným scope.
 
+### Kanál ROOT a scope
+
+Role se odvozuje **ze scope klíče**, ne od uživatele, který ho vytvořil
+(`auth.py`, `_SCOPE_TO_ROLE`). Scope `read` a `read:issues` dávají roli `viewer`,
+`write` a `write:actions` roli `admin`, `admin` a `admin:users` roli `superadmin`.
+
+Důsledek, na který se snadno narazí: **issues z kanálu ROOT vidí jen klíč se
+scope `write` nebo `admin`.** S klíčem `read` v odpovědi prostě nejsou — bez
+chyby, bez varování, jen tiše chybí. Kdo to neví, považuje za klid něco, z čeho
+nevidí část.
+
+Klíč s těmito scopy může navíc vytvořit **pouze superadmin**; admin si vyrobí
+jen čtecí klíč. Pokud tedy potřebujete přes API vidět i ROOT a nejste superadmin,
+klíč si musíte nechat vytvořit — vyšší scope si nenastavíte.
+
+> Pro nástroj, který jen čte, je `read` správná volba a klíč se zápisem do něj
+> nepatří. Jen počítejte s tím, že ROOT s ním neuvidíte.
+
 ## Příklady použití
 
 ### Stav systému
