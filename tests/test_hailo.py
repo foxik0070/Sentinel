@@ -23,7 +23,23 @@ class TestHailoOllamaConfig(unittest.TestCase):
         self.assertIn("8000", config.HAILO_OLLAMA_URL)
 
     def test_default_model_is_qwen25_coder(self):
-        self.assertEqual(config.HAILO_OLLAMA_MODEL, "qwen2.5-coder:1.5b")
+        """Kódový default, ne hodnota po load_config().
+
+        config se při importu načte z /etc/sentinel/config.yaml, takže na
+        stroji s vlastním `hailo_ollama.model` test padal, i když default
+        v kódu byl správně. Čteme proto přiřazení přímo ze zdrojáku.
+        """
+        import ast
+        src = open(os.path.join(_ROOT, 'sentinel', 'config.py'), encoding='utf-8').read()
+        defaults = {
+            t.id: node.value.value
+            for node in ast.parse(src).body
+            if isinstance(node, (ast.Assign, ast.AnnAssign))
+            and isinstance(node.value, ast.Constant)
+            for t in (node.targets if isinstance(node, ast.Assign) else [node.target])
+            if isinstance(t, ast.Name)
+        }
+        self.assertEqual(defaults.get('HAILO_OLLAMA_MODEL'), "qwen2.5-coder:1.5b")
 
     def test_hailo_and_ollama_urls_distinct(self):
         """Hailo-ollama (port 8000) a CPU ollama (11434) musí mít různé URL."""
