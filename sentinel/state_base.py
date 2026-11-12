@@ -278,7 +278,7 @@ def init_db():
             _ra_cols = {r[1] for r in c.fetchall()}
             if 'origin' not in _ra_cols:
                 # Odkud záznam přišel. Detektor do `server` píše rovnou název
-                # clusteru ("cluster-b2"), agent hostname ("node1.cluster-b2") —
+                # clusteru ("CLUSTER-B2"), agent hostname ("node1.cluster-b2") —
                 # bez rozlišení se ve výpisu tváří jako dva různé stroje.
                 c.execute("ALTER TABLE root_audit ADD COLUMN origin TEXT")
                 # Zpětně: detektor psal názvy clusterů velkými písmeny,
@@ -602,7 +602,7 @@ def init_db():
             # je (host, pid, started_at): samotny pid se po restartu stroje
             # recykluje, cas startu procesu se mezi polly nemeni. Bez toho by
             # kazdy poll zalozil novy radek -- presne tak root_audit narostl
-            # na 101 tisic radku (CLAUDE.md 36f).
+            # na stovky tisic radku.
             c.execute('''CREATE TABLE IF NOT EXISTS ai_sessions
                          (id INTEGER PRIMARY KEY AUTOINCREMENT,
                           host TEXT NOT NULL,

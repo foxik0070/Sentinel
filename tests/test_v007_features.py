@@ -59,15 +59,15 @@ class TestRootAuditDedup(unittest.TestCase):
         try:
             # 3 cykly stejné root session -> musí vzniknout JEDEN aktivní záznam
             for _ in range(3):
-                api.add_root_audit("cluster-a", "10.0.0.1")
+                api.add_root_audit("CLUSTER-A", "10.0.0.1")
             conn = sqlite3.connect(path)
             n = conn.execute(
-                "SELECT COUNT(*) FROM root_audit WHERE server='cluster-a' AND is_active=1"
+                "SELECT COUNT(*) FROM root_audit WHERE server='CLUSTER-A' AND is_active=1"
             ).fetchone()[0]
             # jiná IP -> samostatný záznam
-            api.add_root_audit("cluster-a", "10.0.0.2")
+            api.add_root_audit("CLUSTER-A", "10.0.0.2")
             n2 = conn.execute(
-                "SELECT COUNT(*) FROM root_audit WHERE server='cluster-a' AND is_active=1"
+                "SELECT COUNT(*) FROM root_audit WHERE server='CLUSTER-A' AND is_active=1"
             ).fetchone()[0]
             conn.close()
             self.assertEqual(n, 1, "duplicitní root_audit záznamy (mělo by být 1)")
@@ -171,7 +171,7 @@ class TestRootAuditMigration(unittest.TestCase):
                     "server TEXT, ip TEXT, connected_at TEXT, disconnected_at TEXT, is_active INTEGER)")
         # živá relace z minulého týdne + dávno uzavřená
         old.execute("INSERT INTO root_audit (server, ip, connected_at, is_active) "
-                    "VALUES ('cluster-a','10.0.0.1','2026-09-01T10:00:00+00:00',1)")
+                    "VALUES ('CLUSTER-A','10.0.0.1','2026-09-01T10:00:00+00:00',1)")
         old.execute("INSERT INTO root_audit (server, ip, connected_at, disconnected_at, is_active) "
                     "VALUES ('CS','10.0.0.2','2026-09-01T10:00:00+00:00','2026-09-01T11:00:00+00:00',0)")
         old.commit()
@@ -482,7 +482,7 @@ class TestUserAudit(unittest.TestCase):
 class TestDetectorSelfCheck(unittest.TestCase):
     """Chybějící soubor detektoru musí založit issue, ne mlčet.
 
-    Přesně tohle se stalo v provozu: zdrojáky hpc detektorů zmizely z
+    Přesně tohle se stalo v provozu: zdrojáky HPC detektorů zmizely z
     plugins/, běžící proces si je držel v paměti, ale po restartu se
     nenačetly. Config chtěl 12, načetlo se 0, v logu jen řádek u každého —
     a protože logy nikdo nedispatchoval, jejich issues se do hodiny uklidily

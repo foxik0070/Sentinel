@@ -103,7 +103,7 @@ worker_threads: 2
 # ── Detectors ─────────────────────────────────────────────────────────────────
 # Každý detektor může mít volitelný blok params: s parametry specifickými pro plugin.
 #
-# Příklady hpc pluginů (detector_icinga, detector_cluster, detector_who):
+# Příklady HPC pluginů (detector_icinga, detector_cluster, detector_who):
 #
 # - plugin: detector_icinga
 #   match_pattern: icinga.log

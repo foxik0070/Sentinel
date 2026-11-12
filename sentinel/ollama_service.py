@@ -13,7 +13,7 @@ from . import state
 from . import utils
 from . import actions
 
-# Prevent concurrent LLM calls that exhaust VRAM (CLAUDE.md sec. 3)
+# Prevent concurrent LLM calls that exhaust VRAM.
 _llm_semaphore = threading.Semaphore(1)
 
 def get_ollama_location():

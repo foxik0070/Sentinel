@@ -257,7 +257,7 @@ Predikce je **tatáž entita** jako historie, takže má stejný odstín a odli�
 
 ### Nenačtený detektor už není tichá porucha
 
-V provozu zmizely zdrojové soubory hpc detektorů z `plugins/`. Běžící proces si je držel naimportované, takže dál fungovaly — **teprve restart to odhalil**. Po startu se nenačetl ani jeden, `plugin_manager` u každého zalogoval řádek a pokračoval dál, a protože logy neměl kdo dispatchovat, uklidil stale cleanup do hodiny všechny jejich issues jako vyřešené.
+V provozu zmizely zdrojové soubory HPC detektorů z `plugins/`. Běžící proces si je držel naimportované, takže dál fungovaly — **teprve restart to odhalil**. Po startu se nenačetl ani jeden, `plugin_manager` u každého zalogoval řádek a pokračoval dál, a protože logy neměl kdo dispatchovat, uklidil stale cleanup do hodiny všechny jejich issues jako vyřešené.
 
 Výsledek: config vyžadoval 12 detektorů, načteno bylo 0, a Sentinel dva dny hlásil OK.
 
@@ -383,12 +383,12 @@ Se zapnutým thinkingem trvá qwen3-32b 8,4 s a vygeneruje 1346 znaků, z toho v
 
 ### Původ záznamu: detektor vs. agent
 
-Do `root_audit` píšou dvě cesty a každá do `server` ukládá něco jiného: detektor rovnou název clusteru (`cluster-b2`), agent hostname stroje (`node1.cluster-b2`). Ve výpisu se pak záznam z detektoru tvářil jako další stroj v clusteru a nešel od agentových odlišit.
+Do `root_audit` píšou dvě cesty a každá do `server` ukládá něco jiného: detektor rovnou název clusteru (`CLUSTER-B2`), agent hostname stroje (`node1.cluster-b2`). Ve výpisu se pak záznam z detektoru tvářil jako další stroj v clusteru a nešel od agentových odlišit.
 
 Nový sloupec `root_audit.origin` (`detector` / `agent`). Migrace ho doplní i zpětně — detektor psal názvy clusterů velkými písmeny, agent hostname malými.
 
 - u záznamu z detektoru je cluster **rovnou hodnota `server`**, nic se neodvozuje
-- ve výpisu je taková skupina označená jako `detektor „cluster-b2"` s vlastní ikonou
+- ve výpisu je taková skupina označená jako `detektor „CLUSTER-B2"` s vlastní ikonou
 
 Tím se opravilo i zařazení **CS**: pravidlo `host_cluster_rules` má `pattern: .cs.`, které na holé `CS` nesedí, takže cluster spadl na `default_cluster` a CS se schoval do INFRA. Odvozování se u detektoru už nepoužívá, takže CS stojí samostatně.
 
@@ -399,7 +399,7 @@ Tím se opravilo i zařazení **CS**: pravidlo `host_cluster_rules` má `pattern
 
 ### Root Audit: 30 posledních relací na cluster
 
-Modal bral `LIMIT 100` přes celou tabulku. Stovka nejnovějších řádků patřila jedinému clusteru, takže cluster-a, CS ani infrastrukturní servery ve výpisu vůbec nebyly — i když relace měly.
+Modal bral `LIMIT 100` přes celou tabulku. Stovka nejnovějších řádků patřila jedinému clusteru, takže Cluster-A, CS ani infrastrukturní servery ve výpisu vůbec nebyly — i když relace měly.
 
 Nově se bere posledních `root_audit_history_per_cluster` (výchozí 30) **na cluster**. Aktivní relace projdou vždy, bez ohledu na strop — kvůli nim se do modalu člověk dívá. Dotaz zůstává omezený i nad stovkami tisíc řádků, protože okno `ROW_NUMBER() OVER (PARTITION BY server)` ořízne kandidáty už v SQL.
 
@@ -420,7 +420,7 @@ Agent cesta při **každém** hlášení root monitoru zavřela všechny aktivn�
 
 Dva důsledky:
 
-- „Historie relací" nebyla historie relací, ale historie pollů. Modal má `LIMIT 100` a těch sto nejnovějších řádků zabral jediný cluster — cluster-a, CS ani infrastrukturní servery se do okna nevešly.
+- „Historie relací" nebyla historie relací, ale historie pollů. Modal má `LIMIT 100` a těch sto nejnovějších řádků zabral jediný cluster — Cluster-A, CS ani infrastrukturní servery se do okna nevešly.
 - `connected_at` se resetoval při každém pollu, takže „Délka relace" ukazovala dobu od posledního hlášení, ne od přihlášení.
 
 Hlášení přitom nese plnou identitu relace:
@@ -1314,7 +1314,7 @@ Model **nikdy nerozhoduje o oprávnění a negeneruje příkazy** — vybírá I
 
 ### Přidáno
 
-- **Security/f2b — všechny záznamy per technologie** — `detector_security` (HPC) drží plný seznam záchytů (IP, typ, počet) a ukládá ho do detailu issue; karta SEC issue má rozbalovací `<details>` se všemi záznamy dané infrastruktury (cluster-a, cluster-b, CS…). Žádné stovky samostatných issue.
+- **Security/f2b — všechny záznamy per technologie** — `detector_security` (HPC) drží plný seznam záchytů (IP, typ, počet) a ukládá ho do detailu issue; karta SEC issue má rozbalovací `<details>` se všemi záznamy dané infrastruktury (Cluster-A, Cluster-B, CS…). Žádné stovky samostatných issue.
 - **Kopírování tokenu** — tlačítko „Kopírovat" u všech modalů generujících token (registrace agenta/alert-node/HW i inline net-registrace) přes `safeCopyText()` (clipboard + fallback okno pro ruční kopii).
 - **Integrace — konfigurace v modalu** — u MQTT a HomeAssistant lze v integračním modalu nastavit hodnoty (host/port/user/topic, URL/notify service) a uložit (přes `/api/config/update`, zápis do config.yaml + reload). Toggle a Test už existovaly. Secret pole (heslo/token) se NEzobrazují a prázdná hodnota je nepřepíše → žádné prosakování sensitivních údajů.
 
@@ -2253,7 +2253,7 @@ Model **nikdy nerozhoduje o oprávnění a negeneruje příkazy** — vybírá I
 - **`call_ai_knowledge_base`** (`sentinel/chat_service.py`): Odstraněna instrukce "STRICTLY on documentation context" způsobující halucinace, když RAG vrátil nepříbuzné chunky. Přidána kontrola `has_context` — kontext zahrnut jen pokud je neprázdný a netriviální. Prompt nyní říká, aby odpovídal z obecné Linux/HPC odbornosti, pokud je kontext nepříbuzný. Sjednoceny kódové větve hailo/non-hailo.
 - **File chat** (`sentinel/chat_service.py`): Větev aktivního souboru nyní používá split zpráv `system`/`user` pro hailo cestu (vyhýbá se chybě stripování nových řádků). Změněno "Output in CZECH" na "Answer in ENGLISH".
 - **`analyze_group_complex`** (`sentinel/chat_service.py`): Cesty souborů pro členy log skupiny nyní procházejí přes `_safe_log_path()` pro zabezpečení symlinkových cest.
-- **`.gitignore`**: Přidány vzory `chyba_*`, `resume.sh`, `claude.sh`.
+- **`.gitignore`**: Přidány vzory pro lokální pomocné skripty.
 - **`config.yaml.example`**: Přidána sekce `webhook` a `db_retention_days`.
 
 ### Opraveno
@@ -2271,7 +2271,7 @@ Model **nikdy nerozhoduje o oprávnění a negeneruje příkazy** — vybírá I
 ### Odstraněno
 
 - `chyba_sentinel` — debugovací zachytávací soubor
-- `resume.sh` — pomocník pro Claude session
+- `resume.sh` — lokální pomocný skript (není součástí balíčku)
 - `config.yaml.bak` — přebytečná záloha
 
 ---
@@ -2598,7 +2598,7 @@ Následující práce byla provedena v doprovodném projektu fyzického zaříze
 
 * **Strategie bohatých vizuálních notifikací:** Kompletně refaktorovány background komunikační vrstvy uvnitř `utils.py` pro použití rozšiřitelného slovníkového mapovacího modulu. Odchozí alerty nyní automaticky bundlují relevantní kontextové operační symboly (🚨, ⚠️, ✅) a specifická barevná schémata.
 * **Granulární trackery zneužití výpočetních uzlů:** Upgradovány výpočetní monitorovací pipeline pro aktivní sledování log stop emitovaných z `cluster-login-compute.py`. Aktualizovaný parser čistě extrahuje klasifikační rozsahy, měří hranice zdrojů a označuje prioritní události explicitním příznakem `CRITICAL LOGIN ABUSE`.
-* **Host-aware Slurm Reboot Reporting:** Refaktorována interní mechanika sledování restartu clusteru (`detect_slurm_reboot`) pro extrakci strukturálních topologických kontextů z hostname serverů. Změna umožňuje jemné sledování přechodů strojů napříč regiony infrastruktury (např. cluster-a, cluster-b) a přímé hlášení zaseknutých stavů.
+* **Host-aware Slurm Reboot Reporting:** Refaktorována interní mechanika sledování restartu clusteru (`detect_slurm_reboot`) pro extrakci strukturálních topologických kontextů z hostname serverů. Změna umožňuje jemné sledování přechodů strojů napříč regiony infrastruktury (např. Cluster-A, Cluster-B) a přímé hlášení zaseknutých stavů.
 * **Potlačení šumu administrátorských alertů:** Aktualizován modul správce stavu (`state.py`) pro udržování distribučních smyček notifikací prázných od "Resolved" status zpráv napříč root administrátorskými cestami.
 
 ## 2025.12.10

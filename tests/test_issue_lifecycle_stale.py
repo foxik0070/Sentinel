@@ -132,8 +132,8 @@ class TestAuthoritativeColumns(_DBTestCase):
 
     def test_non_authoritative_details_field_survives(self):
         """cluster/log_file z payloadu se nesmí ztratit — sloupec pro ně není."""
-        api.report_problem("K|4", _data("zpráva", cluster="cluster-a"))
-        self.assertEqual(state.get_problem("K|4").get('cluster'), "cluster-a")
+        api.report_problem("K|4", _data("zpráva", cluster="CLUSTER-A"))
+        self.assertEqual(state.get_problem("K|4").get('cluster'), "CLUSTER-A")
 
 
 class TestStaleResolveUsesRealTime(_DBTestCase):
@@ -317,17 +317,17 @@ class TestActiveKeysByPrefix(_DBTestCase):
     """Snapshot detektory potřebují vědět, co mají uklidit."""
 
     def test_returns_only_matching_prefix(self):
-        api.report_problem("ROOT_LOGIN|hpc|aaa", _data("root session a"))
-        api.report_problem("ROOT_LOGIN|hpc|bbb", _data("root session b"))
-        api.report_problem("SEC|hpc|ccc", _data("jiný kanál"))
-        keys = set(api.get_active_keys("ROOT_LOGIN|hpc|"))
-        self.assertEqual(keys, {"ROOT_LOGIN|hpc|aaa", "ROOT_LOGIN|hpc|bbb"})
+        api.report_problem("ROOT_LOGIN|INFRA|aaa", _data("root session a"))
+        api.report_problem("ROOT_LOGIN|INFRA|bbb", _data("root session b"))
+        api.report_problem("SEC|INFRA|ccc", _data("jiný kanál"))
+        keys = set(api.get_active_keys("ROOT_LOGIN|INFRA|"))
+        self.assertEqual(keys, {"ROOT_LOGIN|INFRA|aaa", "ROOT_LOGIN|INFRA|bbb"})
 
     def test_includes_snoozed(self):
         """Odložené issue je pořád aktivní — snapshot ho musí umět uklidit."""
-        api.report_problem("ROOT_LOGIN|hpc|ddd", _data("root session d"))
-        state.snooze_problem("ROOT_LOGIN|hpc|ddd", 24)
-        self.assertIn("ROOT_LOGIN|hpc|ddd", api.get_active_keys("ROOT_LOGIN|hpc|"))
+        api.report_problem("ROOT_LOGIN|INFRA|ddd", _data("root session d"))
+        state.snooze_problem("ROOT_LOGIN|INFRA|ddd", 24)
+        self.assertIn("ROOT_LOGIN|INFRA|ddd", api.get_active_keys("ROOT_LOGIN|INFRA|"))
 
     def test_empty_when_nothing_matches(self):
         self.assertEqual(api.get_active_keys("NIC|"), [])

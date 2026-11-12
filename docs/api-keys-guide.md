@@ -8,8 +8,9 @@ Sentinel API je dostupné na:
 https://sentinel.example.com/api/...
 ```
 
-> **Pozor:** URL `https://monitor.example.com/api/...` nefunguje — nginx na `monitor.example.com` neproxuje
-> na Sentinel. Používejte vždy `sentinel.example.com`.
+> **Pozor:** Adresa Sentinelu nemusí být totožná s hostitelským strojem. Pokud na
+> stroji běží reverzní proxy, která `/api/` na Sentinel nepřeposílá, volání skončí
+> chybou — používejte vždy adresu, na které Sentinel skutečně poslouchá.
 
 ## Autentizace
 
@@ -72,14 +73,14 @@ curl -sk https://sentinel.example.com/api/modal_issues/agent \
 ### Závislosti infrastruktury
 
 ```bash
-curl -sk "https://sentinel.example.com/api/analytics/dependencies?hosts=node1.cluster-b" \
+curl -sk "https://sentinel.example.com/api/analytics/dependencies?hosts=node1.cluster" \
   -H "X-API-Key: $KEY"
 ```
 
 ### Blast radius
 
 ```bash
-curl -sk https://sentinel.example.com/api/hosts/node1.cluster-b/blast_radius \
+curl -sk https://sentinel.example.com/api/hosts/node1.cluster/blast_radius \
   -H "X-API-Key: $KEY"
 ```
 
@@ -101,7 +102,7 @@ curl -sk https://sentinel.example.com/api/analytics/playbooks \
 
 ```bash
 # key_b64 = base64url(issue_key)
-KEY_B64=$(echo -n "AGENT|node1.cluster-b|agent_systemd_global_monitor" | base64)
+KEY_B64=$(echo -n "AGENT|node1.cluster|agent_systemd_global_monitor" | base64)
 curl -sk -X POST "https://sentinel.example.com/api/issues/${KEY_B64}/remediation_plan" \
   -H "X-API-Key: $KEY" \
   -H "Content-Type: application/json"
@@ -139,7 +140,7 @@ curl -sk "https://sentinel.example.com/api/issues/${KEY_B64}/postmortem" \
 ### Prohlížení logů
 
 ```bash
-curl -sk "https://sentinel.example.com/api/logs/view?filename=cluster-b.log" \
+curl -sk "https://sentinel.example.com/api/logs/view?filename=cluster.log" \
   -H "X-API-Key: $KEY"
 ```
 
@@ -155,7 +156,7 @@ curl -sk "https://sentinel.example.com/api/rt/tickets?queue=Support" \
   -H "X-API-Key: $KEY"
 
 # Hledání v předmětu
-curl -sk "https://sentinel.example.com/api/rt/tickets?q=cluster-b" \
+curl -sk "https://sentinel.example.com/api/rt/tickets?q=cluster" \
   -H "X-API-Key: $KEY"
 ```
 
