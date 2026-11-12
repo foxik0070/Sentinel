@@ -42,6 +42,7 @@ def _create_test_app():
     svc.app.config['TESTING'] = True
     svc.app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
     svc.ignored_issues = set()
+    svc.app.sentinel_service = svc  # testy potrebuji na ignored_issues
     svc.metrics = {"active_users": set(), "ai_requests": 0, "ai_errors": 0,
                    "ai_latency_history": [], "cmd_executed": 0, "last_request_ts": 0}
     svc.conversation_history = []
@@ -140,6 +141,69 @@ class TestAPIEndpoints(unittest.TestCase):
         data = resp.get_json()
         self.assertIn('issues', data)
         self.assertIsInstance(data['issues'], list)
+
+    # ── /api/v1/issues: surová pole a ignorované ──
+
+    def _seed_issue(self, key, ignored=False):
+        """Založí issue a volitelně ho dá na ignore list service."""
+        from sentinel import api
+        api.report_problem(key, {
+            "status": "active", "channel_type": "infra", "host": "node1",
+            "last_line": "test", "plugin_name": "test_detector",
+            "severity": "high", "last_seen": "2026-11-12T10:00:00+00:00",
+        })
+        if ignored:
+            self.app.sentinel_service.ignored_issues.add(key)
+        return key
+
+    def _issues(self, **params):
+        q = "&".join(f"{k}={v}" for k, v in params.items())
+        resp = self.client.get(f"/api/v1/issues{'?' + q if q else ''}",
+                               headers=self._auth_headers())
+        self.assertEqual(resp.status_code, 200)
+        return {i["key"]: i for i in resp.get_json()["issues"]}
+
+    def test_v1_issues_exposes_raw_db_fields(self):
+        key = self._seed_issue("INFRA|node1|raw_fields")
+        issue = self._issues().get(key)
+        self.assertIsNotNone(issue, "zalozene issue se nevratilo")
+        for field in ("first_seen", "occurrence_count", "plugin_name",
+                      "db_severity", "acknowledged_by", "snoozed_until"):
+            self.assertIn(field, issue, f"chybi pole {field}")
+        # Stari problemu a razeni podle zavaznosti stoji prave na techto dvou.
+        self.assertTrue(issue["first_seen"], "first_seen nesmi byt prazdne")
+        self.assertEqual(issue["db_severity"], "high")
+        self.assertEqual(issue["plugin_name"], "test_detector")
+
+    def test_v1_issues_keeps_flutter_field_names(self):
+        # IssueModel.fromJson na nich zavisi — severity zustava odvozena z kanalu.
+        key = self._seed_issue("INFRA|node1|flutter_compat")
+        issue = self._issues()[key]
+        for field in ("channelType", "lastSeen", "missingCount", "logFile", "lastLine"):
+            self.assertIn(field, issue)
+        self.assertEqual(issue["severity"], "WARNING")
+
+    def test_v1_issues_hides_ignored_by_default(self):
+        key = self._seed_issue("INFRA|node1|hidden_one", ignored=True)
+        self.assertNotIn(key, self._issues(),
+                         "bez parametru se ignorovane vracet nesmi")
+
+    def test_v1_issues_include_ignored_marks_them(self):
+        hidden = self._seed_issue("INFRA|node1|shown_hidden", ignored=True)
+        plain = self._seed_issue("INFRA|node1|shown_plain")
+        got = self._issues(include_ignored=1)
+        self.assertIn(hidden, got)
+        self.assertTrue(got[hidden]["ignored"])
+        self.assertFalse(got[plain]["ignored"])
+
+    def test_v1_issues_include_ignored_accepts_truthy_values(self):
+        key = self._seed_issue("INFRA|node1|truthy", ignored=True)
+        for val in ("1", "true", "yes", "TRUE"):
+            with self.subTest(value=val):
+                self.assertIn(key, self._issues(include_ignored=val))
+        for val in ("0", "false", "no", ""):
+            with self.subTest(value=val):
+                self.assertNotIn(key, self._issues(include_ignored=val))
 
     # ── Agent Registration ──
 

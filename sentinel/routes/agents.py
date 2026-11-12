@@ -26,22 +26,62 @@ def create_blueprint(service):
     @bp.route('/api/v1/issues', methods=['GET'])
     @requires_auth
     def api_v1_issues_json():
-        """Nativní JSON endpoint pro Android aplikaci vracející surové incidenty z DB."""
-        all_active = state.get_active_issues()
+        """Nativní JSON endpoint vracející surové incidenty z DB.
 
-        # Odfiltrujeme ignorované klíče přesně jako u Web UI
+        Pole bez podtržítek (channelType, lastSeen, …) drží kompatibilitu
+        s IssueModel.fromJson ve Flutteru — nepřejmenovávat.
+
+        S `?include_ignored=1` se vrátí i ignorované issues, označené
+        `ignored: true`. Bez toho parametru se jako dřív zahodí — jinak by
+        se v existujících klientech (Android) najednou objevily položky,
+        které jejich uživatel schoval.
+
+        Důvod pro ten parametr: klient dnes nemá jak odlišit „nic tam není"
+        od „je to schované", a schovaný problém je tím neviditelný i pro
+        nástroj, který si ho chce zobrazit po svém.
+
+        Kanál ROOT zůstává skrytý pro role pod adminem; to není preference
+        zobrazení, ale přístupové právo.
+        """
+        all_active = state.get_active_issues()
+        ignorovane = service.ignored_issues
+        vcetne_ignorovanych = (request.args.get('include_ignored', '')
+                               .lower() in ('1', 'true', 'yes'))
+
         visible_active = [
             i for i in all_active
-            if i.get('key') not in service.ignored_issues
-            and (g.user_role in ['admin', 'superadmin'] or i.get('channel_type', '').lower() != 'root')
+            if (vcetne_ignorovanych or i.get('key') not in ignorovane)
+            and (g.user_role in ['admin', 'superadmin']
+                 or (i.get('channel_type', '') or '').lower() != 'root')
         ]
 
-        # Vyčistíme objekty tak, aby přesně pasovaly do IssueModel.fromJson ve Flutteru
         payload = []
         for issue in visible_active:
             payload.append({
                 "key": issue.get("key", ""),
                 "status": issue.get("status", "active"),
+
+                # Schované, ale viditelné — klient se rozhodne sám.
+                "ignored": issue.get("key") in ignorovane,
+
+                # Surová pole z DB. Bez nich si klient neumí spočítat
+                # stáří problému ani ho seřadit podle závažnosti.
+                "first_seen": issue.get("first_seen", ""),
+                "firstSeen": issue.get("first_seen", ""),
+
+                "occurrence_count": issue.get("occurrence_count", 0),
+                "occurrenceCount": issue.get("occurrence_count", 0),
+
+                "plugin_name": issue.get("plugin_name", ""),
+                "pluginName": issue.get("plugin_name", ""),
+
+                # Závažnost z DB. Pole `severity` níž zůstává odvozené
+                # z kanálu kvůli Flutteru, proto tohle vedle něj.
+                "db_severity": issue.get("severity") or "",
+                "dbSeverity": issue.get("severity") or "",
+
+                "acknowledged_by": issue.get("acknowledged_by") or "",
+                "snoozed_until": issue.get("snoozed_until") or "",
 
                 "channel_type": issue.get("channel_type", "infra"),
                 "channelType": issue.get("channel_type", "infra"),
