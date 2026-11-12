@@ -309,6 +309,14 @@ WINDOWS_INGEST_KEY: str = ""   # Prázdný = endpoint zakázán; Bearer token pr
 
 # Telemetry alerting rules: [{metric, above, below, channel}]
 TELEMETRY_ALERTS: list = []
+# Metriky (fnmatch), na které se nepouští σ-detekce anomálií. Počty aktivit
+# jako ai_sessions kolísají podle toho, kdo zrovna pracuje — pokles ze 6 na 3
+# sezení není porucha, ale dělal z ní HIGH issue.
+TELEMETRY_ANOMALY_IGNORE: list = ["ai_sessions"]
+# Hosté (fnmatch), jejichž teplotu brát vážně. LXC kontejnery a VM čtou čidlo
+# hypervizoru, takže jedna horká noc na hypervizoru dělala anomálii za každého
+# hosta místo jedné. Prázdný seznam = všichni hosté (původní chování).
+TEMPERATURE_HOSTS: list = []
 INFLUXDB: dict = {}
 
 # Self-monitoring webhook — POST vlastního health statusu na ext. URL
@@ -420,6 +428,9 @@ SYS_ERR_IGNORE_PATTERNS: list = [
     r"blkmapd.*failed: No such file or directory",
     r"activation of module imklog failed",
     r"kauditd_printk_skb",
+    # Uptime/port kontrola otevře TCP na port PBS a zavře ho bez
+    # TLS — každých 5 minut jeden řádek, žádná porucha.
+    r"proxmox-backup-proxy.*failed to check for TLS handshake: couldn't peek into incoming TCP stream",
 ]
 # Periodický auto-recheck dlouho otevřených issues — stejná deterministická
 # pravidla jako ruční recheck v UI. Min age 0 = bez spodní hranice stáří.
@@ -722,6 +733,13 @@ def load_config():
     global TELEMETRY_ALERTS, INFLUXDB, SELF_MONITOR_WEBHOOK, SELF_MONITOR_INTERVAL
     global WEEKLY_REPORT_DAY, WEEKLY_REPORT_HOUR
     TELEMETRY_ALERTS = data.get("telemetry_alerts", [])
+    global TELEMETRY_ANOMALY_IGNORE, TEMPERATURE_HOSTS
+    _th = data.get("temperature_hosts", TEMPERATURE_HOSTS)
+    if isinstance(_th, list):
+        TEMPERATURE_HOSTS = [str(x) for x in _th if str(x).strip()]
+    _tai = data.get("telemetry_anomaly_ignore", TELEMETRY_ANOMALY_IGNORE)
+    if isinstance(_tai, list):
+        TELEMETRY_ANOMALY_IGNORE = [str(x) for x in _tai]
     INFLUXDB = data.get("influxdb", {})
     sm = data.get("self_monitor", {})
     SELF_MONITOR_WEBHOOK = sm.get("webhook_url", SELF_MONITOR_WEBHOOK)
@@ -941,7 +959,7 @@ _KNOWN_KEYS = {
     'auto_resolve_missing_count', 'auto_remediation_enabled', 'ssh_update_check_enabled',
     'ssh_update_check_interval', 'ignored_failed_services', 'excluded_client_ips', 'prompts',
     'infrastructure_mapping', 'chromadb', 'security', 'auto_tags', 'escalation_rules',
-    'sla_rules', 'inbound_webhook', 'telemetry_alerts', 'influxdb', 'self_monitor',
+    'sla_rules', 'inbound_webhook', 'telemetry_alerts', 'telemetry_anomaly_ignore', 'temperature_hosts', 'influxdb', 'self_monitor',
     'weekly_report', 'auto_register_token', 'issue_expiry_days', 'slack', 'pagerduty', 'snmp_trap', 'https', 'topology',
     'telemetry_aggregate_after_hours', 'agent_heartbeat_timeout', 'root_audit_stale_minutes', 'root_audit_history_per_cluster',
     'ai_sessions_retention_days', 'ai_sessions_history_per_host', 'ai_sessions_stale_minutes',

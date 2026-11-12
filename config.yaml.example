@@ -250,6 +250,18 @@ telemetry_alerts:
     above: 80
     channel: agent
 
+# Metriky (fnmatch), na které se nepouští σ-detekce anomálií. Hodí se pro počty
+# aktivit, které kolísají podle provozu, ne podle zdraví stroje.
+telemetry_anomaly_ignore:
+  - "ai_sessions"
+
+# Hosté (fnmatch), jejichž teplotu temperature_detector sleduje. LXC kontejnery
+# a VM čtou čidlo hypervizoru — bez omezení jedna horká noc na hypervizoru
+# udělá anomálii za každého hosta. Prázdný seznam = všichni hosté.
+temperature_hosts: []
+#  - "hypervisor*"
+#  - "nas01"
+
 # ── InfluxDB export ───────────────────────────────────────────────────────────
 # Volitelné — každý telemetrický záznam se zapíše do InfluxDB line protocol
 influxdb:

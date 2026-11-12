@@ -5,6 +5,20 @@ from datetime import datetime, timezone
 from sentinel import api
 from sentinel import config
 
+def _is_loopback(addr: str) -> bool:
+    """127.0.0.0/8 a ::1 včetně zápisu se závorkami a %scope."""
+    a = addr.strip('[]').split('%')[0]
+    if a.startswith('::ffff:'):
+        a = a[7:]
+    return a.startswith('127.') or a in ('::1', 'localhost')
+
+
+# Baseline z doby, kdy se počítal i loopback, by po přechodu nahlásila
+# všechny loopback porty jako "Removed". Starý formát se proto zahodí a
+# první sweep baseline tiše založí znovu.
+_BASELINE_FORMAT = 2
+
+
 class Detector(api.BaseDetector):
     def __init__(self, name, config_params=None):
         super().__init__(name, config_params)
@@ -15,14 +29,17 @@ class Detector(api.BaseDetector):
         if os.path.exists(self.baseline_file):
             try:
                 with open(self.baseline_file, 'r') as f:
-                    return json.load(f)
+                    data = json.load(f)
+                if isinstance(data, dict) and data.get('_format') == _BASELINE_FORMAT:
+                    data.pop('_format', None)
+                    return data
             except: pass
         return {}
 
     def _save_baselines(self):
         try:
             with open(self.baseline_file, 'w') as f:
-                json.dump(self.baselines, f)
+                json.dump({**self.baselines, '_format': _BASELINE_FORMAT}, f)
         except: pass
 
     def process(self, lines, file_path):
@@ -38,7 +55,19 @@ class Detector(api.BaseDetector):
             nonlocal changed
             if not server or not log_lines: return
                 
-            ports_found = re.findall(r"(?::|\]:)(\d+)\s+", " ".join(log_lines))
+            # Jen lokální adresa (5. sloupec `ss -tuln`) a jen ta, na kterou
+            # se dá připojit zvenku. Dřív regex bral porty z celého řádku a
+            # počítal i loopback — vývojové nástroje a IDE otevírají
+            # na 127.0.0.1 náhodný port pro každou session a každá dělala alarm.
+            ports_found = []
+            for ln in log_lines:
+                cols = ln.split()
+                if len(cols) < 5 or ':' not in cols[4]:
+                    continue
+                addr, _, port = cols[4].rpartition(':')
+                if not port.isdigit() or _is_loopback(addr):
+                    continue
+                ports_found.append(port)
             current_ports = ",".join(sorted(list(set(ports_found))))
             
             if not current_ports: return

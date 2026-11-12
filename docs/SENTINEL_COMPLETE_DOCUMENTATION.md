@@ -777,12 +777,19 @@ Systémové anomálie:
 - Kernel panic
 - Out of memory
 - Hardware errors
+- Známý šum filtruje `sys_err_ignore_patterns` (sekce `lifecycle`); výchozí
+  sada obsahuje mimo jiné SSH skenery a TLS „peek" chyby `proxmox-backup-proxy`
+  způsobené TCP kontrolami portu
 
 #### capacity_detector.py
 Kapacitní monitorování:
 - Plnící se disk (lineární regrese → TTC)
 - Rostoucí RAM usage
 - Load average spike
+- `capacity.log` je plný sweep: hlavička `SERVER:` bez řádků pod ní znamená
+  „nic není přes práh" a otevřené `DISK_FULL` na tom hostu se uzavřou
+  (po `AUTO_RESOLVE_MISSING_COUNT` sweepech). Host, který v souboru chybí,
+  se nemění — mohl být jen nedostupný.
 
 #### ha_detector.py
 Home Assistant senzory:
@@ -796,6 +803,9 @@ Teplotní monitoring:
 - Čte teploty z log souborů nebo přes SSH
 - Ukládá do telemetrie (kategorie `Hardware`)
 - Alert při přehřátí
+- `temperature_hosts` (fnmatch) omezí sledování na hosty s vlastním čidlem.
+  Ostatní (kontejnery/VM čtoucí čidlo hypervizoru) se nesbírají a jejich
+  dřívější `TEMP_HIGH` / teplotní anomálie se uzavřou. Prázdný seznam = všichni.
 
 #### availability_detector.py
 Dostupnost hostů a služeb:
@@ -813,6 +823,11 @@ Audit logů (auditd):
 Neoprávněné porty:
 - Detekuje porty mimo povolený seznam
 - Alert → kanál `security`
+- Bere jen lokální adresu (5. sloupec `ss -tuln`) a přeskakuje loopback
+  (`127.0.0.0/8`, `::1`) — náhodné porty vývojových nástrojů a IDE nejsou
+  bezpečnostní změna
+- Baseline (`ports_baseline.json`) nese `_format`; starý formát se při prvním
+  sweepu tiše založí znovu, bez alertu „Removed"
 
 #### detector_universal_security.py
 Univerzální bezpečnostní detektor:
@@ -1097,6 +1112,8 @@ Při každém batch insertu:
 - Pro každou metriku se vypočítá průměr a odchylka za posledních 24h
 - Pokud nová hodnota > průměr + 3σ → issue `telemetry_anomaly`
 - Cooldown: 1 hodina per metrika
+- Metriky z `telemetry_anomaly_ignore` (fnmatch, výchozí `["ai_sessions"]`)
+  se do detekce nepouští — ukládají se a grafují dál
 
 ### 9.3 Telemetry alerting rules (pevné thresholdy)
 

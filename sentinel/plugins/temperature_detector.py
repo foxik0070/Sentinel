@@ -1,8 +1,15 @@
+import fnmatch
 from datetime import datetime, timezone
-from sentinel import api
+from sentinel import api, config
 
 WARN_LIMIT = 75.0
 CRIT_LIMIT = 85.0
+
+def _has_own_sensor(server: str) -> bool:
+    """Patří host do `temperature_hosts`? Prázdný seznam = všichni."""
+    allowed = getattr(config, 'TEMPERATURE_HOSTS', None) or []
+    return not allowed or any(fnmatch.fnmatch(server, p) for p in allowed)
+
 
 class Detector(api.BaseDetector):
     def __init__(self, name, config_params=None):
@@ -22,6 +29,14 @@ class Detector(api.BaseDetector):
 
             if line.startswith("SERVER:"):
                 active_server = line.split("SERVER:")[1].strip()
+                if not _has_own_sensor(active_server):
+                    # Host čte cizí čidlo (kontejner na hypervizoru) — nesbírat,
+                    # a co po něm zbylo z dřívějška, uzavřít, ať to nevisí.
+                    for k in (f"TEMP_HIGH|{active_server}",
+                              f"TELEMETRY_ANOMALY|Hardware|temp.{active_server}"):
+                        if api.get_problem(k):
+                            api.resolve_problem(k)
+                    active_server = None
                 continue
 
             # Ignorovani balastu z orchestratoru

@@ -82,7 +82,11 @@ def save_telemetry_snapshot(category, data_dict):
                 _is_weekend = datetime.now().weekday() >= 5
                 _dow_filter = ("AND strftime('%w', timestamp) IN ('0','6')" if _is_weekend
                                else "AND strftime('%w', timestamp) NOT IN ('0','6')")
+                import fnmatch as _fnm_a
+                _ignore = getattr(config, 'TELEMETRY_ANOMALY_IGNORE', []) or []
                 for (_, cat, metric, val) in data_to_insert:
+                    if any(_fnm_a.fnmatch(metric, pat) for pat in _ignore):
+                        continue
                     cooldown_key = f"{cat}|{metric}"
                     if now_ts - _anomaly_cooldown.get(cooldown_key, 0) < 3600:
                         continue

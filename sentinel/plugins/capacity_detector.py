@@ -23,6 +23,10 @@ class Detector(api.BaseDetector):
 
             if line.startswith("SERVER:"):
                 active_server = line.split("SERVER:")[1].strip()
+                # Server bez řádků pod hlavičkou = sweep proběhl a nic není
+                # přes práh. Bez téhle registrace se reconcile pro něj nespustí
+                # a starý DISK_FULL visí, i když místo dávno je.
+                reported_by_server.setdefault(active_server, set())
                 continue
                 
             # Ignorovani formatovacich oddelovacu z noveho orchestratoru
