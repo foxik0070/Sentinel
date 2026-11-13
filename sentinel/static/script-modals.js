@@ -118,6 +118,21 @@ async function refreshModalIssuesContent(isAuto = false) {
                 if (d.open) openGroups.add(key);
                 else        closedGroups.add(key);
             });
+            // Rozepsany inline komentar: radek se vykresluje zavreny, takze by
+            // ho obnova kazde 3 s zavrela i s napsanym textem. Zapamatovat.
+            const openComments = [];
+            bodyEl.querySelectorAll('[id^="ic-"]').forEach(box => {
+                if (box.id.startsWith('ic-inp-') || box.id.startsWith('ic-msg-')) return;
+                if (box.style.display === 'none' || !box.style.display) return;
+                const kb = box.id.slice(3);
+                const inp = document.getElementById(`ic-inp-${kb}`);
+                openComments.push({
+                    kb,
+                    text: inp ? inp.value : '',
+                    focused: !!inp && document.activeElement === inp,
+                    caret: inp ? inp.selectionStart : 0,
+                });
+            });
             const prevScroll = bodyEl.scrollTop;
             const scrollables = [];
             bodyEl.querySelectorAll('[style*="overflow-y"]').forEach(el => {
@@ -137,6 +152,18 @@ async function refreshModalIssuesContent(isAuto = false) {
                     else if (closedGroups.has(key)) d.open = false;
                 });
             }
+            openComments.forEach(c => {
+                const box = document.getElementById(`ic-${c.kb}`);
+                if (!box) return;   // issue mezitim zmizelo ze seznamu
+                box.style.display = 'block';
+                const inp = document.getElementById(`ic-inp-${c.kb}`);
+                if (!inp) return;
+                inp.value = c.text;
+                if (c.focused) {
+                    inp.focus();
+                    try { inp.setSelectionRange(c.caret, c.caret); } catch (e) {}
+                }
+            });
             bodyEl.scrollTop = prevScroll;
             scrollables.forEach(s => {
                 const grp = bodyEl.querySelector(`[data-group-key="${s.key}"] [style*="overflow-y"]`);

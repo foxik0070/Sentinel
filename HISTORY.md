@@ -1,5 +1,15 @@
 # Historie změn
 
+## [2026.11.008] - 2026-11-13
+
+**Souhrn:** Rozepsaný komentář přežije automatické obnovení seznamu.
+
+Modal s issues se překresluje každé 3 sekundy. Řádek pro rychlý komentář se přitom vykresluje zavřený, takže obnova ho zavřela — i s textem, který do něj někdo zrovna psal. Funkce doplněná ve v2026.11.006 tím byla v praxi nepoužitelná: víc než tři vteřiny psaní se nedalo stihnout.
+
+Obnova proto nově zapamatuje, které řádky jsou otevřené, co je v nich napsané, kde je kurzor a který měl fokus, a po překreslení to vrátí. Stejně jako to už dělala pro rozbalené skupiny a odscrollování.
+
+> Odhaleno až kontrolou ve skutečném prohlížeči — HTML i JavaScript byly samy o sobě v pořádku, vadil až běh v čase.
+
 ## [2026.11.007] - 2026-11-13
 
 **Souhrn:** Komentáře u issue jsou vidět přímo v kartě a mají vlastní barvu.
