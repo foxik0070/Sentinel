@@ -1548,6 +1548,36 @@ def delete_issue_comment(comment_id: int) -> bool:
             logger.error(f"DB Error delete_issue_comment: {e}")
             return False
 
+def get_issue_comments_bulk(limit_per_issue: int = 0) -> dict:
+    """{problem_key: [komentare]} pro vsechny issues, ktere nejaky maji.
+
+    Karta issue komentare zobrazuje primo, takze bez tohohle by kazda vyrobila
+    vlastni dotaz — pri dvaceti kartach dvacet dotazu na tutez tabulku.
+    `limit_per_issue` ponecha u kazdeho issue jen N NEJNOVEJSICH (0 = vse),
+    ale v navracenem seznamu zustavaji chronologicky.
+    """
+    with db_lock:
+        try:
+            conn = _get_conn()
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT problem_key, id, author, text, created_at FROM issue_comments "
+                "ORDER BY problem_key ASC, created_at ASC"
+            ).fetchall()
+            conn.close()
+        except Exception as e:
+            logger.error(f"DB Error get_issue_comments_bulk: {e}")
+            return {}
+    out = {}
+    for r in rows:
+        out.setdefault(r["problem_key"], []).append(
+            {"id": r["id"], "author": r["author"], "text": r["text"],
+             "created_at": r["created_at"]})
+    if limit_per_issue > 0:
+        out = {k: v[-limit_per_issue:] for k, v in out.items()}
+    return out
+
+
 def get_comment_counts() -> dict:
     """Returns {problem_key_b64: count} for all keys with at least 1 comment."""
     import base64 as _b64

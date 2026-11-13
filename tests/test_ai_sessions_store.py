@@ -246,3 +246,61 @@ class TestModalQuery(AiSessionsBase):
         finally:
             conn.close()
         self.assertEqual(badge, sum(1 for r in self._query() if r[1]))
+
+
+class TestCommentsBulk(unittest.TestCase):
+    """Komentare se kresli primo v karte, takze se nactou jednim dotazem."""
+
+    def setUp(self):
+        fd, self.db_path = tempfile.mkstemp(suffix='.db')
+        os.close(fd)
+        # Spojeni musi vzniknout TIMTEZ modulem, ktery pouziva state_issues:
+        # chromadb nekdy podstrci pysqlite3 a michat obe implementace rozbije
+        # row_factory ("Row() argument 1 must be sqlite3.Cursor").
+        conn = si.sqlite3.connect(self.db_path)
+        conn.execute('''CREATE TABLE issue_comments
+                        (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                         problem_key TEXT NOT NULL, author TEXT, text TEXT,
+                         created_at TEXT)''')
+        conn.commit()
+        conn.close()
+        self._orig = si._get_conn
+        si._get_conn = lambda: si.sqlite3.connect(self.db_path)
+
+    def tearDown(self):
+        si._get_conn = self._orig
+        os.unlink(self.db_path)
+
+    def _add(self, key, author, text, when):
+        conn = si.sqlite3.connect(self.db_path)
+        conn.execute("INSERT INTO issue_comments (problem_key, author, text, created_at) "
+                     "VALUES (?,?,?,?)", (key, author, text, when))
+        conn.commit()
+        conn.close()
+
+    def test_groups_by_issue(self):
+        self._add("A|1", "petr", "prvni", "2026-11-13T08:00:00")
+        self._add("A|1", "jana", "druhy", "2026-11-13T09:00:00")
+        self._add("B|2", "petr", "jiny", "2026-11-13T08:30:00")
+        out = si.get_issue_comments_bulk()
+        self.assertEqual(sorted(out), ["A|1", "B|2"])
+        self.assertEqual([c["text"] for c in out["A|1"]], ["prvni", "druhy"])
+
+    def test_empty_table_returns_empty_dict(self):
+        self.assertEqual(si.get_issue_comments_bulk(), {})
+
+    def test_limit_keeps_newest_in_chronological_order(self):
+        for n in range(1, 6):
+            self._add("A|1", "petr", f"k{n}", f"2026-11-13T0{n}:00:00")
+        got = [c["text"] for c in si.get_issue_comments_bulk(limit_per_issue=3)["A|1"]]
+        # Nejnovejsi tri, ale porad odspodu nahoru.
+        self.assertEqual(got, ["k3", "k4", "k5"])
+
+    def test_limit_zero_returns_everything(self):
+        for n in range(1, 4):
+            self._add("A|1", "petr", f"k{n}", f"2026-11-13T0{n}:00:00")
+        self.assertEqual(len(si.get_issue_comments_bulk(limit_per_issue=0)["A|1"]), 3)
+
+    def test_broken_db_does_not_raise(self):
+        si._get_conn = lambda: (_ for _ in ()).throw(si.sqlite3.OperationalError("nope"))
+        self.assertEqual(si.get_issue_comments_bulk(), {})

@@ -22,6 +22,10 @@ def create_blueprint(service):
         all_active = state.get_active_issues(include_snoozed=include_snoozed)
         is_super = (g.user_role == 'superadmin')
         _tag_map = state.get_tag_counts()  # {kb64: [tag, ...]}
+        # Komentare se na karte zobrazuji vzdy, proto jednim dotazem pro cely
+        # seznam — jinak by kazda karta delala vlastni. Starsi nez poslednich
+        # par zustavaji v modalu pod odznakem.
+        _comments_map = state.get_issue_comments_bulk()
 
         filtered = []
         for i in all_active:
@@ -360,6 +364,36 @@ def create_blueprint(service):
                 )
             else:
                 comment_btn = ""
+            # 136b: komentare primo v karte, vzdy viditelne a vlastni barvou —
+            # schovane pod odznakem s cislem se snadno prehlednou.
+            _all_comments = _comments_map.get(i.get('key') or '', [])
+            _COMMENTS_SHOWN = 3
+            comments_html = ""
+            if _all_comments:
+                _shown = _all_comments[-_COMMENTS_SHOWN:]
+                _hidden = len(_all_comments) - len(_shown)
+                _more = (
+                    f"<div onclick=\"openIssueCommentsModal('{kb64}')\" "
+                    f"style='cursor:pointer;font-size:.72em;color:#a78bfa;opacity:.85;margin-top:2px;'>"
+                    f"+ {_hidden} starších…</div>"
+                ) if _hidden > 0 else ""
+                _items = "".join(
+                    f"<div style='margin-top:2px;'>"
+                    f"<b style='color:#c4b5fd;'>{html.escape(c.get('author') or '?')}</b>"
+                    f"<span style='color:var(--text-muted);font-size:.9em;'> "
+                    f"{html.escape((c.get('created_at') or '').replace('T', ' ').split('.')[0])}</span>"
+                    f"<span style='color:var(--text-main);'> — {html.escape(c.get('text') or '')}</span>"
+                    f"</div>"
+                    for c in _shown
+                )
+                comments_html = (
+                    f"<div style='margin-top:6px;padding:5px 9px;font-size:.8em;"
+                    f"background:rgba(167,139,250,.10);border-left:3px solid #a78bfa;"
+                    f"border-radius:0 4px 4px 0;'>"
+                    f"<i class='fa-solid fa-comment-dots' style='color:#a78bfa;margin-right:5px;'></i>"
+                    f"{_items}{_more}</div>"
+                )
+
             _lc_border = f"border-left:4px solid {lc};" if lc else "border-left:4px solid var(--accent);"
             return f"""<div class="modal-content" data-issue-card="1" data-issue-key="{kb64}" style='position:relative;background:rgba(255,255,255,0.02); border:1px solid var(--border); {_lc_border} padding:10px 12px; margin-bottom:6px; border-radius:4px;'>
                     <div class='issue-row-inner'>
@@ -368,7 +402,7 @@ def create_blueprint(service):
                         <div class='issue-content-area'>
                             <small style='color:var(--text-muted); display:block; margin-bottom:3px;'>🕒 {ts} | <b>{plugin_origin}</b>{occ_badge}{stale_badge} <i class='fa-solid fa-bell' title='Nastavení notifikací' style='cursor:pointer;font-size:.8em;opacity:.5;margin-left:3px;' onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=.5" onclick="openNotifySettingsModal()"></i></small>
                             <span class='issue-msg' style='color:var(--text-main); font-size:0.93em; cursor:pointer;' title='395: Kliknutím rozbalit detail' onclick="_toggleInlineDetail('{kb64}')"><b>{safe_host}</b>: {safe_msg_short}</span>
-                            {tags_html}{dep_badge}{records_html}
+                            {tags_html}{dep_badge}{records_html}{comments_html}
                             <div id='inline-detail-{kb64}' data-full-msg='{safe_msg_title}' data-first-seen='{html.escape(i.get('first_seen') or '')}' data-occ='{occ}' style='display:none; margin-top:8px; padding:10px; background:rgba(0,0,0,.15); border:1px solid var(--border); border-radius:5px; font-size:.85em;'></div>
                         </div>
                         <div class='issue-actions'>

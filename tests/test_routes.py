@@ -205,6 +205,74 @@ class TestAPIEndpoints(unittest.TestCase):
             with self.subTest(value=val):
                 self.assertNotIn(key, self._issues(include_ignored=val))
 
+    # ── Komentáře přímo v kartě issue ──
+
+    def _card_html(self, channel='infra'):
+        resp = self.client.get(f'/api/modal_issues/{channel}', headers=self._auth_headers())
+        self.assertEqual(resp.status_code, 200)
+        return (resp.get_json() or {}).get('html', '')
+
+    def test_comment_is_visible_on_the_card(self):
+        from sentinel import api, state
+        key = self._seed_issue("INFRA|node1|with_comment")
+        state.add_issue_comment(key, "petr", "tohle nesmi zapadnout")
+        html = self._card_html()
+        self.assertIn("tohle nesmi zapadnout", html,
+                      "komentar ma byt videt primo v karte, ne jen pod odznakem")
+        self.assertIn("petr", html)
+
+    def test_comment_block_is_visually_distinct(self):
+        # Pointa pozadavku: komentar nesmi splynout se zbytkem karty.
+        from sentinel import state
+        key = self._seed_issue("INFRA|node1|distinct_comment")
+        state.add_issue_comment(key, "jana", "odlisena barva")
+        html = self._card_html()
+        self.assertIn("#a78bfa", html, "komentar nema vlastni barvu")
+
+    def test_comment_text_is_escaped(self):
+        from sentinel import state
+        key = self._seed_issue("INFRA|node1|xss_comment")
+        state.add_issue_comment(key, "petr", "<script>alert(1)</script>")
+        html = self._card_html()
+        self.assertNotIn("<script>alert(1)</script>", html)
+        self.assertIn("&lt;script&gt;", html)
+
+    def test_only_recent_comments_inline_rest_behind_link(self):
+        from sentinel import state
+        key = self._seed_issue("INFRA|node1|many_comments")
+        for n in range(1, 6):
+            state.add_issue_comment(key, "petr", f"komentar-{n}")
+        html = self._card_html()
+        # Posledni tri inline, zbytek za odkazem do modalu.
+        self.assertIn("komentar-5", html)
+        self.assertIn("komentar-3", html)
+        self.assertNotIn("komentar-1", html)
+        self.assertIn("starších", html)
+
+    def _one_card(self, key, channel='infra'):
+        """HTML jedine karty — hledat v celem kanalu by chytlo i cizi komentare."""
+        import base64 as _b64
+        kb64 = _b64.b64encode(key.encode()).decode()
+        html = self._card_html(channel)
+        parts = html.split('data-issue-key="')
+        for p in parts[1:]:
+            if p.startswith(kb64 + '"'):
+                return p.split('data-issue-key="')[0]
+        self.fail(f"karta pro {key} se ve vypisu nenasla")
+
+    def test_card_without_comments_has_no_block(self):
+        key = self._seed_issue("INFRA|node1|no_comment_at_all")
+        self.assertNotIn("#a78bfa", self._one_card(key),
+                         "karta bez komentaru nema mit blok komentaru")
+
+    def test_card_with_comment_has_block(self):
+        from sentinel import state
+        key = self._seed_issue("INFRA|node1|own_block")
+        state.add_issue_comment(key, "petr", "patri k teto karte")
+        card = self._one_card(key)
+        self.assertIn("#a78bfa", card)
+        self.assertIn("patri k teto karte", card)
+
     # ── Agent Registration ──
 
     def test_agent_register_requires_superadmin(self):

@@ -1,5 +1,19 @@
 # Historie změn
 
+## [2026.11.007] - 2026-11-13
+
+**Souhrn:** Komentáře u issue jsou vidět přímo v kartě a mají vlastní barvu.
+
+### Komentář nemá zapadnout
+
+Komentáře se daly přečíst jen po rozkliknutí odznaku s číslem. Kdo kartu jen přelétl, nevěděl, že k ní někdo něco napsal — a právě poznámka typu „tohle řeší Petr, neřešit znovu" je informace, kvůli které se do seznamu člověk dívá.
+
+Nově se kreslí přímo v kartě, ve fialovém bloku (`#a78bfa`) s levým pruhem, takže na první pohled nesplynou s textem hlášky ani se štítky. Zobrazují se poslední tři; pokud je jich víc, pod nimi je `+ N starších…`, co otevře modal se všemi.
+
+Načítají se **jedním dotazem pro celý seznam** (`get_issue_comments_bulk()`). Při dvaceti kartách by jinak vzniklo dvacet dotazů na tutéž tabulku.
+
+Po přidání komentáře se seznam překreslí, takže nový je vidět hned, ne až při příštím obnovení.
+
 ## [2026.11.006] - 2026-11-13
 
 **Souhrn:** Dvě tlačítka u karet issue nedělala vůbec nic — chyběl k nim frontend.

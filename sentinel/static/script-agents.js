@@ -1682,13 +1682,17 @@ async function _icSubmit(kb64) {
         if (r.ok && d.status === 'ok') {
             inp.value = '';
             say(t('comments_added') || 'Přidáno.', 'var(--success)');
-            // Počet u odznaku se jinak srovná až příštím načtením seznamu.
             const badge = document.getElementById(`cbadge-${kb64}`);
             if (badge) {
                 const cur = parseInt((badge.textContent || '').trim(), 10);
                 _updateCommentBadge(kb64, (isNaN(cur) ? 0 : cur) + 1);
             }
-            setTimeout(() => _icHide(kb64), 900);
+            _icHide(kb64);
+            // Komentáře se kreslí přímo v kartě, takže nový je vidět až po
+            // překreslení seznamu — bez toho by se objevil až při dalším refreshi.
+            if (typeof refreshModalIssuesContent === 'function') {
+                setTimeout(() => refreshModalIssuesContent(true), 250);
+            }
         } else {
             say(d.error || t('comments_add_error'), 'var(--error)');
         }
