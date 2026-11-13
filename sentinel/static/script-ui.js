@@ -4128,8 +4128,8 @@ async function openRoleModal() {
 function _renderApiKeysSection() {
     const isSuperadmin = window.currentRole === 'superadmin';
     const scopeOptions = isSuperadmin
-        ? `<option value="read">read</option><option value="read:issues">read:issues</option><option value="write:actions">write:actions</option><option value="admin:users">admin:users</option>`
-        : `<option value="read">read</option><option value="read:issues">read:issues</option>`;
+        ? `<option value="read">read</option><option value="read:issues">read:issues</option><option value="read:root">read:root</option><option value="write:actions">write:actions</option><option value="admin:users">admin:users</option>`
+        : `<option value="read">read</option><option value="read:issues">read:issues</option><option value="read:root">read:root</option>`;
     return `
     <div style="margin-top:20px; padding:14px; background:var(--panel); border:1px solid var(--border); border-radius:6px;">
         <div style="font-size:.78em; text-transform:uppercase; letter-spacing:.07em; color:var(--accent); margin-bottom:10px;">

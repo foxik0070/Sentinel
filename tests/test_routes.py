@@ -273,3 +273,90 @@ class TestAPIEndpoints(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestReadRootScope(unittest.TestCase):
+    """Scope read:root — prehled vcetne kanalu ROOT bez prava zapisu.
+
+    Do teto zmeny sel ROOT videt jen pres scope write/admin, tedy za cenu
+    klice, ktery umi i zapisovat. Nastroj, ktery jen cte, mel na vyber mezi
+    uplnym prehledem a mensim rozsahem skody pri uniku klice.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from sentinel import state
+        cls._orig_db = state.DB_FILE
+        cls.app, cls._tmp_path = _create_test_app()
+        cls.client = cls.app.test_client()
+
+    @classmethod
+    def tearDownClass(cls):
+        from sentinel import state
+        state.DB_FILE = cls._orig_db
+        try:
+            os.unlink(cls._tmp_path)
+        except Exception:
+            pass
+
+    def _key(self, scope):
+        """Vytvori API klic daneho scope primo v DB a vrati jeho tajnou cast."""
+        from sentinel import state
+        return state.create_api_key(f"test-{scope}", scope, None, "tester")
+
+    def _get(self, path, scope):
+        return self.client.get(path, headers={'X-API-Key': self._key(scope)})
+
+    def test_scope_maps_to_viewer_role(self):
+        # Pointa celeho scope: ROOT ano, pravo zapisu ne.
+        from sentinel import auth
+        import inspect
+        src = inspect.getsource(auth)
+        self.assertIn("'read:root':     'viewer'", src,
+                      "read:root nesmi dostat vyssi roli nez viewer")
+
+    # Endpoint odpira pristup v TELE odpovedi, ne stavovym kodem: vraci 200
+    # s JSONem {"html": "..."}. Testy proto ctou to pole, ne syrovy text —
+    # v nem je hlaska unicode-escapovana a primy `in` by ji nenasel.
+    DENIED = "Přístup odepřen"
+
+    def _root_modal_html(self, scope):
+        resp = self._get('/api/modal_issues/root', scope)
+        self.assertEqual(resp.status_code, 200)
+        return (resp.get_json() or {}).get('html', '')
+
+    def test_read_root_sees_root_channel(self):
+        self.assertNotIn(self.DENIED, self._root_modal_html('read:root'),
+                         "read:root ma na kanal ROOT dosahnout")
+
+    def test_plain_read_does_not_see_root_channel(self):
+        self.assertIn(self.DENIED, self._root_modal_html('read'),
+                      "scope read nesmi na ROOT dosahnout")
+
+    def test_read_issues_does_not_see_root_channel(self):
+        self.assertIn(self.DENIED, self._root_modal_html('read:issues'))
+
+    def test_read_root_cannot_write(self):
+        # Nejdulezitejsi tvrzeni: pridana viditelnost nepridava pravo zapisu.
+        key = self._key('read:root')
+        resp = self.client.post('/api/agents/register',
+                                headers={'X-API-Key': key,
+                                         'Content-Type': 'application/json'},
+                                data=json.dumps({'hostname': 'rogue-host'}))
+        self.assertIn(resp.status_code, (401, 403),
+                      "read:root nesmi smet registrovat agenta")
+
+    def test_admin_may_issue_read_root_key(self):
+        # Admin uz ROOT v UI vidi, takze ctecí klic se stejnym rozsahem
+        # neni eskalace — a bez toho by si ho nemohl vyrobit vubec.
+        from sentinel.routes import system as _sys
+        import inspect
+        src = inspect.getsource(_sys)
+        self.assertIn("_admin_scopes = ('read', 'read:issues', 'read:root')", src)
+
+    def test_status_check_reports_version(self):
+        resp = self.client.get('/api/status_check', headers={'X-API-Key': self._key('read')})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertIn('version', data)
+        self.assertTrue(data['version'], "verze nesmi byt prazdna")

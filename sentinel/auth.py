@@ -239,6 +239,11 @@ def requires_auth(f):
         if client_user_header:
             is_mobile = True
 
+        # Viditelnost kanálu ROOT je vlastní oprávnění, ne odvozenina role:
+        # `read:root` ji dává čtecímu klíči, aniž by k ní přibylo právo zápisu.
+        # Výchozí False platí pro všechny cesty níž, které ji nenastaví.
+        g.root_scope = False
+
         # 1. KONTROLA PREZENCE X-API-KEY (mobilní aplikace nebo REST API klíče)
         api_key = request.headers.get('X-API-Key')
         if not api_key and request.path.startswith('/api/logs/tail'):
@@ -260,10 +265,15 @@ def requires_auth(f):
                     'write':         'admin',
                     'read':          'viewer',
                     'read:issues':   'viewer',
+                    # Ctecí klíč, který navíc vidí kanál ROOT. Role zůstává
+                    # `viewer` — ROOT se řeší přes g.root_scope, aby za přehled
+                    # nebylo nutné platit právem zápisu.
+                    'read:root':     'viewer',
                     'write:actions': 'admin',
                     'admin:users':   'superadmin',
                 }
                 g.user_role = _SCOPE_TO_ROLE.get(scope, 'viewer')
+                g.root_scope = (scope == 'read:root')
                 g.username = key_rec.get('name', 'api-key')
                 tracked_user = f"{g.username} (API Key [{scope}])"
             else:

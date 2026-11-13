@@ -57,7 +57,8 @@ def create_blueprint(service):
             filtered.sort(key=lambda x: order_map.get(
                 base64.b64encode(x['key'].encode()).decode(), 99999))
 
-        if target_channel == 'root' and g.user_role not in ('admin', 'superadmin'):
+        if (target_channel == 'root' and not g.root_scope
+                and g.user_role not in ('admin', 'superadmin')):
             return "<div style='color:var(--error); padding:15px;'>⛔ Přístup odepřen. Tuto sekci může vidět pouze Admin/Superadmin.</div>"
 
         if not filtered:

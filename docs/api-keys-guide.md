@@ -34,10 +34,11 @@ curl -sk https://sentinel.example.com/api/status_check \
 **Scopes:**
 - `read` — čtení dat (mapuje se na roli `viewer`)
 - `read:issues` — pouze čtení issues
+- `read:root` — čtení včetně kanálu ROOT, **bez** práva zápisu
 - `write` — čtení i zápis (mapuje se na roli `admin`, jen pro superadmin)
 - `admin` — plný přístup (mapuje se na roli `superadmin`, jen pro superadmin)
 
-Admin může vytvořit klíč se scope `read` nebo `read:issues`.
+Admin může vytvořit klíč se scope `read`, `read:issues` nebo `read:root`.
 Superadmin může vytvořit klíč s libovolným scope.
 
 ### Kanál ROOT a scope
@@ -46,17 +47,23 @@ Role se odvozuje **ze scope klíče**, ne od uživatele, který ho vytvořil
 (`auth.py`, `_SCOPE_TO_ROLE`). Scope `read` a `read:issues` dávají roli `viewer`,
 `write` a `write:actions` roli `admin`, `admin` a `admin:users` roli `superadmin`.
 
-Důsledek, na který se snadno narazí: **issues z kanálu ROOT vidí jen klíč se
-scope `write` nebo `admin`.** S klíčem `read` v odpovědi prostě nejsou — bez
-chyby, bez varování, jen tiše chybí. Kdo to neví, považuje za klid něco, z čeho
-nevidí část.
+Důsledek, na který se snadno narazí: **s klíčem `read` nebo `read:issues`
+issues z kanálu ROOT v odpovědi prostě nejsou** — bez chyby, bez varování,
+jen tiše chybí. Kdo to neví, považuje za klid něco, z čeho nevidí část.
 
-Klíč s těmito scopy může navíc vytvořit **pouze superadmin**; admin si vyrobí
-jen čtecí klíč. Pokud tedy potřebujete přes API vidět i ROOT a nejste superadmin,
-klíč si musíte nechat vytvořit — vyšší scope si nenastavíte.
+Pro nástroj, který jen čte a ROOT potřebuje, je správná volba **`read:root`**
+(od v2026.11.005): vidí ROOT, ale zapisovat neumí. Vydat ho smí i admin.
 
-> Pro nástroj, který jen čte, je `read` správná volba a klíč se zápisem do něj
-> nepatří. Jen počítejte s tím, že ROOT s ním neuvidíte.
+| scope | role | vidí ROOT | umí zapisovat | kdo smí vydat |
+|---|---|---|---|---|
+| `read`, `read:issues` | viewer | ne | ne | admin, superadmin |
+| `read:root` | viewer | **ano** | ne | admin, superadmin |
+| `write`, `write:actions` | admin | ano | ano | superadmin |
+| `admin`, `admin:users` | superadmin | ano | ano | superadmin |
+
+> Před v2026.11.005 šlo ROOT vidět jen přes `write`/`admin`, tedy za cenu
+> klíče s právem zápisu. Pokud takový klíč používáte jen ke čtení, vyměňte
+> ho za `read:root`.
 
 ## Příklady použití
 

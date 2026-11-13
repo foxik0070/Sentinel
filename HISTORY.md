@@ -1,5 +1,34 @@
 # Historie změn
 
+## [2026.11.005] - 2026-11-13
+
+**Souhrn:** Čtecí klíč, který vidí i kanál ROOT, a verze serveru ve `status_check`.
+
+### Scope `read:root`
+
+Role se odvozuje ze scope klíče (`auth.py`, `_SCOPE_TO_ROLE`), a kanál ROOT viděly jen role `admin` a `superadmin`. Jenže na ně mapují výhradně scopy `write`, `write:actions`, `admin` a `admin:users` — tedy klíče, které umí i zapisovat. Nástroj, který z principu jen čte, měl na vybranou mezi úplným přehledem a menším rozsahem škody při úniku klíče. Žádná volba nebyla dobrá.
+
+Nový scope `read:root` zůstává v roli `viewer` a viditelnost ROOT řeší vlastním příznakem `g.root_scope`. Oprávnění tak není odvozenina role, ale samostatná věc:
+
+```
+read, read:issues        -> viewer,      ROOT ne
+read:root                -> viewer,      ROOT ANO, zápis ne
+write, write:actions     -> admin,       ROOT ano
+admin, admin:users       -> superadmin,  ROOT ano
+```
+
+Klíč smí vydat i role `admin` — ROOT už v UI vidí, takže čtecí klíč se stejným rozsahem není eskalace. Bez toho by si ho admin nemohl vyrobit vůbec, protože vyšší scopy jsou vyhrazené superadminovi.
+
+`g.root_scope` se nastavuje na výchozí `False` pro všechny cesty autentizace, ne jen pro tu s API klíčem.
+
+### Verze v `status_check`
+
+`GET /api/status_check` nově vrací `version`. Klienti do teď odhadovali schopnosti serveru podle toho, jestli v datech našli konkrétní pole — fungovalo to, ale byla to detekce po hmatu.
+
+### Co zůstalo beze změny
+
+Počty issues v hlavičce započítávají ROOT jen roli `superadmin`, zatímco seznamy ho ukazují i roli `admin`. Ten nesoulad tu byl předtím a nechávám ho být; `read:root` jsem do obou míst doplnil tak, aby se stávající chování nezměnilo.
+
 ## [2026.11.004] - 2026-11-12
 
 **Souhrn:** Méně šumu z detektorů — vyřešené záchyty disku mizí, loopback porty, teplota kontejnerů a známé hlášky už nedělají issues.

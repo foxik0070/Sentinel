@@ -51,7 +51,7 @@ def create_blueprint(service):
         visible_active = [
             i for i in all_active
             if (vcetne_ignorovanych or i.get('key') not in ignorovane)
-            and (g.user_role in ['admin', 'superadmin']
+            and (g.user_role in ['admin', 'superadmin'] or g.root_scope
                  or (i.get('channel_type', '') or '').lower() != 'root')
         ]
 

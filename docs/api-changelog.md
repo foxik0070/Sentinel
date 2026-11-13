@@ -76,6 +76,19 @@ Následující endpointy jsou nově přístupné všem přihlášeným (dříve 
 - Sekce `rt` — `enabled`, `url`, `api_path`, `user`, `pass`, `queues`,
   `sla_hours`, `channel`
 
+## v2026.11.005 (2026-11-13)
+
+**Bez breaking changes.**
+
+### Nový scope
+- `read:root` — čtení včetně kanálu ROOT, bez práva zápisu. Role zůstává
+  `viewer`; ROOT se řeší samostatným oprávněním, ne povýšením role. Vydat ho
+  smí i `admin`. Do této verze šlo ROOT vidět jen přes `write`/`admin`.
+
+### Rozšířená odpověď
+- `GET /api/status_check` nově vrací `version` (např. `"2026.11.005"`), aby
+  klient nemusel schopnosti serveru odhadovat podle přítomnosti polí.
+
 ## v2026.10.003 (2026-10-23)
 
 **Bez breaking changes.** Žádný existující endpoint nezměnil tvar odpovědi.

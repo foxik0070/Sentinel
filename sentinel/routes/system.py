@@ -99,7 +99,7 @@ def create_blueprint(service):
             if ch == 'security':
                 security_count += 1
             elif ch == 'root':
-                if is_super: root_count += 1
+                if is_super or g.root_scope: root_count += 1
             elif key.startswith('AGENT|'):
                 agent_count += 1
             elif key.startswith('RT|'):
@@ -126,6 +126,9 @@ def create_blueprint(service):
             rag_ready = rag.rag_system.is_ready
 
         return jsonify({
+            # Verze serveru, aby klient nemusel schopnosti odhadovat podle toho,
+            # jestli v datech nasel konkretni pole.
+            "version": getattr(config, 'VERSION', ''),
             "issues": infra_count,
             "agent_issues": agent_count,
             "root_issues": root_count,
@@ -1582,8 +1585,9 @@ def create_blueprint(service):
         expires_at = d.get('expires_at') or None
         if not name:
             return jsonify({"error": "Název nesmí být prázdný"}), 400
-        _admin_scopes = ('read', 'read:issues')
-        _super_scopes = ('read', 'read:issues', 'write', 'write:actions', 'admin', 'admin:users')
+        _admin_scopes = ('read', 'read:issues', 'read:root')
+        _super_scopes = ('read', 'read:issues', 'read:root', 'write', 'write:actions',
+                         'admin', 'admin:users')
         allowed_scopes = _super_scopes if g.user_role == 'superadmin' else _admin_scopes
         if scope not in allowed_scopes:
             return jsonify({"error": "Neplatný scope — nemáte oprávnění"}), 403
@@ -1876,7 +1880,7 @@ SwaggerUIBundle({
             ch = i.get('channel_type', '').lower()
             key = i.get('key', '')
             if ch == 'security': security_c += 1
-            elif ch == 'root': root_c += 1 if is_super else 0
+            elif ch == 'root': root_c += 1 if (is_super or g.root_scope) else 0
             elif key.startswith('AGENT|'): agent_c += 1
             else: infra_c += 1
 
