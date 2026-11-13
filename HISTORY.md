@@ -1,5 +1,25 @@
 # Historie změn
 
+## [2026.11.006] - 2026-11-13
+
+**Souhrn:** Dvě tlačítka u karet issue nedělala vůbec nic — chyběl k nim frontend.
+
+### Rychlý komentář v kartě
+
+Ikona „Přidat komentář (inline)" vykreslovala `onclick="_icToggle(…)"` a pod kartou skrytý řádek s inputem, jehož tlačítka volala `_icSubmit` a `_icHide`. **Žádná z těch tří funkcí v JavaScriptu neexistovala.** Klik tedy skončil na `ReferenceError` a navenek se nestalo nic: žádná hláška, žádný požadavek na server. Backend přitom byl hotový — `POST /api/issues/<key>/comments` fungoval celou dobu.
+
+Funkce jsou doplněné. Řádek se rozbalí a dá fokus do pole, Enter odešle, Escape zavře. Nad 2000 znaků se chyba ohlásí dřív, než se text pošle a server ho odmítne. Počet u odznaku se po přidání zvýší hned, aby se nečekalo na další načtení seznamu.
+
+### Barevné štítky
+
+Totéž o kus výš: tečka štítku volala `_lcToggle`, swatche v paletě `_lcSet` — ani jedna funkce neexistovala, přestože `POST /api/issues/<key>/label_color` byl hotový. Doplněno; otevření jedné palety zavře ostatní a zvolená barva se na tečce projeví okamžitě.
+
+### Test, který na to příště přijde
+
+Obě vady byly staticky neviditelné: Python i JavaScript byly samy o sobě v pořádku, rozpojené byly až mezi sebou. `tests/test_onclick_handlers.py` proto prochází všechny `on*="fn(…)"` atributy vykreslované v Pythonu, v šablonách i v JS a ověřuje, že ke každému existuje funkce.
+
+Při psaní testu se ukázalo, jak snadné je tuhle kontrolu minout: první verze regulárního výrazu nepočítala s tím, že se atribut v Pythonu skládá uvnitř f-stringu jako `onclick=\"…\"` — tedy s uvozovkou za zpětným lomítkem. Přehlédla tím přesně ty handlery, které vykresluje server. Po opravě test okamžitě našel i ty barevné štítky.
+
 ## [2026.11.005] - 2026-11-13
 
 **Souhrn:** Čtecí klíč, který vidí i kanál ROOT, a verze serveru ve `status_check`.

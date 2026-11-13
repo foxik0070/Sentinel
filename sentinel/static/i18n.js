@@ -158,6 +158,8 @@ const TRANSLATIONS = {
     comments_delete_confirm: 'Smazat tento komentář?',
     comments_load_error: 'Chyba při načítání komentářů.',
     comments_add_error: 'Chyba při přidávání komentáře.',
+    comments_added: 'Přidáno.',
+    comments_too_long: 'Komentář je příliš dlouhý (max 2000 znaků).',
     comments_empty_error: 'Komentář nemůže být prázdný.',
 
     // ── Root audit modal ───────────────────────────────────────────────────────
@@ -722,6 +724,8 @@ const TRANSLATIONS = {
     comments_delete_confirm: 'Delete this comment?',
     comments_load_error: 'Error loading comments.',
     comments_add_error: 'Error adding comment.',
+    comments_added: 'Added.',
+    comments_too_long: 'Comment is too long (max 2000 characters).',
     comments_empty_error: 'Comment cannot be empty.',
 
     // ── Root audit modal ───────────────────────────────────────────────────────

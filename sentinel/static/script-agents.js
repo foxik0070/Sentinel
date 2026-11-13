@@ -1594,6 +1594,109 @@ async function deleteIssueComment(id, kb64) {
     await _loadComments(kb64);
 }
 
+// ─── Barevný štítek karty issue ───────────────────────────────────────────────
+// Server (routes/issues.py) vykresluje tečku s onclick="_lcToggle(…)" a paletu
+// se swatchi volajícími _lcSet(kb64, barva). Obojí ve frontendu chybělo, takže
+// klik na tečku nic neudělal.
+
+function _lcToggle(kb64) {
+    const picker = document.getElementById(`lc-picker-${kb64}`);
+    if (!picker) return;
+    const show = picker.style.display === 'none' || !picker.style.display;
+    // Jinou otevřenou paletu zavřít, ať jich nezůstane viset víc.
+    document.querySelectorAll('[id^="lc-picker-"]').forEach(el => {
+        if (el !== picker) el.style.display = 'none';
+    });
+    picker.style.display = show ? 'flex' : 'none';
+}
+
+async function _lcSet(kb64, color) {
+    const dot = document.getElementById(`lc-dot-${kb64}`);
+    try {
+        const r = await fetch(`/api/issues/${encodeURIComponent(kb64)}/label_color`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({color: color || ''})
+        });
+        let d = {};
+        try { d = await r.json(); } catch { d = {}; }
+        if (!r.ok || d.status !== 'ok') {
+            if (typeof _showToast === 'function') _showToast(d.error || t('api_error'), 'error');
+            return;
+        }
+        // Projeví se hned, bez čekání na další načtení seznamu.
+        if (dot) dot.style.background = color || 'rgba(255,255,255,.12)';
+        document.querySelectorAll(`#lc-picker-${CSS.escape(kb64)} > span`).forEach(sw => {
+            sw.style.border = '2px solid transparent';
+        });
+    } catch (e) {
+        if (typeof _showToast === 'function') _showToast(t('api_error'), 'error');
+    } finally {
+        _lcToggle(kb64);
+    }
+}
+
+// ─── Rychlý komentář přímo v kartě issue ──────────────────────────────────────
+// Server (routes/issues.py) vykresluje u každé karty ikonu s onclick="_icToggle(…)"
+// a skrytý řádek s inputem. Tyhle tři funkce k tomu chyběly úplně, takže klik
+// končil na ReferenceError a navenek se nedělo nic.
+
+function _icHide(kb64) {
+    const box = document.getElementById(`ic-${kb64}`);
+    if (box) box.style.display = 'none';
+}
+
+function _icToggle(kb64) {
+    const box = document.getElementById(`ic-${kb64}`);
+    if (!box) return;
+    const show = box.style.display === 'none' || !box.style.display;
+    box.style.display = show ? 'block' : 'none';
+    if (show) {
+        const inp = document.getElementById(`ic-inp-${kb64}`);
+        if (inp) { inp.value = ''; inp.focus(); }
+        const msg = document.getElementById(`ic-msg-${kb64}`);
+        if (msg) msg.textContent = '';
+    }
+}
+
+async function _icSubmit(kb64) {
+    const inp = document.getElementById(`ic-inp-${kb64}`);
+    const msg = document.getElementById(`ic-msg-${kb64}`);
+    if (!inp) return;
+    const text = inp.value.trim();
+    const say = (txt, color) => { if (msg) { msg.style.color = color; msg.textContent = txt; } };
+
+    if (!text) { say(t('comments_empty_error'), 'var(--error)'); return; }
+    // Server vrací 400 nad 2000 znaků; ohlásit to rovnou, ať se text neztratí.
+    if (text.length > 2000) { say(t('comments_too_long') || 'Komentář je příliš dlouhý (max 2000).', 'var(--error)'); return; }
+
+    say('…', 'var(--text-muted)');
+    try {
+        const r = await fetch(`/api/issues/${encodeURIComponent(kb64)}/comments`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({text})
+        });
+        let d = {};
+        try { d = await r.json(); } catch { d = {}; }
+        if (r.ok && d.status === 'ok') {
+            inp.value = '';
+            say(t('comments_added') || 'Přidáno.', 'var(--success)');
+            // Počet u odznaku se jinak srovná až příštím načtením seznamu.
+            const badge = document.getElementById(`cbadge-${kb64}`);
+            if (badge) {
+                const cur = parseInt((badge.textContent || '').trim(), 10);
+                _updateCommentBadge(kb64, (isNaN(cur) ? 0 : cur) + 1);
+            }
+            setTimeout(() => _icHide(kb64), 900);
+        } else {
+            say(d.error || t('comments_add_error'), 'var(--error)');
+        }
+    } catch (e) {
+        say(t('comments_add_error'), 'var(--error)');
+    }
+}
+
 function _updateCommentBadge(kb64, count) {
     const badge = document.getElementById(`cbadge-${kb64}`);
     if (!badge) return;
