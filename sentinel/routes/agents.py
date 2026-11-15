@@ -1164,6 +1164,12 @@ def create_blueprint(service):
                         "details": alert
                     }
                     is_new = state.save_problem(unique_key, incident_payload)
+                    # Vysilatel smi rict zavaznost sam. Bez toho se odvozovala
+                    # jen z kanalu, takze ocekavany sum (zasahy honeypotu) mel
+                    # stejnou vahu jako skutecny incident a prebijel ho.
+                    _sev = str(alert.get("severity") or "").strip().lower()
+                    if _sev:
+                        state.set_issue_severity(unique_key, _sev)
                     if is_new:
                         actions.maybe_suggest_remediation(unique_key, incident_payload)
                         if assigned_channel in ('security', 'root', 'clusters'):

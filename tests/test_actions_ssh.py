@@ -217,3 +217,23 @@ class TestSshTargetResolution(unittest.TestCase):
         """Puvodni chovani pro hostname v poli cluster zustava."""
         self.config.INFRASTRUCTURE_MAPPING = []
         self.assertEqual(self.actions._resolve_ssh_target('rpi', None)[0], 'rpi')
+
+
+class TestIngestHonoursSeverity(unittest.TestCase):
+    """Vysilatel smi rict zavaznost sam.
+
+    Zavaznost se odvozovala jen z kanalu, takze ocekavany sum (zasahy
+    honeypotu z internetu, 254 za dopoledne) mel stejnou vahu jako skutecny
+    incident a prebijel ho v seznamu.
+    """
+
+    def test_ingest_calls_set_severity_for_explicit_value(self):
+        src = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                'sentinel', 'routes', 'agents.py'), encoding='utf-8').read()
+        self.assertIn('alert.get("severity")', src)
+        self.assertIn('state.set_issue_severity(unique_key, _sev)', src)
+
+    def test_only_known_severities_are_stored(self):
+        """set_issue_severity si hlida slovnik, takze preklep se neulozi."""
+        from sentinel import state
+        self.assertFalse(state.set_issue_severity('NEEXISTUJE|x', 'vysoka'))

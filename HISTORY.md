@@ -30,7 +30,13 @@ Detektor bral každou entitu se slovem `voltage` jako síťové napětí. Nově 
 - jinak rozhoduje **historie**: entita musí někdy ukázat aspoň `voltage_mains_floor_v` (výchozí 100 V). Větev desky se k 230 V nikdy nepřiblíží, zatímco skutečný síťový senzor ano. Maxima přežijí restart.
 - `ignore_entities` (glob) pro vypnutí jednotlivých entit bez zásahu do kódu
 
-Testy 1 275 → **1 282**, plus 5 v `sentinel-plugins`.
+### Vysílatel smí říct závažnost sám
+
+Závažnost se odvozovala jen z kanálu, takže očekávaný šum měl stejnou váhu jako skutečný incident. Zásahy honeypotu chodily jako *high* — za jedno dopoledne 254 opakování — a překrývaly v seznamu disk s vadnými sektory.
+
+Ingest teď přijme `severity` v hlášení agenta a uloží ji. Hodnota se ověřuje proti seznamu (`low`/`medium`/`high`/`critical`), takže překlep se neuloží a závažnost zůstane odvozená. Odpovídající změnu na své straně má `sentinel-alert` (viz jeho 2026.11.003).
+
+Testy 1 275 → **1 284**, plus 5 v `sentinel-plugins`.
 
 ## [2026.11.011] - 2026-11-15
 
