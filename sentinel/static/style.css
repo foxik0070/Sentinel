@@ -866,3 +866,23 @@ input:focus-visible,
     #agent-bulk-bar button { flex: 1 1 auto; }
     #bulk-assign-inp { width: 100%; }
 }
+
+/* 395: Nabídka akcí u issue — seskupená podle toho, co s issue udělá. */
+.issue-menu {
+    position: absolute; right: 0; top: 100%; z-index: 60;
+    min-width: 230px; padding: 6px 0;
+    background: var(--bg-card, #121820); border: 1px solid var(--border);
+    border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,.45);
+    font-size: .86em; text-align: left;
+}
+.issue-menu-group {
+    padding: 6px 12px 3px; font-size: .78em; letter-spacing: 1px;
+    text-transform: uppercase; color: var(--text-muted); opacity: .75;
+}
+.issue-menu-group:not(:first-child) { border-top: 1px solid var(--border); margin-top: 4px; }
+.issue-menu-item {
+    display: flex; align-items: center; gap: 9px;
+    padding: 7px 12px; cursor: pointer; color: var(--text-main);
+    white-space: nowrap;
+}
+.issue-menu-item:hover { background: rgba(255,255,255,.06); }

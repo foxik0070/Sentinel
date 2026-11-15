@@ -621,7 +621,10 @@ def create_blueprint(service):
         if msg.startswith('ignore_key '):
             if role not in ['admin', 'superadmin']: return jsonify({"reply": "⛔ Odepřeno. Právo pouze pro administrátory."})
             k = base64.b64decode(msg.split()[1]).decode()
-            service.ignored_issues.add(k); service.save_ignored_issues(); return jsonify({"reply": "", "silent": True})
+            state.add_ignored(k, created_by=g.username)
+            state.delete_problem(k)
+            service.ignored_issues.add(k)
+            return jsonify({"reply": "", "silent": True})
 
         if msg.startswith(('approve', 'reject', 'confirm_approve')):
             if role not in ['admin', 'superadmin']: return jsonify({"reply": "⛔ Admin only."})
@@ -955,7 +958,9 @@ def create_blueprint(service):
 
         if msg.startswith('unignore_key ') and role in ['admin', 'superadmin']:
             k = base64.b64decode(msg.split()[1]).decode()
-            if k in service.ignored_issues: service.ignored_issues.remove(k); service.save_ignored_issues(); return jsonify({"reply": "", "silent": True})
+            state.remove_ignored(k)
+            service.ignored_issues.discard(k)
+            return jsonify({"reply": "", "silent": True})
 
         if msg == 'sys':
             initial_content = service.render_sys_monitor_html(g.user_role)

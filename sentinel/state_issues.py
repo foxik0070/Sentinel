@@ -1006,7 +1006,119 @@ def get_problem(key):
         return None
     except: return None
 
+# ── Trvale ignorovane issue ──────────────────────────────────────────────────
+# Ignorace se vynucuje pri ZAPISU (save_problem), ne az pri vypisu. Drive byla
+# jen v JSON souboru, ktery filtroval nektere pohledy — detektor klic pri dalsim
+# behu zalozil znovu a notifikace odesla, takze "ignorovat" ve skutecnosti
+# znamenalo "schovat na jednom miste".
+_ignored_cache: set | None = None
+_ignored_lock = threading.Lock()
+
+
+def _ignored_set() -> set:
+    """Mnozina ignorovanych klicu. Drzi se v pameti, protoze save_problem
+    se vola pri kazdem radku logu."""
+    global _ignored_cache
+    with _ignored_lock:
+        if _ignored_cache is not None:
+            return _ignored_cache
+        keys = set()
+        try:
+            conn = _get_conn()
+            keys = {r[0] for r in conn.execute("SELECT key FROM ignored_issues")}
+            conn.close()
+        except Exception as e:
+            logger.error(f"Nactení ignorovanych issue selhalo: {e}")
+        _ignored_cache = keys
+        return _ignored_cache
+
+
+def _invalidate_ignored():
+    global _ignored_cache
+    with _ignored_lock:
+        _ignored_cache = None
+
+
+def is_ignored(key: str) -> bool:
+    return key in _ignored_set()
+
+
+def list_ignored() -> list:
+    try:
+        conn = _get_conn()
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT key, reason, created_by, created_at FROM ignored_issues "
+            "ORDER BY created_at DESC").fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        logger.error(f"list_ignored selhalo: {e}")
+        return []
+
+
+def add_ignored(key: str, created_by: str = '', reason: str = '') -> bool:
+    """Issue se prestane hlasit. Soucasny zaznam se smaze, aby zmizel i z UI."""
+    if not key:
+        return False
+    with db_lock:
+        try:
+            conn = _get_conn()
+            conn.execute(
+                "INSERT OR REPLACE INTO ignored_issues (key, reason, created_by) VALUES (?,?,?)",
+                (key, reason or '', created_by or ''))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"add_ignored selhalo: {e}")
+            return False
+    _invalidate_ignored()
+    return True
+
+
+def remove_ignored(key: str) -> bool:
+    """Zrusi ignoraci. Issue se objevi znovu, az ho detektor nahlasi."""
+    with db_lock:
+        try:
+            conn = _get_conn()
+            conn.execute("DELETE FROM ignored_issues WHERE key = ?", (key,))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"remove_ignored selhalo: {e}")
+            return False
+    _invalidate_ignored()
+    return True
+
+
+def migrate_ignored_from_file(path: str) -> int:
+    """Jednorazove prevezme stary JSON seznam, aby uzivatel neprisel o to,
+    co uz jednou ignoroval. Soubor se nemaze — slouzi jako zaloha."""
+    try:
+        if not os.path.exists(path):
+            return 0
+        with open(path, 'r') as f:
+            keys = json.load(f)
+        if not isinstance(keys, list) or not keys:
+            return 0
+    except Exception:
+        return 0
+    moved = 0
+    existing = _ignored_set()
+    for k in keys:
+        if k and k not in existing and add_ignored(str(k), created_by='migrace'):
+            moved += 1
+    if moved:
+        logger.info(f"Prevzato {moved} ignorovanych issue ze souboru {path}")
+    return moved
+
+
 def save_problem(key, data):
+    # Ignorovany klic se neuklada vubec — tim padem neposle notifikaci,
+    # neobjevi se v zadnem seznamu ani v poctech.
+    if is_ignored(key):
+        return False
+
     if 'plugin_name' not in data:
         import inspect
         try:

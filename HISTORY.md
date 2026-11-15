@@ -1,5 +1,38 @@
 # Historie změn
 
+## [2026.11.013] - 2026-11-15
+
+**Souhrn:** Ignorovat teď opravdu znamená ignorovat. A akce u issue dávají pořadí.
+
+### Ignorace se vynucuje při zápisu, ne při výpisu
+
+„Ignorovat" dosud znamenalo „schovat na jednom místě". Klíč se uložil do JSON souboru, který znal jen `chat_service`, a ten se uplatnil **až při výpisu**. Detektor přitom tentýž klíč při dalším běhu založil znovu — takže issue se vrátilo, notifikace odešla a v počtech bylo vidět.
+
+Byly na to navíc **tři překrývající se mechanismy**, žádný u zdroje: ignorovaný seznam v souboru, `suppress_rules` v databázi (podle vzoru host/plugin, filtr při čtení) a `snoozed_until` pro dočasné odložení.
+
+Ignorace je nově v databázi a kontroluje ji **`save_problem()`** — tedy jediné místo, kudy issue vzniká. Ignorovaný klíč se neuloží, takže neodešle notifikaci, neobjeví se v žádném seznamu ani v počtech. Stačí jedna kontrola místo filtru v každém pohledu.
+
+> Cestou se našly **dvě definice stejné cesty** `POST /api/issues/<key>/ignore`. Werkzeug bere první zaregistrovanou, takže druhá byla mrtvý kód — a byla to zrovna ta, která záznam nemazala. Odstraněno; test hlídá, že je definice jediná.
+
+Co bylo ignorované dřív, se jednorázově převezme ze starého souboru, takže se nezačne hlásit po upgradu. Soubor zůstává jako záloha. Přibyl `GET /api/issues/ignored` a `DELETE …/ignore` pro zrušení.
+
+### Akce u issue mají pořadí
+
+U karty bylo **jedenáct ikon vedle sebe**, všechny stejně velké a bez uspořádání — nedalo se poznat, co issue změní a co jen ukáže.
+
+Inline zůstaly dvě nejčastější (komentář, analýza), zbytek je v nabídce rozdělené podle toho, **co to s issue udělá**:
+
+| skupina | akce |
+|---|---|
+| Zjistit víc | žebřík zásahů, podobné incidenty, ověřit platnost, závislosti, SSH |
+| Upravit | přidat tag, barevný štítek |
+| Přestat hlásit | ignorovat natrvalo, planý poplach, smazat záznam |
+| Ostatní | sdílet |
+
+Ignorování i mazání se nově ptají a **říkají, co se stane** — že ignorované se už nezaloží a smazané se vrátí, pokud problém trvá. Obojí hlásí, když se akce nepovede; dřív se při chybě nestalo nic viditelného.
+
+Testy 1 284 → **1 291**.
+
 ## [2026.11.012] - 2026-11-15
 
 **Souhrn:** Tři nálezy z provozu na domácí instanci.

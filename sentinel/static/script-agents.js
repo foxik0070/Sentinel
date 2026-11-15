@@ -2071,3 +2071,43 @@ async function _agentPing(hostname) {
         if (btn) { btn.innerHTML = '<i class="fa-solid fa-satellite-dish"></i> Ping'; btn.disabled = false; }
     }
 }
+
+// ── Nabídka akcí u issue ─────────────────────────────────────────────────────
+// 395: Jedenáct ikon vedle sebe nedávalo poznat, co issue změní a co jen ukáže.
+// Inline zůstaly dvě nejčastější, zbytek je tady a je seskupený podle účinku.
+function _closeIssueMenus() {
+    document.querySelectorAll('.issue-menu').forEach(m => { m.style.display = 'none'; });
+}
+
+function _toggleIssueMenu(el) {
+    const menu = el.parentElement.querySelector('.issue-menu');
+    if (!menu) return;
+    const wasOpen = menu.style.display === 'block';
+    _closeIssueMenus();
+    if (wasOpen) return;
+    menu.style.display = 'block';
+    // Když by nabídka spadla pod okraj okna, otevře se nahoru.
+    const r = menu.getBoundingClientRect();
+    menu.style.bottom = (r.bottom > window.innerHeight - 8) ? '100%' : '';
+    menu.style.top = (r.bottom > window.innerHeight - 8) ? '' : '100%';
+}
+
+document.addEventListener('click', e => {
+    if (!e.target.closest('.issue-menu-wrap')) _closeIssueMenus();
+});
+
+// Ignorovat je nevratné z pohledu výpisu, tak se ptáme — a říkáme, co to udělá.
+async function _ignoreIssue(kb64) {
+    if (!confirm('Issue se přestane hlásit úplně — detektor ho už nezaloží znovu.\n'
+               + 'Zrušit to jde v seznamu ignorovaných.\n\nIgnorovat?')) return;
+    const r = await fetch(`/api/issues/${kb64}/ignore`, { method: 'POST' });
+    if (!r.ok) { alert('Ignorování se nepodařilo (HTTP ' + r.status + ')'); return; }
+    refreshModalIssuesContent(false);
+}
+
+async function _deleteIssue(kb64) {
+    if (!confirm('Smazat záznam? Když problém trvá, detektor ho založí znovu.')) return;
+    const r = await fetch(`/api/issues/${kb64}/delete`, { method: 'POST' });
+    if (!r.ok) { alert('Smazání se nepodařilo (HTTP ' + r.status + ')'); return; }
+    setTimeout(() => refreshModalIssuesContent(false), 300);
+}

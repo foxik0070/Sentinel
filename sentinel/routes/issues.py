@@ -394,6 +394,60 @@ def create_blueprint(service):
                     f"{_items}{_more}</div>"
                 )
 
+            # 395: Akci bylo u karty jedenact vedle sebe, vsechny stejnou ikonou
+            # a bez poradi — nedalo se poznat, co issue ZMENI a co jen ukaze.
+            # Inline zustavaji dve nejcastejsi (komentar, analyza), zbytek jde
+            # do nabidky rozdelene podle toho, co to s issue udela.
+            def _mi(icon, label, onclick, color='var(--text-muted)'):
+                return (f"<div class='issue-menu-item' onclick=\"_closeIssueMenus();{onclick}\">"
+                        f"<i class='fa-solid {icon}' style='width:16px;color:{color};'></i>"
+                        f"<span>{label}</span></div>")
+
+            _is_admin = g.user_role in ['admin', 'superadmin']
+            _groups = []
+
+            _zjistit = [_mi('fa-magnifying-glass', 'Podobné incidenty', f"_openSimilarModal('{kb64}')")]
+            if g.user_role in ['admin', 'superadmin', 'viewer']:
+                _zjistit.insert(0, _mi('fa-list-ol', 'Žebřík zásahů', f"_openRemediationPlan('{kb64}')"))
+            if _is_admin:
+                _zjistit.append(_mi('fa-stethoscope', 'Ověřit platnost',
+                                    f"_recheckIssue('{kb64}');setTimeout(()=>refreshModalIssuesContent(false),1200);"))
+                _zjistit.append(_mi('fa-link', 'Závislosti', f"_openDependsModal('{kb64}')"))
+                if i.get('host'):
+                    _zjistit.append(_mi('fa-terminal', f"SSH na {html.escape(i.get('host',''))}",
+                                        f"_navPushIssues();closeIssuesModal();openSshModal('{html.escape(i.get('host',''))}')"))
+            _groups.append(('Zjistit víc', _zjistit))
+
+            if _is_admin:
+                _groups.append(('Upravit', [
+                    _mi('fa-tag', 'Přidat tag', f"_openTagModal('{kb64}')"),
+                    _mi('fa-circle-half-stroke', 'Barevný štítek', f"_lcToggle('{kb64}')"),
+                ]))
+                _groups.append(('Přestat hlásit', [
+                    _mi('fa-eye-slash', 'Ignorovat natrvalo',
+                        f"_ignoreIssue('{kb64}')", '#f59e0b'),
+                    _mi('fa-ban', 'Označit jako planý poplach',
+                        f"_markFalsePositive('{kb64}')", '#fd7e14'),
+                    _mi('fa-trash', 'Smazat záznam',
+                        f"_deleteIssue('{kb64}')", 'var(--error)'),
+                ]))
+
+            _groups.append(('Ostatní', [
+                _mi('fa-share-nodes', 'Sdílet', f"shareIssue({share_arg}, this)"),
+            ]))
+
+            _menu_html = "".join(
+                f"<div class='issue-menu-group'>{title}</div>" + "".join(items)
+                for title, items in _groups if items
+            )
+            menu_btn = (
+                f"<span class='issue-menu-wrap' style='position:relative;'>"
+                f"<i class='fa-solid fa-ellipsis-vertical' title='Co s tím lze dělat' "
+                f"style='cursor:pointer;color:var(--text-muted);font-size:1.15em;padding:0 4px;' "
+                f"onclick=\"_toggleIssueMenu(this)\"></i>"
+                f"<div class='issue-menu' style='display:none;'>{_menu_html}</div></span>"
+            )
+
             _lc_border = f"border-left:4px solid {lc};" if lc else "border-left:4px solid var(--accent);"
             return f"""<div class="modal-content" data-issue-card="1" data-issue-key="{kb64}" style='position:relative;background:rgba(255,255,255,0.02); border:1px solid var(--border); {_lc_border} padding:10px 12px; margin-bottom:6px; border-radius:4px;'>
                     <div class='issue-row-inner'>
@@ -406,8 +460,7 @@ def create_blueprint(service):
                             <div id='inline-detail-{kb64}' data-full-msg='{safe_msg_title}' data-first-seen='{html.escape(i.get('first_seen') or '')}' data-occ='{occ}' style='display:none; margin-top:8px; padding:10px; background:rgba(0,0,0,.15); border:1px solid var(--border); border-radius:5px; font-size:.85em;'></div>
                         </div>
                         <div class='issue-actions'>
-                            {comment_btn}{dep_btn}{fix_btn}{remediation_btn}{recheck_btn}{ssh_btn_modal}{tag_btn}{fp_btn}{similar_btn}<i class='fa-solid fa-share-nodes issue-action-secondary' title='Sdílet' style='cursor:pointer; color:var(--text-muted); font-size:1.1em; margin-right:12px;' onclick="shareIssue({share_arg}, this)"></i>
-                            {ignore_btn}{delete_btn}
+                            {comment_btn}{fix_btn}{menu_btn}
                         </div>
                     </div>
                     {inline_comment}
@@ -794,14 +847,20 @@ def create_blueprint(service):
     @bp.route('/api/issues/<key_b64>/ignore', methods=['POST'])
     @requires_auth
     def api_ignore_issue(key_b64):
+        """Trvale ignorovat. Zapis se vynucuje v save_problem, takze se issue
+        uz nezalozi znovu ani neposle notifikaci."""
         if g.user_role not in ('admin', 'superadmin'):
             return jsonify({"error": "Forbidden"}), 403
         try: key = base64.b64decode(key_b64).decode()
         except Exception: return jsonify({"error": "bad key"}), 400
-        service.ignored_issues.add(key)
-        service.save_ignored_issues()
+        reason = (request.get_json(silent=True) or {}).get('reason', '') if request.is_json else ''
+        if not state.add_ignored(key, created_by=g.username, reason=reason):
+            return jsonify({"error": "nelze uložit"}), 500
         state.delete_problem(key)
-        return jsonify({"status": "ok"})
+        service.ignored_issues.add(key)
+        service.log_event("issue_ignore", f"{key} ignorováno uživatelem {g.username}"
+                                          + (f" ({reason})" if reason else ""))
+        return jsonify({"status": "ok", "ignored": True})
 
     @bp.route('/api/issues/<key_b64>/label_color', methods=['POST'])
     @requires_auth
@@ -1972,31 +2031,30 @@ def create_blueprint(service):
         service.log_event("issue_delete", f"Deleted issue: {k}", user=g.username)
         return jsonify({"status": "ok"})
 
-    @bp.route('/api/issues/<key_b64>/ignore', methods=['POST'])
-    @requires_auth
-    def api_issue_ignore(key_b64):
-        if g.user_role not in ('admin', 'superadmin'):
-            return jsonify({"error": "Forbidden"}), 403
-        try:
-            k = base64.b64decode(key_b64).decode()
-        except Exception:
-            return jsonify({"error": "Bad key"}), 400
-        service.ignored_issues.add(k)
-        service.save_ignored_issues()
-        return jsonify({"status": "ok"})
+    # Druha definice /ignore (POST) tu byla take — se stejnou cestou, jen jinym
+    # jmenem funkce. Werkzeug bere prvni zaregistrovanou, takze to byl mrtvy kod,
+    # ktery navic NEmazal zaznam. Odstraneno.
 
     @bp.route('/api/issues/<key_b64>/ignore', methods=['DELETE'])
     @requires_auth
     def api_issue_unignore(key_b64):
+        """Zrusit ignoraci. Issue se objevi znovu, az ho detektor nahlasi."""
         if g.user_role not in ('admin', 'superadmin'):
             return jsonify({"error": "Forbidden"}), 403
         try:
             k = base64.b64decode(key_b64).decode()
         except Exception:
             return jsonify({"error": "Bad key"}), 400
+        state.remove_ignored(k)
         service.ignored_issues.discard(k)
-        service.save_ignored_issues()
-        return jsonify({"status": "ok"})
+        service.log_event("issue_unignore", f"{k} znovu sledováno uživatelem {g.username}")
+        return jsonify({"status": "ok", "ignored": False})
+
+    @bp.route('/api/issues/ignored', methods=['GET'])
+    @requires_auth
+    def api_issues_ignored_list():
+        """Co je ignorovane — aby to slo zpetne dohledat a zrusit."""
+        return jsonify({"ignored": state.list_ignored()})
 
     @bp.route('/api/issues/history', methods=['GET'])
     @requires_auth

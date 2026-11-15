@@ -2057,26 +2057,24 @@ function sysTogglePlugin(btn, pluginName, currentEnabled) {{
         except Exception as e: return f"Error: {e}", 0
 
     def load_ignored_issues(self):
-        if os.path.exists(IGNORED_FILE):
-            try:
-                with open(IGNORED_FILE, 'r') as f: return set(json.load(f))
-            except: return set()
-        return set()
+        """Zdrojem pravdy je DB — ignorace musí platit uz pri zapisu problemu,
+        a toho se z JSON souboru dosahnout nedalo. Stary soubor se jednorazove
+        prevezme, aby uzivatel neprisel o to, co uz ignoroval."""
+        try:
+            state.migrate_ignored_from_file(IGNORED_FILE)
+            return {row['key'] for row in state.list_ignored()}
+        except Exception as e:
+            logger.error(f"Nactení ignorovanych issue selhalo: {e}")
+            return set()
 
     def save_ignored_issues(self):
-        try:
-            with open(IGNORED_FILE, 'w') as f: json.dump(list(self.ignored_issues), f)
-        except: pass
+        """Ponechano kvuli volajicim; ukladat uz netreba, DB je zdroj pravdy."""
+        return
 
     def apply_ignored_issues(self):
+        """Osvezi lokalni kopii z DB (bezi periodicky z /api/status)."""
         try:
-            current_mtime = os.path.getmtime(IGNORED_FILE)
-            last_mtime = getattr(self, '_ignored_mtime', 0)
-            if current_mtime != last_mtime:
-                self.ignored_issues = self.load_ignored_issues()
-                self._ignored_mtime = current_mtime
-        except FileNotFoundError:
-            pass  # File doesn't exist yet, ignore
+            self.ignored_issues = {row['key'] for row in state.list_ignored()}
         except Exception as e:
             logger.error(f"Error syncing ignored issues: {e}")
 

@@ -376,6 +376,16 @@ def init_db():
                           value TEXT NOT NULL,
                           updated_at TEXT DEFAULT (datetime('now')))''')
 
+            # Trvale ignorovane issue. Drive to byl JSON soubor, ktery znal jen
+            # chat_service a filtroval se az pri VYPISU — detektor tentyz klic
+            # pri dalsim behu zalozil znovu a notifikace odesla. Ignorace proto
+            # musi byt videt uz pri zapisu (save_problem), ne az pri cteni.
+            c.execute('''CREATE TABLE IF NOT EXISTS ignored_issues
+                         (key TEXT PRIMARY KEY,
+                          reason TEXT DEFAULT '',
+                          created_by TEXT DEFAULT '',
+                          created_at TEXT DEFAULT (datetime('now')))''')
+
             c.execute('''CREATE TABLE IF NOT EXISTS suppress_rules
                          (id INTEGER PRIMARY KEY AUTOINCREMENT,
                           host_pattern TEXT NOT NULL,
