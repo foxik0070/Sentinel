@@ -592,6 +592,76 @@ class TestDetectorSelfCheck(unittest.TestCase):
         self.assertEqual(self.saved, [], "vypnutý detektor nechybí, je vypnutý")
 
 
+class TestPluginDirList(unittest.TestCase):
+    """plugin_dir smi byt seznam adresaru.
+
+    V Sentinelu zustava jen zaklad (system, services); zbytek detektoru se
+    nasazuje balickem sentinel-plugins do vlastniho adresare. Bez hledani ve
+    vice adresarich by se takovy detektor nenacetl a self-check by ho hlasil
+    jako chybejici.
+    """
+    DETECTOR_SRC = (
+        "class Detector:\n"
+        "    def __init__(self, name, config_params=None):\n"
+        "        self.name = name\n"
+        "    def process(self, lines, file_path):\n"
+        "        pass\n"
+    )
+
+    def setUp(self):
+        from sentinel import config, plugin_manager
+        self.cfg, self.pm = config, plugin_manager
+        self._root = tempfile.mkdtemp()
+        self.core = os.path.join(self._root, 'core')
+        self.pkg = os.path.join(self._root, 'pkg')
+        os.makedirs(self.core); os.makedirs(self.pkg)
+        self._orig = (config.DETECTORS, config.PLUGIN_DIR)
+
+    def tearDown(self):
+        self.cfg.DETECTORS, self.cfg.PLUGIN_DIR = self._orig
+        self.pm.active_plugins.clear()
+        shutil.rmtree(self._root, ignore_errors=True)
+
+    def _write(self, where, name):
+        with open(os.path.join(where, f'{name}.py'), 'w') as f:
+            f.write(self.DETECTOR_SRC)
+
+    def test_string_stays_single_directory(self):
+        """Puvodni zapis se chova jako driv."""
+        self.cfg.PLUGIN_DIR = self.core
+        self.assertEqual(self.pm._plugin_dirs(), [self.core])
+
+    def test_list_is_searched_in_order(self):
+        self.cfg.PLUGIN_DIR = [self.core, self.pkg]
+        self._write(self.pkg, 'port_detector')
+        self.assertEqual(self.pm._find_plugin('port_detector', self.pm._plugin_dirs()),
+                         os.path.join(self.pkg, 'port_detector.py'))
+
+    def test_first_directory_wins_on_name_clash(self):
+        """Pri shode jmen rozhoduje poradi — zaklad v Sentinelu ma prednost."""
+        self.cfg.PLUGIN_DIR = [self.core, self.pkg]
+        self._write(self.core, 'system_detector')
+        self._write(self.pkg, 'system_detector')
+        self.assertEqual(self.pm._find_plugin('system_detector', self.pm._plugin_dirs()),
+                         os.path.join(self.core, 'system_detector.py'))
+
+    def test_missing_everywhere_returns_none(self):
+        self.cfg.PLUGIN_DIR = [self.core, self.pkg]
+        self.assertIsNone(self.pm._find_plugin('detector_nikde', self.pm._plugin_dirs()))
+
+    def test_detectors_load_from_both_directories(self):
+        self.cfg.PLUGIN_DIR = [self.core, self.pkg]
+        self._write(self.core, 'system_detector')
+        self._write(self.pkg, 'port_detector')
+        self.cfg.DETECTORS = [
+            {'plugin': 'system_detector', 'match_pattern': 'system.log', 'enabled': True},
+            {'plugin': 'port_detector', 'match_pattern': 'ports.log', 'enabled': True},
+        ]
+        self.pm.load_plugins()
+        self.assertEqual({inst.name for _, inst in self.pm.active_plugins},
+                         {'system_detector', 'port_detector'})
+
+
 class TestMetricChartNoDualAxis(unittest.TestCase):
     """Detail metriky nesmí mít dvě osy y.
 

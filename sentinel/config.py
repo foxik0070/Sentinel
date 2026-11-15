@@ -5,7 +5,7 @@ import secrets
 from pathlib import Path
 
 # --- Technical Config ---
-VERSION = "2026.11.009"
+VERSION = "2026.11.010"
 
 def get_git_commit():
     try:
@@ -67,7 +67,9 @@ MAIN_LOG_FILE = "/var/log/sentinel/sentinel.log"
 OLLAMA_LOG_FILE = "/var/log/sentinel/sentinel-ollama.log"
 
 # ---> ZDE JE KLÍČOVÁ ZMĚNA 1: Přidána výchozí složka pro pluginy
-PLUGIN_DIR = "/opt/Sentinel/sentinel/plugins" 
+# Smi byt i seznam adresaru — v Sentinelu zustava jen zaklad, zbytek detektoru
+# se nasazuje balickem sentinel-plugins a prostredi jako HPC maji dalsi.
+PLUGIN_DIR = ["/opt/Sentinel/sentinel/plugins", "/opt/sentinel-plugins"]
 
 INSTANCE_NAME = "Unknown"
 DOCUMENTATION_URL = "https://sentinel-docs.foxik-iot.cz/"
@@ -1009,8 +1011,10 @@ def _validate_config(data: dict):
     # Cesty
     for path_key in ('log_dir', 'plugin_dir', 'data_dir'):
         p = data.get(path_key)
-        if p and not os.path.exists(p):
-            _w(f"{path_key} neexistuje: '{p}'", 'warning')
+        # plugin_dir smi byt i seznam adresaru (zaklad v Sentinelu + balicek + HPC)
+        for one in ([p] if isinstance(p, str) else (p or [])):
+            if one and not os.path.exists(one):
+                _w(f"{path_key} neexistuje: '{one}'", 'warning')
     # Hailo URL formát
     hailo = data.get('hailo_ollama', {})
     if isinstance(hailo, dict) and hailo.get('enabled') and not str(hailo.get('url', '')).startswith('http'):

@@ -52,6 +52,28 @@ def _report_load_result():
                           f"detektorů: {', '.join(missing)}")
 
 
+def _plugin_dirs():
+    """Adresare s detektory, v poradi hledani.
+
+    V Sentinelu zustava jen zaklad; zbytek detektoru se nasazuje balickem
+    sentinel-plugins do vlastniho adresare, a prostredi jako HPC maji dalsi.
+    Proto smi byt `plugin_dir` v config.yaml i seznam. Jediny retezec se
+    chova jako driv.
+    """
+    raw = getattr(config, "PLUGIN_DIR", None) or os.path.join(config.SCRIPT_DIR, "plugins")
+    dirs = [raw] if isinstance(raw, str) else list(raw)
+    return [d for d in dirs if d]
+
+
+def _find_plugin(p_name, dirs):
+    """Prvni adresar, ve kterem detektor je. Poradi rozhoduje pri shode jmen."""
+    for d in dirs:
+        path = os.path.join(d, f"{p_name}.py")
+        if os.path.exists(path):
+            return path
+    return None
+
+
 def load_plugins():
     """Initializes plugins based on config.DETECTORS and config.PLUGIN_DIR."""
     global active_plugins
@@ -66,7 +88,7 @@ def load_plugins():
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
 
-    plugin_dir = getattr(config, "PLUGIN_DIR", os.path.join(config.SCRIPT_DIR, "plugins"))
+    plugin_dirs = _plugin_dirs()
 
     for det_conf in config.DETECTORS:
         if not det_conf.get("enabled", True):
@@ -78,10 +100,11 @@ def load_plugins():
         if not p_name or not pattern:
             continue
 
-        plugin_path = os.path.join(plugin_dir, f"{p_name}.py")
+        plugin_path = _find_plugin(p_name, plugin_dirs)
 
-        if not os.path.exists(plugin_path):
-            utils.log_message(f"[!] PluginManager: Plugin file not found at '{plugin_path}'")
+        if not plugin_path:
+            utils.log_message(f"[!] PluginManager: Plugin '{p_name}.py' nenalezen v: "
+                              f"{', '.join(plugin_dirs)}")
             continue
 
         try:

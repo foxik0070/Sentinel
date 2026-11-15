@@ -1,5 +1,37 @@
 # Historie změn
 
+## [2026.11.010] - 2026-11-15
+
+**Souhrn:** Volitelné detektory jsou samostatný balíček, Sentinel si nechává jen základ.
+
+### Proč
+
+Detektory byly natvrdo součástí Sentinelu, takže každá jejich úprava znamenala vydat celý Sentinel — a naopak každé vydání Sentinelu přepsalo detektory, které si někdo doplnil. Repozitář `sentinel-plugins` přitom existoval, jen se s obsahem Sentinelu o tři měsíce rozešel.
+
+V Sentinelu zůstává **`base.py`** (odtud se re-exportuje `api.BaseDetector`) a dva detektory, bez kterých nemá smysl běžet: `system_detector` (jádro) a `services_detector` (systemd). Zbylých deset se přestěhovalo do `sentinel-plugins` a nasazuje se balíčkem do `/opt/sentinel-plugins`.
+
+### `plugin_dir` smí být seznam
+
+Dřív to byl jeden adresář, takže rozdělení nešlo. Nově:
+
+```yaml
+plugin_dir:
+  - /opt/Sentinel/sentinel/plugins   # základ ze Sentinelu
+  - /opt/sentinel-plugins            # balíček sentinel-plugins
+```
+
+Hledá se v uvedeném pořadí, při shodě jmen vyhraje adresář uvedený dřív. **Jediný řetězec funguje jako dřív**, takže konfigurace, které seznam nepoužívají, se nemusí měnit.
+
+Totéž prostředí už jednou potřebovalo HPC: jeho detektory mají vlastní repozitář a dosud se musely kopírovat do adresáře Sentinelu.
+
+> Pozor při nasazení: config, který detektor vyžaduje, ale soubor se nenajde ani v jednom adresáři, založí `SENTINEL|detectors_missing` (critical). Balíček `sentinel-plugins` je proto potřeba nainstalovat **dřív**, než se nasadí tohle vydání.
+
+### Testy
+
+Testy detektorů odešly s nimi do `sentinel-plugins` (ten má nově vlastní sadu). `TestAnomalyIgnore` ale u `port_detectoru` jen přebývalo — netýká se detektoru, ale `TELEMETRY_ANOMALY_IGNORE` v Sentinelu, takže zůstalo tady jako `tests/test_anomaly_ignore.py`.
+
+1266 → 1261 v Sentinelu, 10 v `sentinel-plugins`.
+
 ## [2026.11.009] - 2026-11-15
 
 **Souhrn:** Na Hailo vracejí JSON úlohy skutečně JSON a z odpovědí mizí řídicí tokeny.
