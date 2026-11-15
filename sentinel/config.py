@@ -5,7 +5,7 @@ import secrets
 from pathlib import Path
 
 # --- Technical Config ---
-VERSION = "2026.11.010"
+VERSION = "2026.11.011"
 
 def get_git_commit():
     try:
@@ -527,7 +527,11 @@ def load_config():
     _extra = data.get("ollama_extra_body", OLLAMA_EXTRA_BODY)
     OLLAMA_EXTRA_BODY = _extra if isinstance(_extra, dict) else {}
     LOG_DIR = data.get("log_dir", LOG_DIR)
-    PLUGIN_DIR = data.get("plugin_dir", PLUGIN_DIR) 
+    _pd = data.get("plugin_dir", PLUGIN_DIR)
+    # Spatny typ by jinak spadl az v plugin manageru pri os.path.join.
+    if isinstance(_pd, (str, os.PathLike)) or (
+            isinstance(_pd, (list, tuple)) and all(isinstance(x, (str, os.PathLike)) for x in _pd)):
+        PLUGIN_DIR = _pd 
     DATA_DIR = data.get("data_dir", DATA_DIR)
     KB_FILE_PATH = data.get("knowledge_base_file", KB_FILE_PATH)
     CHROMADB_PATH = os.path.join(DATA_DIR, "chroma_db")
@@ -904,8 +908,17 @@ def load_config():
     global AI_TIMEOUT_SECONDS
     AI_TIMEOUT_SECONDS = int(data.get("ai_timeout_seconds", AI_TIMEOUT_SECONDS))
 
-    _validate_config(data)
-    _schema_validate(data)
+    # Validace a kontrola schematu jsou DIAGNOSTIKA. Vyjimka odsud by sestrelila
+    # import sentinel.config, a tim celou aplikaci — se systemd Restart=always
+    # vznikne smycka bez webu a bez prijmu od agentu. Presne to udelal seznam
+    # v plugin_dir pred v2026.11.011: preklep v configu shodil sluzbu.
+    for _check in (_validate_config, _schema_validate):
+        try:
+            _check(data)
+        except Exception as _e:
+            import logging as _log
+            _log.getLogger(__name__).warning(
+                f"[config] {_check.__name__} selhala ({_e}) — konfigurace se pouzije dal")
 
     # Fallback if config is missing a default prompt
     if "default" not in PROMPTS:
@@ -1008,12 +1021,27 @@ def _validate_config(data: dict):
             _w(f"Neplatný web.port: {port}", 'error')
     except (TypeError, ValueError):
         _w("web.port není číslo", 'error')
-    # Cesty
+    # Cesty. plugin_dir smi byt i seznam adresaru (zaklad v Sentinelu + balicek
+    # + sady pro dane pracoviste); ostatni jen retezec. Cokoliv jineho je
+    # preklep — rekneme to a jdeme dal, misto abychom na tom spadli.
     for path_key in ('log_dir', 'plugin_dir', 'data_dir'):
         p = data.get(path_key)
-        # plugin_dir smi byt i seznam adresaru (zaklad v Sentinelu + balicek + HPC)
-        for one in ([p] if isinstance(p, str) else (p or [])):
-            if one and not os.path.exists(one):
+        if p is None:
+            continue
+        if isinstance(p, (str, os.PathLike)):
+            paths = [p]
+        elif path_key == 'plugin_dir' and isinstance(p, (list, tuple)):
+            paths = list(p)
+        elif isinstance(p, (list, tuple)):
+            _w(f"{path_key} musí být řetězec, ne seznam — použije se výchozí hodnota", 'error')
+            continue
+        else:
+            _w(f"{path_key} musí být řetězec, ne {type(p).__name__} — použije se výchozí hodnota", 'error')
+            continue
+        for one in paths:
+            if not isinstance(one, (str, os.PathLike)):
+                _w(f"{path_key} obsahuje položku, která není cesta: {one!r}", 'error')
+            elif one and not os.path.exists(one):
                 _w(f"{path_key} neexistuje: '{one}'", 'warning')
     # Hailo URL formát
     hailo = data.get('hailo_ollama', {})

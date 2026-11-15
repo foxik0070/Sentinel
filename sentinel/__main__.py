@@ -104,11 +104,37 @@ def dump_stack_traces():
         
     utils.log_message(" --- DIAGNOSTIC THREAD DUMP END ---")
 
+def _check_config():
+    """Vypise nalezy validace configu a vrati navratovy kod.
+
+    Ansible si config overoval importem sentinel.config, coz je ale presne to,
+    co nestaci: validace je zamerne nekriticka, takze import projde i tehdy,
+    kdyz je config spatne. Tohle rekne CO je spatne, jeste pred restartem.
+    """
+    exists = config.CONFIG_PATH.exists()
+    if not exists:
+        print(f"[error] Soubor {config.CONFIG_PATH} neexistuje — běží se na výchozích hodnotách.")
+    warns = getattr(config, "VALIDATION_WARNINGS", []) or []
+    bad = [w for w in warns if w.get("level") in ("error", "critical")] or (not exists)
+    for w in warns:
+        print(f"[{w.get('level', 'warning')}] {w.get('message', '')}")
+    if exists and not warns:
+        print(f"Konfigurace {config.CONFIG_PATH} je v pořádku.")
+    print(f"\nplugin_dir: {config.PLUGIN_DIR}")
+    print(f"detektorů v configu: {len(config.DETECTORS or [])}")
+    return 1 if bad else 0
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-e", "--external", action="store_true", help="Use external Ollama API")
     parser.add_argument("-d", "--debug", action="store_true", help="Disable Teams sending")
+    parser.add_argument("--check-config", action="store_true",
+                        help="Validate config.yaml and exit (0 = OK, 1 = errors found)")
     args = parser.parse_args()
+
+    if args.check_config:
+        raise SystemExit(_check_config())
     
     if args.external: config.ARGS["EXTERNAL_OLLAMA"] = True
     if args.debug: config.ARGS["DEBUG_MODE"] = True

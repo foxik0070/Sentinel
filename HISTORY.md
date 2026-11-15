@@ -1,5 +1,31 @@
 # Historie změn
 
+## [2026.11.011] - 2026-11-15
+
+**Souhrn:** Chyba v konfiguraci už nesmí shodit službu.
+
+### Co se stalo
+
+`plugin_dir` zapsaný jako seznam vyhodil `TypeError` přímo ve `_validate_config()`. Ta se volá při importu `sentinel.config`, takže výjimka sestřelila celou aplikaci — a se `systemd Restart=always` z toho byla smyčka restartů bez webu a bez příjmu od agentů. Výpadek ~1,5 minuty.
+
+Docstring té funkce přitom od začátku sliboval „varuje na problémy ale nepadá".
+
+### Dvě opravy, ne jedna
+
+**Validace nesmí shodit start, ať je v configu cokoliv.** Volání `_validate_config()` i `_schema_validate()` je nově ošetřené: když samy selžou, zaloguje se to a konfigurace se použije dál. Diagnostika nemá právo zabít to, co diagnostikuje.
+
+**Cesty se kontrolují typově.** `plugin_dir` smí být řetězec nebo seznam řetězců, `log_dir` a `data_dir` jen řetězec. Cokoliv jiného je překlep — ohlásí se jako `error` a pokračuje se s výchozí hodnotou. Špatný typ se navíc vůbec nedostane do `PLUGIN_DIR`, jinak by spadl až plugin manager při `os.path.join()`.
+
+### `--check-config`
+
+```bash
+python3 -m sentinel --check-config
+```
+
+Vypíše nálezy validace, `plugin_dir` a počet detektorů; vrací `1`, když našel chybu nebo config chybí. Ansible si config ověřoval importem `sentinel.config`, jenže to je právě to, co nestačí — validace je záměrně nekritická, takže import projde i u špatného configu.
+
+Testy 1 261 → **1 275**.
+
 ## [2026.11.010] - 2026-11-15
 
 **Souhrn:** Volitelné detektory jsou samostatný balíček, Sentinel si nechává jen základ.

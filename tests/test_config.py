@@ -182,5 +182,69 @@ class TestConfigLoad(unittest.TestCase):
             config.SNAPSHOT_LOGS = orig
 
 
+
+
+class TestConfigValidationNeverCrashes(TestConfigLoad):
+    """Validace configu je diagnostika — nesmi shodit import, at je v configu cokoliv.
+
+    Preklep v plugin_dir (seznam misto retezce) vyhodil TypeError primo ve
+    _validate_config. Protoze se vola pri importu sentinel.config, sestrelil
+    celou aplikaci a se systemd Restart=always z toho byla smycka bez webu
+    i bez prijmu od agentu.
+    """
+
+    def _validate(self, data):
+        from sentinel import config
+        config.VALIDATION_WARNINGS = []
+        config._validate_config(data)
+        return config.VALIDATION_WARNINGS
+
+    def test_plugin_dir_list_is_accepted(self):
+        """Seznam je u plugin_dir platny zapis (v2026.11.010 a vys)."""
+        warns = self._validate({'plugin_dir': ['/nekde', '/jinde']})
+        msgs = ' '.join(w['message'] for w in warns)
+        self.assertNotIn('musí být řetězec', msgs)
+        self.assertIn('/nekde', msgs)   # jen upozorneni, ze neexistuje
+
+    def test_plugin_dir_wrong_type_warns_instead_of_crashing(self):
+        for value in (5, {'a': 1}, True):
+            with self.subTest(value=value):
+                warns = self._validate({'plugin_dir': value})
+                self.assertTrue(any(w['level'] == 'error' for w in warns))
+
+    def test_log_dir_list_is_rejected_but_does_not_crash(self):
+        """Seznam dava smysl jen u plugin_dir."""
+        warns = self._validate({'log_dir': ['/a', '/b']})
+        self.assertTrue(any('musí být řetězec' in w['message'] for w in warns))
+
+    def test_none_is_not_reported(self):
+        """Chybejici klic neni chyba cesty — jinych varovani si nevsimame."""
+        warns = self._validate({'plugin_dir': None})
+        self.assertFalse([w for w in warns if 'plugin_dir' in w['message']])
+
+    def test_load_config_survives_broken_validation(self):
+        """I kdyby validace sama selhala, konfigurace se musi nacist dal."""
+        from sentinel import config
+        orig = config._validate_config
+        try:
+            def boom(_data):
+                raise RuntimeError("rozbita validace")
+            config._validate_config = boom
+            config.load_config()      # nesmi vyhodit
+        finally:
+            config._validate_config = orig
+
+    def test_plugin_dir_keeps_default_on_bad_type(self):
+        """Spatny typ se nesmi dostat do PLUGIN_DIR, jinak spadne az plugin manager."""
+        for value, expected in ((42, '/puvodni'),
+                                ('/nova', '/nova'),
+                                (['/a', '/b'], ['/a', '/b']),
+                                ([1, 2], '/puvodni')):
+            with self.subTest(value=value):
+                config.PLUGIN_DIR = '/puvodni'
+                self._write_and_load({'plugin_dir': value})
+                self.assertEqual(config.PLUGIN_DIR, expected)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
