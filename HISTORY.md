@@ -1,5 +1,35 @@
 # Historie změn
 
+## [2026.11.009] - 2026-11-15
+
+**Souhrn:** Na Hailo vracejí JSON úlohy skutečně JSON a z odpovědí mizí řídicí tokeny.
+
+### JSON úlohy potřebují system zprávu
+
+`hailo-ollama` ignoruje `format` i `response_format`. Remediace a klasifikace závažnosti proto dostávaly odpověď zabalenou v markdownu nebo s textem okolo a `process_ai_proposal()` ji neuparsoval — návrh opravy se neukázal, přestože model odpověděl.
+
+Jediná páka, která na `hailo-ollama` zabírá, je system zpráva. Nově se přidává podle `context.source`: pro `remediation_request` „single JSON object and nothing else", pro `severity_classify` „exactly one word". Běžná analýza žádnou nedostává, ta se nemá měnit.
+
+Zprávy musí být **jednořádkové** — LF v `content` rozbíjí vnitřní rendering `hailo-ollamy` stejně, jako to už bylo ošetřené u uživatelské zprávy.
+
+Měřeno na rpi5 s `gemma4:e2b` a produkčním promptem `remediation`:
+
+| případ | bez system zprávy | se system zprávou |
+|---|---|---|
+| failing sectors /dev/sda | 24,5 s, není JSON | 6,4 s, platný JSON |
+| failed unit | 6,6 s, není JSON | 5,4 s, platný JSON |
+| disk 91 % | 9,3 s, není JSON | 6,4 s, platný JSON |
+
+### Řídicí tokeny ven
+
+Malé modely občas propustí vlastní řídicí značku do textu odpovědi — `<turn|>` u gemma4, `<|im_end|>` u Qwen VLM. Odstraňují se teď ze všech odpovědí, ne jen z Hailo cesty. Filtr je úzký (`<…|>`), takže běžného `<br>` ani `5 < 10 | x >` se nedotkne.
+
+> Totéž už jednou vzniklo přímo na nasazeném stroji a nasazení v2026.11.008 to přepsalo. Teď je to v repozitáři i s testy.
+
+Navržené příkazy zůstávají dál **jen ke schválení**. Model i s opravou navrhuje věci typu `rm -rf`, automatické spouštění by bylo nebezpečné.
+
+Testy 1260 → 1266.
+
 ## [2026.11.008] - 2026-11-13
 
 **Souhrn:** Rozepsaný komentář přežije automatické obnovení seznamu.

@@ -111,6 +111,82 @@ class TestHailoOllamaRouting(unittest.TestCase):
         self.assertNotIn("8000", posted_to[0])
 
 
+class TestHailoJsonTasks(unittest.TestCase):
+    """System zprava pro JSON ulohy a cisteni ridicich tokenu.
+
+    hailo-ollama ignoruje `format` i `response_format`, takze bez system
+    zpravy vraci JSON ulohy odpoved zabalenou v markdownu a
+    actions.process_ai_proposal ji neuparsuje.
+    """
+
+    def _run(self, context, content="{}"):
+        """Spusti ulohu pres hailo cestu a vrati (odeslany payload, text predany dal)."""
+        from sentinel import ollama_service, utils, actions
+        orig = (config.HAILO_OLLAMA_ENABLED, config.HAILO_OLLAMA_URL)
+        config.HAILO_OLLAMA_ENABLED = True
+        config.HAILO_OLLAMA_URL = "http://localhost:8000/v1/chat/completions"
+
+        sent = {}
+        forwarded = []
+
+        def fake_post(url, **kw):
+            sent.update(kw.get("json") or {})
+            resp = MagicMock()
+            resp.json.return_value = {"choices": [{"message": {"content": content}}]}
+            resp.raise_for_status = lambda: None
+            return resp
+
+        try:
+            with patch("requests.post", side_effect=fake_post), \
+                 patch.object(actions, "process_ai_proposal",
+                              side_effect=lambda ctx, t: forwarded.append(t)), \
+                 patch.object(ollama_service, "_apply_auto_severity",
+                              side_effect=lambda ctx, t: forwarded.append(t)), \
+                 patch.object(utils, "send_to_teams",
+                              side_effect=lambda t, ch: forwarded.append(t)), \
+                 patch.object(utils, "ollama_logger") as mock_log:
+                mock_log.info = lambda *a, **kw: None
+                ollama_service.process_single_task(
+                    {"text": "disk 91 %", "channel": "general", "context": context})
+        finally:
+            config.HAILO_OLLAMA_ENABLED, config.HAILO_OLLAMA_URL = orig
+        return sent, forwarded
+
+    def test_remediation_gets_json_system_message(self):
+        sent, _ = self._run({"source": "remediation_request"})
+        roles = [m["role"] for m in sent["messages"]]
+        self.assertEqual(roles, ["system", "user"])
+        self.assertIn("JSON", sent["messages"][0]["content"])
+
+    def test_severity_gets_one_word_system_message(self):
+        sent, _ = self._run({"source": "severity_classify"})
+        self.assertEqual(sent["messages"][0]["role"], "system")
+        self.assertIn("one word", sent["messages"][0]["content"])
+
+    def test_plain_task_has_no_system_message(self):
+        """Bezna analyza ma zustat beze zmeny — system zprava je jen pro JSON ulohy."""
+        sent, _ = self._run(None, content="vse v poradku")
+        self.assertEqual([m["role"] for m in sent["messages"]], ["user"])
+
+    def test_system_messages_are_single_line(self):
+        """LF v content rozbije hailo-ollamu (parse_error.101), stejne jako u user zpravy."""
+        from sentinel import ollama_service
+        for src, msg in ollama_service._HAILO_SYSTEM.items():
+            self.assertNotIn("\n", msg, f"{src} ma viceradkovou system zpravu")
+            self.assertNotIn("\r", msg, f"{src} ma viceradkovou system zpravu")
+
+    def test_control_tokens_stripped_before_parsing(self):
+        """gemma4 propousti <turn|>, Qwen VLM <|im_end|> — dal uz jit nesmi."""
+        _, forwarded = self._run({"source": "remediation_request"},
+                                 content='<turn|>{"cmd": "ls"}<|im_end|>')
+        self.assertEqual(forwarded, ['{"cmd": "ls"}'])
+
+    def test_ordinary_markup_survives(self):
+        """Filtr nesmi zerat bezny text odpovedi."""
+        _, forwarded = self._run(None, content="hodnota je < 10 | ok >")
+        self.assertEqual(forwarded, ["hodnota je < 10 | ok >"])
+
+
 class TestHailoModelsArgs(unittest.TestCase):
     """hailo_models.py argparse — URL a models-dir konfigurace."""
 

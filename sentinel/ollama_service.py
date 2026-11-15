@@ -1,3 +1,4 @@
+import re
 import os
 import sys
 import time
@@ -73,6 +74,20 @@ def _record_tokens(data: dict):
     except Exception:
         pass
 
+# System zpravy pro hailo-ollamu podle typu ulohy. hailo-ollama ignoruje
+# format i response_format, takze system zprava je jedina paka, aby JSON
+# ulohy vracely jen JSON. Musi byt jednoradkove — LF v content rozbiji
+# vnitrni rendering hailo-ollamy (viz safe_text nize).
+_HAILO_SYSTEM = {
+    "remediation_request": "Reply with a single JSON object and nothing else. No prose, no markdown.",
+    "severity_classify": "Reply with exactly one word: critical, high, medium or low.",
+}
+
+# Ridici tokeny, ktere male modely obcas propusti do odpovedi
+# (gemma4 <turn|>, Qwen VLM <|im_end|>).
+_CONTROL_TOKENS = re.compile(r"<\|?[a-z_]+\|>")
+
+
 def process_single_task(item):
     """Agnostic Task Processor. Does not care what it processes, only relies on channel config."""
     _ai_timeout = int(getattr(config, "AI_TIMEOUT_SECONDS", 180))
@@ -102,11 +117,13 @@ def process_single_task(item):
                 # Hailo AI HAT 2+ — hailo-ollama OpenAI-compatible API
                 # hailo-ollama bug: LF v message content způsobí parse_error.101 při vnitřním rendering
                 safe_text = prompt_text.replace('\n', ' ').replace('\r', ' ')
+                messages = [{"role": "user", "content": safe_text}]
+                _sys = _HAILO_SYSTEM.get((context or {}).get("source"))
+                if _sys:
+                    messages.insert(0, {"role": "system", "content": _sys})
                 payload = {
                     "model": config.HAILO_OLLAMA_MODEL,
-                    "messages": [
-                        {"role": "user", "content": safe_text}
-                    ],
+                    "messages": messages,
                     "stream": False,
                     "temperature": 0.2,
                     "max_tokens": 200 if line_type == "ai_request" else 512,
@@ -147,7 +164,7 @@ def process_single_task(item):
                 if res.returncode != 0: raise RuntimeError(res.stderr)
                 text = res.stdout
 
-        text = text.strip()
+        text = _CONTROL_TOKENS.sub("", text).strip()
         if text:
             utils.ollama_logger.info(f"CH: {target_channel} | RESP: {len(text)} chars")
             if context and context.get("source") == "remediation_request":
