@@ -12,6 +12,11 @@ paramiko==3.5.1
 # MQTT telemetrie do Home Assistantu. install.sh ji instaloval zvlast, takze
 # u rucni instalace fungovala a u balicku (vlastni venv) chybela.
 paho-mqtt==2.1.0
+# Minifikace statickych souboru pri startu. install.sh je instaloval zvlast,
+# takze u balicku chybely — sablona pak odkazovala na .min.js, ktere nikdo
+# nevyrobil, a UI zustalo prazdne.
+rjsmin==1.2.4
+rcssmin==1.2.1
 numpy==2.2.4
 chromadb==1.5.9
 python-socketio==5.16.2

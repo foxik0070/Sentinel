@@ -1,5 +1,30 @@
 # Historie změn
 
+## [2026.11.014] - 2026-11-15
+
+**Souhrn:** Chybějící minifikátor už nemůže nechat prázdné UI. Nabídka akcí přežije obnovení.
+
+### Prázdná stránka kvůli volitelné závislosti
+
+Šablona načítá `script-*.min.js`. Když se minifikace přeskočí a soubory neexistují, Flask na ně vrátí HTML chybovou stránku, prohlížeč ji odmítne spustit kvůli MIME typu — a **nenačte se žádný skript**, takže aplikace zůstane prázdná.
+
+Stalo se to při nasazení z balíčku: `rjsmin` a `rcssmin` instaloval jen `install.sh`, v `requirements.txt` nebyly, takže je venv balíčku neměl. Stejná třída jako `paho-mqtt` ve v2026.11.012 — závislost, bez které se to „jen" chová hůř, až na to, že tahle shodí celé UI.
+
+Dvě opravy:
+
+- `rjsmin` a `rcssmin` jsou v `requirements.txt`
+- když minifikace **přesto** selže, zkopírují se nezmenšené soubory pod očekávanými jmény. Pomalejší je lepší než rozbité; výpis to řekne (`nezmenšené kopie: 6/6`).
+
+Test navíc ověřuje, že každý `.min.js`, na který šablona odkazuje, někdo opravdu vyrábí.
+
+### Nabídka akcí se zavírala sama
+
+Modal s issues se překresluje každé 3 sekundy. Nově otevřená nabídka akcí to nepřežila — zavřela se dřív, než se dalo kliknout. Obnova ji teď respektuje, stejně jako už respektovala otevřený výběr barvy, rozbalený detail a rozepsaný komentář.
+
+> Odhaleno kontrolou ve skutečném prohlížeči. HTML i JavaScript byly samy o sobě v pořádku — vadil až běh v čase, úplně stejně jako u komentářů ve v2026.11.008.
+
+Testy 1 291 → **1 294**.
+
 ## [2026.11.013] - 2026-11-15
 
 **Souhrn:** Ignorovat teď opravdu znamená ignorovat. A akce u issue dávají pořadí.

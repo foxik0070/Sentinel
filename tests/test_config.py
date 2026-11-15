@@ -268,3 +268,41 @@ class TestMqttDependency(unittest.TestCase):
         from sentinel import utils
         self.assertTrue(hasattr(utils, 'MQTT_AVAILABLE'),
                         "utils musi hlasit, zda je knihovna k dispozici")
+
+
+class TestStaticAssetsNeverMissing(unittest.TestCase):
+    """Chybejici minifikator nesmi znamenat prazdne UI.
+
+    Sablona odkazuje na .min.js. Kdyz je minifikace preskocena a soubor
+    neexistuje, Flask vrati HTML chybovou stranku s MIME text/html, prohlizec
+    ji odmitne spustit a nenacte se ZADNY skript — aplikace je prazdna.
+    Stalo se to po prechodu na balicek, protoze rjsmin byl jen v install.sh.
+    """
+
+    def _main_src(self):
+        return open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                 'sentinel', '__main__.py'), encoding='utf-8').read()
+
+    def test_minifiers_in_requirements(self):
+        req = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                'requirements.txt'), encoding='utf-8').read()
+        self.assertRegex(req, r'(?m)^rjsmin==')
+        self.assertRegex(req, r'(?m)^rcssmin==')
+
+    def test_fallback_copies_unminified(self):
+        """Pri selhani se ma zkopirovat nezmensena verze, ne jen zalogovat."""
+        src = self._main_src()
+        self.assertIn('nezmenšené kopie', src)
+
+    def test_every_template_min_asset_is_generated(self):
+        """Co sablona nacita jako .min.js, musi nekdo vyrobit — jinak 404."""
+        import re
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        tpl = open(os.path.join(root, 'sentinel', 'templates', 'index.html'), encoding='utf-8').read()
+        wanted = set(re.findall(r"filename='((?:script|i18n)[-\w]*\.min\.js)'", tpl))
+        src = self._main_src()
+        for name in wanted:
+            with self.subTest(asset=name):
+                static_file = os.path.join(root, 'sentinel', 'static', name)
+                self.assertTrue(name in src or os.path.exists(static_file),
+                                f"{name} se nikde negeneruje ani neexistuje")

@@ -181,18 +181,35 @@ def main():
         utils.log_message(f" CRITICAL RAG FAILURE: {e}")
 
     # --- Minifikace statických souborů ---
+    # Sablona odkazuje na .min.js. Kdyz minifikace selze a soubor neexistuje,
+    # prohlizec dostane 404 (a od Flasku HTML chybove stranky s MIME text/html),
+    # takze se NENACTE ZADNY skript a UI je prazdne. Proto se pri selhani
+    # zkopiruje nezmensena verze — pomalejsi je lepsi nez rozbite.
+    from pathlib import Path
+    _static = Path(__file__).parent / 'static'
+    _assets = [('script-core.js', 'script-core.min.js'),
+               ('script-modals.js', 'script-modals.min.js'),
+               ('script-agents.js', 'script-agents.min.js'),
+               ('script-ui.js', 'script-ui.min.js'),
+               ('i18n.js', 'i18n.min.js'),
+               ('style.css', 'style.min2.css')]
     try:
         import rjsmin, rcssmin
-        from pathlib import Path
-        _static = Path(__file__).parent / 'static'
-        for _f in ['script-core.js', 'script-modals.js', 'script-agents.js', 'script-ui.js', 'i18n.js']:
-            _src = (_static / _f).read_text()
-            (_static / _f.replace('.js', '.min.js')).write_text(rjsmin.jsmin(_src))
-        _css = (_static / 'style.css').read_text()
-        (_static / 'style.min2.css').write_text(rcssmin.cssmin(_css))
+        for _src_name, _dst_name in _assets:
+            _text = (_static / _src_name).read_text()
+            _out = rcssmin.cssmin(_text) if _src_name.endswith('.css') else rjsmin.jsmin(_text)
+            (_static / _dst_name).write_text(_out)
         print(f"[{datetime.now().strftime('%H:%M:%S')}] Static assets minified OK")
     except Exception as _e:
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] Minification skipped: {_e}")
+        _copied = 0
+        for _src_name, _dst_name in _assets:
+            try:
+                (_static / _dst_name).write_text((_static / _src_name).read_text())
+                _copied += 1
+            except Exception:
+                pass
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] Minification skipped ({_e}); "
+              f"nezmenšené kopie: {_copied}/{len(_assets)}")
 
     # --- Start Services ---
     state.init_db()

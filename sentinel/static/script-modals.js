@@ -88,7 +88,10 @@ async function refreshModalIssuesContent(isAuto = false) {
         // dřív, než se stihly zobrazit.
         const aiResult = bodyEl && bodyEl.querySelector('#batch-ai-result, #correlate-ai-result, #auto-cluster-result');
         const openSelect = bodyEl && bodyEl.contains(document.activeElement) && document.activeElement.tagName === 'SELECT';
-        if (focusedInput || anyInputWithText || openPicker || openDetail || aiResult || openSelect) return;
+        // 395: otevřená nabídka akcí — uživatel vybírá, co s issue udělat.
+        // Bez tohohle ji překreslení po 3 s zavřelo dřív, než stihl kliknout.
+        const openMenu = bodyEl && bodyEl.querySelector('.issue-menu[style*="display: block"], .issue-menu[style*="display:block"]');
+        if (focusedInput || anyInputWithText || openPicker || openDetail || aiResult || openSelect || openMenu) return;
     }
 
     if (!isAuto) {
