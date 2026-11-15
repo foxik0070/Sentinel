@@ -9,6 +9,9 @@ requests==2.32.3
 watchdog==6.0.0
 Markdown==3.10.2
 paramiko==3.5.1
+# MQTT telemetrie do Home Assistantu. install.sh ji instaloval zvlast, takze
+# u rucni instalace fungovala a u balicku (vlastni venv) chybela.
+paho-mqtt==2.1.0
 numpy==2.2.4
 chromadb==1.5.9
 python-socketio==5.16.2

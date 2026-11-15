@@ -4291,7 +4291,11 @@ async function openIntegrationModal(name) {
 
     let rows = '';
     if (name === 'mqtt') {
-        const st = details.enabled ? (details.connected ? t('int_connected') : t('int_disconnected')) : t('disabled_status');
+        // Chybejici knihovna neni totez co nedostupny broker — kazde se resi jinak.
+        let st;
+        if (!details.enabled) st = t('disabled_status');
+        else if (details.library_available === false) st = t('mqtt_lib_missing');
+        else st = details.connected ? t('int_connected') : t('int_disconnected');
         rows = TR(t('int_status'), statusDot(details.enabled && details.connected) + st)
              + TR(t('conn_listen'), `${details.host}:${details.port}`)
              + TR(t('int_user'), details.user || '—')

@@ -86,6 +86,9 @@ def create_blueprint(service):
             return jsonify({
                 "enabled": getattr(config, 'MQTT_ENABLED', False),
                 "connected": connected,
+                # Bez teto informace vypada chybejici knihovna stejne jako
+                # nedostupny broker — a resi se uplne jinak.
+                "library_available": getattr(utils, 'MQTT_AVAILABLE', False),
                 "host": getattr(config, 'MQTT_HOST', ''),
                 "port": getattr(config, 'MQTT_PORT', 1883),
                 "user": getattr(config, 'MQTT_USER', '') or '',

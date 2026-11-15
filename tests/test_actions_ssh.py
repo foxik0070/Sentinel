@@ -172,3 +172,48 @@ class TestFixAttemptRecording(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
+
+
+class TestSshTargetResolution(unittest.TestCase):
+    """Prikaz musi jit na STROJ, ne na nazev skupiny.
+
+    Akce #557: zachyt mel cluster='OTHER' (vychozi pro hosty bez mapovani)
+    a node='rpi'. Do SSH se predaval cluster, takze se spustilo `ssh other`
+    a skoncilo to na "Could not resolve hostname other".
+    """
+
+    def setUp(self):
+        from sentinel import actions, config
+        self.actions, self.config = actions, config
+        self._orig = getattr(config, 'INFRASTRUCTURE_MAPPING', [])
+
+    def tearDown(self):
+        self.config.INFRASTRUCTURE_MAPPING = self._orig
+
+    def test_node_wins_over_group_cluster(self):
+        self.config.INFRASTRUCTURE_MAPPING = []
+        target, why = self.actions._resolve_ssh_target('OTHER', 'rpi')
+        self.assertEqual(target, 'rpi')
+        self.assertIn('node', why)
+
+    def test_group_without_node_is_refused(self):
+        """Lepsi srozumitelne odmitnuti nez SSH na nazev skupiny."""
+        self.config.INFRASTRUCTURE_MAPPING = []
+        self.assertIsNone(self.actions._resolve_ssh_target('OTHER', None)[0])
+        self.assertIsNone(self.actions._resolve_ssh_target('INFRA', None)[0])
+
+    def test_mapping_has_priority(self):
+        self.config.INFRASTRUCTURE_MAPPING = [{'name': 'karolina', 'mgmt_node': 'mgmt.karolina'}]
+        self.assertEqual(self.actions._resolve_ssh_target('karolina', 'login1')[0], 'mgmt.karolina')
+
+    def test_localhost_stays_local(self):
+        """Interni diagnostika serveru se nesmi rozbit."""
+        self.config.INFRASTRUCTURE_MAPPING = []
+        for c in ('localhost', 'manual', ''):
+            with self.subTest(cluster=c):
+                self.assertEqual(self.actions._resolve_ssh_target(c, None)[0], 'localhost')
+
+    def test_unmapped_cluster_used_as_hostname(self):
+        """Puvodni chovani pro hostname v poli cluster zustava."""
+        self.config.INFRASTRUCTURE_MAPPING = []
+        self.assertEqual(self.actions._resolve_ssh_target('rpi', None)[0], 'rpi')

@@ -291,21 +291,57 @@ def _record_fix_attempt_for_action(action_id, command, mgmt_node, failed=False,
         utils.log_message(f"[486] Nelze zaznamenat pokus o opravu: {e}")
 
 
-def run_ssh_command_real(cluster, command, action_id=None, timeout: int = 30, internal: bool = False):
-    """internal=True: hardcoded read-only diagnostika ze serveru — přeskočí allowlist,
-    ale ne dry-run guard. Nikdy nepoužívat pro příkazy odvozené z user inputu."""
-    mgmt_node = "localhost"
-    found = False
+# Nazvy clusteru, ktere neoznacuji stroj. "OTHER" je vychozi cluster pro hosty
+# bez mapovani, takze na instanci bez infrastructure_mapping skoncil kazdy
+# prikaz pokusem o `ssh other` — hledal se stroj pojmenovany jako skupina.
+_GROUP_NAMES = {"OTHER", "INFRA", "UNKNOWN"}
+# Tyhle naopak znamenaji "spustit tady" (interni diagnostika serveru).
+_LOCAL_NAMES = {"", "LOCALHOST", "MANUAL"}
 
+
+def _resolve_ssh_target(cluster, node=None):
+    """Kam prikaz poslat: mapovani clusteru → lokalne → node akce → cluster.
+
+    Vraci (cil, duvod). Cil je None, kdyz zadna z moznosti nedava stroj —
+    srozumitelne odmitnuti je lepsi nez SSH na nazev skupiny a cekani na
+    "Could not resolve hostname".
+    """
     for mapping in getattr(config, "INFRASTRUCTURE_MAPPING", []):
         if mapping.get("name") == cluster:
-            mgmt_node = mapping.get("mgmt_node", "localhost")
-            found = True
-            break
+            return mapping.get("mgmt_node", "localhost"), "infrastructure_mapping"
 
-    # No cluster mapping — use the cluster value as a direct SSH hostname
-    if not found and cluster not in ("UNKNOWN", "localhost", "manual", ""):
-        mgmt_node = cluster
+    c = str(cluster or "").upper()
+    if c in _LOCAL_NAMES:
+        return "localhost", "lokalne"
+
+    # Bez mapovani je skutecny stroj v `node` zachytu, ne v nazvu clusteru.
+    if node and str(node).upper() not in _GROUP_NAMES | _LOCAL_NAMES:
+        return node, "node akce"
+
+    if c not in _GROUP_NAMES:
+        return cluster, "cluster jako hostname"
+
+    return None, "neznamy cil"
+
+
+def run_ssh_command_real(cluster, command, action_id=None, timeout: int = 30,
+                         internal: bool = False, node=None):
+    """internal=True: hardcoded read-only diagnostika ze serveru — přeskočí allowlist,
+    ale ne dry-run guard. Nikdy nepoužívat pro příkazy odvozené z user inputu."""
+    # Node z ulozene akce, kdyz ho volajici nepredal — tam je skutecny hostname.
+    if node is None and action_id is not None:
+        _act = state.get_action(action_id)
+        if _act:
+            node = _act.get("node")
+
+    mgmt_node, target_reason = _resolve_ssh_target(cluster, node)
+    if mgmt_node is None:
+        err = (f"[BLOCKED] Neznam cilovy host: cluster='{cluster}' je skupina, ne stroj, "
+               f"a akce nema node. Doplnte infrastructure_mapping nebo node.")
+        utils.log_message(f"[!] {err}")
+        if action_id is not None:
+            state.update_action_status(action_id, "failed", output=err)
+        return False, err
 
     # Per-action dry-run guard: if the stored action is mode='dry_run' OR the
     # safety classifier marks the command as block-worthy, never SSH-execute.
@@ -324,11 +360,12 @@ def run_ssh_command_real(cluster, command, action_id=None, timeout: int = 30, in
 
     if forced_dry_run or global_dry_run:
         cause = dry_run_cause or "config.DEBUG_MODE"
-        dry_run_output = f"[DRY RUN: {cause}] Would execute on {mgmt_node}: {command}"
+        dry_run_output = (f"[DRY RUN: {cause}] Would execute on {mgmt_node} "
+                          f"(cil dle: {target_reason}): {command}")
         utils.log_message(f"[DRY RUN] ({cause}) {mgmt_node}: {command}")
         dry_run_msg = (
             f"🛡️ <b>DRY RUN EXECUTION</b><br>"
-            f"<b>Mgmt Node:</b> {mgmt_node}<br>"
+            f"<b>Mgmt Node:</b> {mgmt_node} <i>({target_reason})</i><br>"
             f"<b>Command:</b> <code>{command}</code><br>"
             f"<b>Cause:</b> {cause}<br>"
             f"<i>Command was NOT executed (Safety Mode).</i>"

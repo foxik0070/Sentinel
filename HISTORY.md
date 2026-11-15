@@ -1,5 +1,37 @@
 # Historie změn
 
+## [2026.11.012] - 2026-11-15
+
+**Souhrn:** Tři nálezy z provozu na domácí instanci.
+
+### Schválená akce šla SSH na název clusteru místo na stroj
+
+Akce #557 měla `cluster = OTHER` (výchozí cluster pro hosty bez mapování) a `node = rpi`. Do SSH se předával cluster, takže se spustilo `ssh other` a skončilo to na `Could not resolve hostname other`. Na instanci bez `infrastructure_mapping` to potkalo **každou** schválenou akci.
+
+Cíl se nově hledá v pořadí: mapování clusteru → `localhost` u interní diagnostiky → **`node` akce** → cluster jako hostname. Když ani jedno nedá stroj, akce se odmítne hláškou „Neznám cílový host" — to je lepší než poslat SSH na název skupiny a čekat na chybu DNS.
+
+Dry-run text teď ukazuje i to, **odkud** se cíl vzal, takže je před schválením vidět, kam se to opravdu pošle.
+
+> Změna chování: `cluster = UNKNOWN` bez node se nově odmítne, dřív se spustil na serveru samotném. Spouštět cizí příkaz lokálně jen proto, že neznáme cíl, není bezpečné.
+
+### Balíček neuměl MQTT
+
+`paho-mqtt` nebyl v `requirements.txt`. `install.sh` ho instaloval zvlášť, takže u ruční instalace MQTT fungovalo a přechodem na balíček — který staví venv jen z `requirements.txt` — přestalo. Doplněno a hlídá to test.
+
+V UI se navíc „chybí knihovna" nedalo odlišit od „broker je nedostupný"; obojí vypadalo jako *Nepřipojeno*, přitom se každé řeší jinak. Stav knihovny je teď v API i v panelu integrace.
+
+### Podpětí ze senzoru vypnutého stroje
+
+`sensor.…_nct6683_voltage_2` hlásil „Podpětí nebo výpadek v síti (0.0 V)". Je to napěťová větev základní desky (0–12 V) na stroji, který je většinu času vypnutý — ne výpadek proudu.
+
+Detektor bral každou entitu se slovem `voltage` jako síťové napětí. Nově hlásí podpětí jen u senzorů, u kterých to dává smysl:
+
+- `voltage_entities` v `ha_thresholds` — výslovný seznam glob vzorů, má přednost
+- jinak rozhoduje **historie**: entita musí někdy ukázat aspoň `voltage_mains_floor_v` (výchozí 100 V). Větev desky se k 230 V nikdy nepřiblíží, zatímco skutečný síťový senzor ano. Maxima přežijí restart.
+- `ignore_entities` (glob) pro vypnutí jednotlivých entit bez zásahu do kódu
+
+Testy 1 275 → **1 282**, plus 5 v `sentinel-plugins`.
+
 ## [2026.11.011] - 2026-11-15
 
 **Souhrn:** Chyba v konfiguraci už nesmí shodit službu.

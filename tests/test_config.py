@@ -248,3 +248,23 @@ class TestConfigValidationNeverCrashes(TestConfigLoad):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestMqttDependency(unittest.TestCase):
+    """paho-mqtt musi byt v requirements.txt.
+
+    install.sh ji instaloval zvlast (`pip install paho-mqtt`), takze u rucni
+    instalace MQTT fungovalo. Balicek stavi venv jen z requirements.txt —
+    knihovna tam chybela a MQTT po prechodu na balicek prestalo jezdit.
+    """
+
+    def test_paho_in_requirements(self):
+        req = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                'requirements.txt'), encoding='utf-8').read()
+        self.assertRegex(req, r'(?m)^paho-mqtt==')
+
+    def test_every_import_in_requirements(self):
+        """Co utils importuje jako volitelne, musi jit nainstalovat z requirements."""
+        from sentinel import utils
+        self.assertTrue(hasattr(utils, 'MQTT_AVAILABLE'),
+                        "utils musi hlasit, zda je knihovna k dispozici")
