@@ -1,5 +1,20 @@
 # Historie změn
 
+## [2026.11.015] - 2026-11-25
+
+**Souhrn:** Nabídka akcí u issue se na malé obrazovce ořízla na pár pixelů.
+
+Vypadalo to jako průhledné okno bez obsahu. Pozadí ale bylo v pořádku — nabídka měla **výšku 14 px místo 447**. Je umístěná absolutně uvnitř modalu, který má `overflow: hidden` na `.modal` a `overflow: auto` na `.modal-body`; na široké obrazovce se do nich vejde, na úzké ji ořízly.
+
+Umisťuje se proto nově `position: fixed` se souřadnicemi spočítanými z ikony — tím ořezání obchází. Otevře se pod ikonou, a když se tam nevejde, nad ni; když ani tam, přisadí se k hornímu okraji a zbytek se roluje. Vodorovně se drží u pravého okraje ikony, ale nevyleze z obrazovky.
+
+Dvě věci, které se při měření ukázaly navíc:
+
+- **Šířka se rozjela na 630 px**, protože `fixed` prvek bez stropu si vezme šířku nejdelší položky. Přibyl `max-width` a dlouhé popisky se ořežou třemi tečkami.
+- **`--bg-card` v Sentinelu neexistuje** — proměnná se jmenuje `--card-bg`. Používal se tedy vždy tmavý fallback a ve světlém režimu nabídka k motivu neseděla. Opraveno i s rámečkem.
+
+Ověřeno měřením v prohlížeči na 1400 i 400 px: výška 447 v obou případech, šířka 320, pozadí neprůhledné, nabídka nedoléhá na okraj.
+
 ## [2026.11.014] - 2026-11-15
 
 **Souhrn:** Chybějící minifikátor už nemůže nechat prázdné UI. Nabídka akcí přežije obnovení.

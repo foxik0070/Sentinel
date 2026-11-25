@@ -871,7 +871,12 @@ input:focus-visible,
 .issue-menu {
     position: absolute; right: 0; top: 100%; z-index: 60;
     min-width: 230px; padding: 6px 0;
-    background: var(--bg-card, #121820); border: 1px solid var(--border);
+    /* Bez stropu si fixed umistena nabidka vezme sirku nejdelsi polozky —
+       na siroke obrazovce z toho bylo 630 px pres pul karty. */
+    max-width: min(320px, calc(100vw - 16px));
+    /* Promenna se jmenuje --card-bg; --bg-card neexistuje, takze se drive
+       vzdy pouzil tmavy fallback a ve svetlem rezimu nabidka nesedela. */
+    background: var(--card-bg); border: 1px solid var(--card-border);
     border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,.45);
     font-size: .86em; text-align: left;
 }
@@ -883,6 +888,8 @@ input:focus-visible,
 .issue-menu-item {
     display: flex; align-items: center; gap: 9px;
     padding: 7px 12px; cursor: pointer; color: var(--text-main);
-    white-space: nowrap;
+}
+.issue-menu-item span {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .issue-menu-item:hover { background: rgba(255,255,255,.06); }

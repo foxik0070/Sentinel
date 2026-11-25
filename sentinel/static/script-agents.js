@@ -2085,11 +2085,44 @@ function _toggleIssueMenu(el) {
     const wasOpen = menu.style.display === 'block';
     _closeIssueMenus();
     if (wasOpen) return;
+
+    // Nabídka je uvnitř modalu, který má overflow. Při absolutním umístění ji
+    // na malé obrazovce ořízne na pár pixelů — vypadá to jako prázdné okno
+    // s průhledným pozadím. Fixed umístění ořezání obchází, souřadnice se
+    // proto počítají z ikony.
     menu.style.display = 'block';
-    // Když by nabídka spadla pod okraj okna, otevře se nahoru.
-    const r = menu.getBoundingClientRect();
-    menu.style.bottom = (r.bottom > window.innerHeight - 8) ? '100%' : '';
-    menu.style.top = (r.bottom > window.innerHeight - 8) ? '' : '100%';
+    menu.style.position = 'fixed';
+    menu.style.top = '';
+    menu.style.bottom = '';
+    menu.style.left = '';
+    menu.style.right = '';
+    menu.style.maxHeight = '';
+
+    const btn = el.getBoundingClientRect();
+    const m = menu.getBoundingClientRect();
+    const pad = 8;
+
+    // Vodorovně: pravý okraj k ikoně, ale nevylézt z obrazovky.
+    let left = Math.min(btn.right - m.width, window.innerWidth - m.width - pad);
+    menu.style.left = Math.max(pad, left) + 'px';
+
+    // Svisle: pod ikonu; když se nevejde, nad ni; když ani tam, k hornímu
+    // okraji a zbytek se roluje.
+    let top = btn.bottom + 4;
+    if (top + m.height > window.innerHeight - pad) {
+        const above = btn.top - m.height - 4;
+        top = above >= pad ? above : pad;
+    }
+    menu.style.top = top + 'px';
+    menu.style.maxHeight = (window.innerHeight - top - pad) + 'px';
+    menu.style.overflowY = 'auto';
+
+    // Sirka se ustali az po nastaveni left (max-width pocita z viewportu),
+    // takze prvni vypocet mohl byt z jine hodnoty. Druhy pruchod to srovna.
+    const f = menu.getBoundingClientRect();
+    if (f.right > window.innerWidth - pad) {
+        menu.style.left = Math.max(pad, window.innerWidth - f.width - pad) + 'px';
+    }
 }
 
 document.addEventListener('click', e => {
