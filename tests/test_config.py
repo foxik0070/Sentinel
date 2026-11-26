@@ -306,3 +306,37 @@ class TestStaticAssetsNeverMissing(unittest.TestCase):
                 static_file = os.path.join(root, 'sentinel', 'static', name)
                 self.assertTrue(name in src or os.path.exists(static_file),
                                 f"{name} se nikde negeneruje ani neexistuje")
+
+
+class TestSuperadminBootstrap(unittest.TestCase):
+    """Na instanci musi jit vytvorit prvniho spravce.
+
+    Role nastavuje jen /api/users/roles, ktery vyzaduje superadmina. Lokalni
+    ucet z config.yaml ale dostaval jen 'admin', takze na instanci s LDAPem
+    a nevyplnenymi skupinami nebyl superadmin NIKDO — a roli tedy neslo
+    udelit ani sobe.
+    """
+
+    def test_local_account_is_superadmin(self):
+        src = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                'sentinel', 'auth.py'), encoding='utf-8').read()
+        i = src.index('if username == config.WEB_USER')
+        blok = src[i:i + 600]
+        self.assertIn("or 'superadmin'", blok,
+                      "ucet z web.username musi byt superadmin, jinak nelze zalozit prvniho spravce")
+
+    def test_viewer_account_stays_viewer(self):
+        """Druhy ucet z configu je ctenar — ten povysit nesmime."""
+        src = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                'sentinel', 'auth.py'), encoding='utf-8').read()
+        i = src.index('if username == config.WEB_VIEWER_USER')
+        self.assertIn("or 'viewer'", src[i:i + 300])
+
+    def test_db_role_wins_over_default(self):
+        """Kdyz je ucet v user_roles, plati tam ulozena role."""
+        from sentinel import auth
+        self.assertTrue(hasattr(auth, '_role_for_user'))
+        src = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                'sentinel', 'auth.py'), encoding='utf-8').read()
+        i = src.index('if username == config.WEB_USER')
+        self.assertIn('_role_for_user(username) or', src[i:i + 600])

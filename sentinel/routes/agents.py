@@ -127,8 +127,11 @@ def create_blueprint(service):
         hostname = data.get('hostname', '').strip()
         web_ui_url = data.get('web_ui_url', '').strip()
         category = data.get('category', '').strip() or None
-        if not hostname:
-            return jsonify({"status": "error", "message": "Missing hostname"}), 400
+        # Hostname se dal pouzit jako cil SSH (run_ssh_command_real), takze
+        # neoverena hodnota je cesta k vice nez jen rozbitemu zaznamu.
+        # Validator existoval a pouzival se jinde, jen tady ne.
+        if not _valid_hostname(hostname):
+            return jsonify({"status": "error", "message": "Invalid hostname"}), 400
 
         # Generate secure 32-byte alphanumeric token
         new_token = secrets.token_hex(32)
@@ -145,6 +148,8 @@ def create_blueprint(service):
 
         data = request.json or {}
         hostname = data.get('hostname', '').strip()
+        if not _valid_hostname(hostname):
+            return jsonify({"status": "error", "message": "Invalid hostname"}), 400
         if state.delete_agent(hostname):
             return jsonify({"status": "ok"})
         return jsonify({"status": "error", "message": "Deletion failed"}), 500

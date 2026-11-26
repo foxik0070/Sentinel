@@ -1,5 +1,29 @@
 # Historie změn
 
+## [2026.11.016] - 2026-11-26
+
+**Souhrn:** Prvního správce šlo vytvořit jen rolí, kterou nikdo neměl. A role jde nově nastavit přímo u účtu.
+
+### Slepá ulička, kvůli které nešlo nastavit vůbec nic
+
+Role přiděluje `check_auth()` v pořadí *role z databáze → LDAP skupiny z configu → jinak `viewer`*. Na instanci s LDAPem a nevyplněnými skupinami tedy **každý uživatel skončil jako `viewer`**, i když byl ve skutečnosti správce.
+
+Spravit to šlo jen přes `/api/users/roles`, jenže ten vyžaduje **superadmina** — a tím nebyl nikdo. Lokální účet z `web.username` dostával jen `admin`. Roli tak nešlo udělit ani sobě; čerstvá instalace neměla jak prvního správce vytvořit.
+
+Účet z `config.yaml` je nově **superadmin**. Kdo má config, má na server stejně plný přístup, takže to nic nového neotevírá — jen to odemyká cestu, kterou jinak nešlo projít. Druhý účet z configu (`viewer_username`) zůstává čtenářem.
+
+### Role přímo u účtu
+
+V seznamu uživatelů byla role jen **statický odznak**; měnila se oklikou přes pole „přidat uživatele" nahoře, kam se muselo jméno opsat. Nově je u každého účtu rozbalovací výběr — změna se uloží hned a při chybě se vrátí původní hodnota, aby seznam neukazoval něco jiného, než co je uložené. Ostatním než superadminovi zůstává odznak, ať neklikají do něčeho, co vrátí 403.
+
+### Co to odhalilo
+
+Dva testy registrace agentů začaly padat — a nebyla to vada testů. `/api/agents/register` hostname **vůbec neověřoval**, jen jestli není prázdný, takže prošlo i `../etc/passwd` nebo `test;rm -rf`. Testy to dosud nechytily, protože se zastavily dřív na 403 od role; po odemčení superadmina se poprvé dostaly k samotné validaci.
+
+Není to kosmetika: hostname se používá jako **cíl SSH** (`run_ssh_command_real`). Validátor `_valid_hostname()` přitom v souboru existoval a jinde se používal — jen tyhle dvě cesty ho nevolaly. Doplněn do `register` i `delete`.
+
+Testy 1 294 → **1 297**.
+
 ## [2026.11.015] - 2026-11-25
 
 **Souhrn:** Nabídka akcí u issue se na malé obrazovce ořízla na pár pixelů.

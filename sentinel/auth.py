@@ -67,7 +67,11 @@ def _check_password(plain: str, stored: str) -> bool:
 def check_auth(username: str, password: str) -> str | None:
     # 347: bcrypt hash nebo plaintext fallback
     if username == config.WEB_USER and _check_password(password, config.WEB_PASS):
-        return _role_for_user(username) or 'admin'
+        # Ucet z config.yaml je majitel instance: kdo ma config, ma stejne
+        # plny pristup. Dostaval ale jen 'admin', takze na instanci s LDAPem
+        # a nevyplnenymi skupinami nebyl NIKDO superadmin — a role nastavuje
+        # jen superadmin. Prvniho spravce tak neslo vytvorit vubec, ani sobe.
+        return _role_for_user(username) or 'superadmin'
     if username == config.WEB_VIEWER_USER and _check_password(password, config.WEB_VIEWER_PASS):
         return _role_for_user(username) or 'viewer'
 

@@ -4078,6 +4078,9 @@ async function openRoleModal() {
         const d = await r.json();
         const users = d.users || [];
         const roles = ['viewer', 'operator', 'admin', 'superadmin'];
+        // Zapis role smi jen superadmin (/api/users/roles POST). Ostatnim
+        // ukazeme roli jen jako odznak, at neklikaji do neceho, co vrati 403.
+        const canEditRoles = window.currentRole === 'superadmin';
         el.innerHTML = `
             <div style="margin-bottom:16px; padding:12px 14px; background:var(--panel); border-radius:6px; border:1px solid var(--border);">
                 <div style="font-size:0.8em; color:var(--text-muted); margin-bottom:10px; text-transform:uppercase; letter-spacing:.5px;">${t('role_add_user')}</div>
@@ -4099,8 +4102,15 @@ async function openRoleModal() {
                             <i class="fa-solid fa-user" style="color:${online ? 'var(--success)' : 'var(--text-muted)'}; flex-shrink:0;" title="${online ? t('user_online_now') : ''}"></i>
                             <span style="flex:1; font-size:0.88em; font-weight:600;">${_escape(u.username)}${online ? ` <span style="font-size:.75em; color:var(--success);">● ${u.active_sessions}</span>` : ''}</span>
                             <span style="font-size:0.78em; color:var(--text-muted);">${_escape(u.source)}</span>
-                            <span style="font-size:0.82em; padding:2px 8px; border-radius:10px; background:rgba(99,102,241,0.15); color:var(--accent);">${_escape(u.role)}</span>
-                            ${u.source === 'db' ? `<button onclick="deleteUserRole('${_escape(u.username)}')" style="background:transparent; border:none; color:var(--error); cursor:pointer; font-size:0.85em; padding:2px 6px;"><i class="fa-solid fa-trash"></i></button>` : ''}
+                            ${canEditRoles ? `
+                            <select onchange="setUserRole('${_escape(u.username)}', this.value, this)"
+                                    data-prev="${_escape(u.role)}"
+                                    title="${t('role_change_title')}"
+                                    style="font-size:0.82em; padding:2px 6px; border-radius:4px; background:var(--input-bg); color:var(--text-main); border:1px solid var(--border); cursor:pointer;">
+                                ${roles.map(r => `<option value="${r}"${r === u.role ? ' selected' : ''}>${r}</option>`).join('')}
+                            </select>` : `
+                            <span style="font-size:0.82em; padding:2px 8px; border-radius:10px; background:rgba(99,102,241,0.15); color:var(--accent);">${_escape(u.role)}</span>`}
+                            ${u.source === 'db' ? `<button onclick="deleteUserRole('${_escape(u.username)}')" title="${t('role_remove_title')}" style="background:transparent; border:none; color:var(--error); cursor:pointer; font-size:0.85em; padding:2px 6px;"><i class="fa-solid fa-trash"></i></button>` : ''}
                         </div>
                         ${u.last_login ? `
                         <div style="display:flex; gap:14px; flex-wrap:wrap; margin-top:5px; padding-left:24px; font-size:.75em; color:var(--text-muted);">
@@ -4213,6 +4223,48 @@ function _fmtOnline(secs) {
 }
 
 function closeRoleModal() { document.getElementById('role-modal').style.display = 'none'; }
+
+/** Zmena role primo u uctu v seznamu. Pri chybe vrati puvodni hodnotu,
+ *  aby seznam neukazoval neco jineho, nez co je ulozene. */
+async function setUserRole(username, role, selectEl) {
+    const previous = selectEl ? selectEl.dataset.prev || '' : '';
+    if (selectEl) selectEl.disabled = true;
+    try {
+        const r = await fetch('/api/users/roles', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ username, role })
+        });
+        const d = await r.json();
+        if (d.status === 'ok') {
+            _roleRowMsg(selectEl, t('role_saved'), 'var(--success)');
+            openRoleModal();
+        } else {
+            if (selectEl && previous) selectEl.value = previous;
+            _roleRowMsg(selectEl, d.error || t('error_generic'), 'var(--error)');
+        }
+    } catch (e) {
+        if (selectEl && previous) selectEl.value = previous;
+        _roleRowMsg(selectEl, t('error_generic'), 'var(--error)');
+    } finally {
+        if (selectEl) selectEl.disabled = false;
+    }
+}
+
+function _roleRowMsg(selectEl, text, color) {
+    if (!selectEl) return;
+    const row = selectEl.closest('div');
+    if (!row) return;
+    let msg = row.querySelector('.role-row-msg');
+    if (!msg) {
+        msg = document.createElement('span');
+        msg.className = 'role-row-msg';
+        msg.style.cssText = 'font-size:.75em; margin-left:6px;';
+        selectEl.insertAdjacentElement('afterend', msg);
+    }
+    msg.textContent = text;
+    msg.style.color = color;
+    setTimeout(() => { if (msg) msg.textContent = ''; }, 4000);
+}
 
 async function addUserRole() {
     const username = document.getElementById('role-new-user')?.value.trim();
