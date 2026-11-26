@@ -1,5 +1,15 @@
 # Historie změn
 
+## [2026.11.017] - 2026-11-26
+
+**Souhrn:** U API klíčů jde konečně přečíst, kdy byly naposledy použity.
+
+Údaj se sledoval i zobrazoval už dřív, jenže **bez popisku**: v řádku stála dvě data vedle sebe — `2026-11-12   2026-11-25 11:16` — a rozlišit, které je vytvoření a které poslední použití, šlo jen najetím myší na ikonu. Na dotykovém displeji tedy vůbec.
+
+Popisky jsou teď přímo v řádku (`vytvořen`, `použit`, `platí do`) a klíč, který **nikdy nikdo nepoužil**, se označí nápisem *nikdy* ve výstražné barvě — dřív tam bylo prázdné místo, takže nešlo poznat, jestli se klíč nepoužívá, nebo jen chybí údaj.
+
+Opraveno na obou místech, kde se klíče vypisují.
+
 ## [2026.11.016] - 2026-11-26
 
 **Souhrn:** Prvního správce šlo vytvořit jen rolí, kterou nikdo neměl. A role jde nově nastavit přímo u účtu.

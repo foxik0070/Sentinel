@@ -1022,7 +1022,7 @@ async function _apikeyLoadList() {
             <b>${_escape(k.name)}</b>
             <span style="background:rgba(0,120,212,.15);color:#a3cfff;border-radius:8px;padding:1px 6px;">${k.scope}</span>
             <span style="color:var(--text-muted);font-size:.78em;">${k.expires_at?'exp:'+k.expires_at.slice(0,10):'no expiry'}</span>
-            <span style="color:var(--text-muted);font-size:.78em;flex:1;">${k.last_used?'last:'+k.last_used.slice(0,16).replace('T',' '):''}</span>
+            <span style="font-size:.78em;flex:1;color:${k.last_used?'var(--text-muted)':'var(--warning)'};">${t('key_last_used')}: ${k.last_used?k.last_used.slice(0,16).replace('T',' '):t('key_never_used')}</span>
             <i class="fa-solid fa-trash" style="cursor:pointer;color:var(--error);" onclick="_apikeyDelete(${k.id})"></i>
         </div>`).join('');
     } catch {}
@@ -4168,7 +4168,9 @@ async function _roleModalLoadKeys() {
         if (!keys.length) { el.innerHTML = '<div style="color:var(--text-muted);font-size:.82em;">Žádné API klíče.</div>'; return; }
         const isSuperadmin = window.currentRole === 'superadmin';
         el.innerHTML = keys.map(k => {
-            const lastUsed = k.last_used ? k.last_used.slice(0,16).replace('T',' ') : 'nikdy';
+            // Datum vytvoreni a posledniho pouziti stala vedle sebe bez popisku,
+            // rozlisitelna jen najetim mysi. Popisky proto primo v radku.
+            const lastUsed = k.last_used ? k.last_used.slice(0,16).replace('T',' ') : null;
             const created = k.created_at ? k.created_at.slice(0,10) : '?';
             const expiry = k.expires_at ? k.expires_at.slice(0,10) : '∞';
             const owner = isSuperadmin && k.created_by ? `<span style="color:var(--accent);font-size:.75em;" title="Vlastník"><i class="fa-solid fa-user"></i> ${_escape(k.created_by)}</span>` : '';
@@ -4176,9 +4178,9 @@ async function _roleModalLoadKeys() {
                 <b style="min-width:80px;">${_escape(k.name)}</b>
                 ${owner}
                 <span style="background:rgba(0,120,212,.15);color:#a3cfff;border-radius:8px;padding:1px 6px;font-size:.78em;">${_escape(k.scope)}</span>
-                <span style="color:var(--text-muted);font-size:.75em;" title="Vytvořen"><i class="fa-regular fa-calendar"></i> ${created}</span>
-                <span style="color:var(--text-muted);font-size:.75em;" title="Poslední použití"><i class="fa-regular fa-clock"></i> ${lastUsed}</span>
-                <span style="color:var(--text-muted);font-size:.75em;" title="Expirace">exp: ${expiry}</span>
+                <span style="color:var(--text-muted);font-size:.75em;" title="${t('key_created')}"><i class="fa-regular fa-calendar"></i> ${t('key_created')}: ${created}</span>
+                <span style="font-size:.75em;color:${lastUsed ? 'var(--text-muted)' : 'var(--warning)'};" title="${t('key_last_used')}"><i class="fa-regular fa-clock"></i> ${t('key_last_used')}: ${lastUsed || t('key_never_used')}</span>
+                <span style="color:var(--text-muted);font-size:.75em;" title="${t('key_expiry')}">${t('key_expiry')}: ${expiry}</span>
                 <span style="flex:1;"></span>
                 <button onclick="_roleModalRevokeKey(${k.id},'${_escape(k.name)}')" style="padding:2px 8px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#ef4444;border-radius:4px;cursor:pointer;font-size:.78em;" title="Revokovat klíč"><i class="fa-solid fa-ban"></i> Revokovat</button>
             </div>`;
